@@ -1,0 +1,2 @@
+Sweep: 10 runs | 2 GPU(s) | 10 workers
+Results → results/dual/sweep_orth_n0/results.jsonl

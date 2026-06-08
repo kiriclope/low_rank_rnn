@@ -86,3 +86,23 @@ Epoch 065/100 | lr: 0.00125 | train: 0.6937 | val: 0.5937
 Epoch 070/100 | lr: 0.00063 | train: 0.6917 | val: 0.5935
 Epoch 075/100 | lr: 0.00063 | train: 0.6944 | val: 0.5918
 Epoch 080/100 | lr: 0.00031 | train: 0.6935 | val: 0.5923
+Epoch 085/100 | lr: 0.00016 | train: 0.6896 | val: 0.5910
+Epoch 090/100 | lr: 0.00008 | train: 0.6917 | val: 0.5912
+Epoch 095/100 | lr: 0.00004 | train: 0.6907 | val: 0.5913
+Epoch 100/100 | lr: 0.00002 | train: 0.6924 | val: 0.5910
+[s9_cue2_nomnoise]  loss components: {'dpa': 0.4748, 'gng': 0.0679, 'gng_go': 0.0447, 'gng_nogo': 0.0232, 'baseline': 0.0066, 'aux': 0.0109}
+[s9_cue2_nomnoise]   after Dual: dpa=0.972  gng=1.000
+[s9_cue2_nomnoise]  Dual done in 836.0s  final train=0.6924  val=0.5910  dpa=0.972  gng=1.000
+[s9_cue2_nomnoise]  ┌── params: after Dual
+[s9_cue2_nomnoise]  │  rank 0: ||m||=34.179  ||n||=34.115  corr(m,n)=+0.773
+[s9_cue2_nomnoise]  │  rank 1: ||m||=31.117  ||n||=42.832  corr(m,n)=+0.785
+[s9_cue2_nomnoise]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.9019+0.2610j  +1.9019-0.2610j
+[s9_cue2_nomnoise]  │  Wi: ||·||_F=52.657  per-channel=14.51 16.77 31.23 25.27 15.05 13.87 15.75
+[s9_cue2_nomnoise]  └──────────────────────────────────────────────────
+[s9_cue2_nomnoise] ════════════════════════════════════════════════════════════
+[s9_cue2_nomnoise]  RUN COMPLETE  2026-06-08 15:00:54  total=1777.4s
+[s9_cue2_nomnoise]  ACCURACY SUMMARY
+[s9_cue2_nomnoise]    after DPA : dpa=0.988  gng=0.529
+[s9_cue2_nomnoise]    after GNG : dpa=0.872  gng=0.996
+[s9_cue2_nomnoise]    after Dual: dpa=0.972  gng=1.000  dual_dpa=0.868  dual_gng=0.971
+[s9_cue2_nomnoise] ════════════════════════════════════════════════════════════

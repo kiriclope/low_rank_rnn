@@ -76,6 +76,7 @@ class RunConfig:
     rwd_align_weight:   float = 0.0   # weight of reward-input ↔ n1 cosine alignment loss during DPA
     freeze_rank0_dual:  bool  = False  # also freeze rank-0 of m/n during the Dual stage
     project_go_on_n1:   bool  = False  # project go input column onto n₁ direction before GNG
+    project_gng_orth_n0: bool = False  # project go+nogo input columns orthogonal to n₀ before GNG
     rwd_gng:            bool  = True   # teacher-forced reward during GNG stage (False = disable)
 
     # Training (shared across all stages)
@@ -404,6 +405,20 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             model.wi.weight.data[:, go_ch] = n1_hat * w_go.norm()
         print(f"[{rid}]  projected go ch={go_ch} onto n₁ unit vector", flush=True)
 
+    # Orthogonalise go+nogo input columns to n₀ (memory direction) before GNG
+    if config.project_gng_orth_n0:
+        with torch.no_grad():
+            go_ch   = config.input_size - 1 if config.go_on_rwd_input else 4
+            nogo_ch = 4                      if config.go_on_rwd_input else 5
+            n0      = model.n[:, 0]
+            n0_hat  = n0 / n0.norm().clamp_min(1e-12)
+            for ch in [go_ch, nogo_ch]:
+                w      = model.wi.weight.data[:, ch]
+                w_orth = w - (w @ n0_hat) * n0_hat          # remove n₀ component
+                w_orth = w_orth / w_orth.norm().clamp_min(1e-12) * w.norm()  # preserve norm
+                model.wi.weight.data[:, ch] = w_orth
+        print(f"[{rid}]  orthogonalised go ch={go_ch}, nogo ch={nogo_ch} to n₀", flush=True)
+
     acc_after_dpa = _eval("after DPA")
     _stage_summary("DPA", train_l, val_l, acc_after_dpa, t0)
     _log_params("after DPA")
@@ -625,8 +640,9 @@ def make_configs(out_dir: str) -> list[RunConfig]:
 
     for seed in range(10):
         configs.append(RunConfig(
-            run_id=f"s{seed}_cue2_nomnoise",
+            run_id=f"s{seed}_orth_n0",
             seed=seed,
+            project_gng_orth_n0=True,
             **base,
         ))
 
@@ -637,15 +653,38 @@ def make_configs(out_dir: str) -> list[RunConfig]:
 # Main
 # ---------------------------------------------------------------------------
 
+def _launch_per_run_screens(configs: list, out_dir: str, n_gpus: int, results_path: str):
+    """Launch one detached screen session per config, round-robin across GPUs."""
+    import dataclasses, subprocess, tempfile
+    here = os.path.dirname(os.path.abspath(__file__))
+    for i, cfg in enumerate(configs):
+        device  = f"cuda:{i % n_gpus}" if torch.cuda.is_available() else "cpu"
+        run_dir = os.path.join(out_dir, cfg.run_id)
+        os.makedirs(run_dir, exist_ok=True)
+        # Write config to a temp JSON file inside the run dir (persists for debugging)
+        cfg_path = os.path.join(run_dir, "config.json")
+        with open(cfg_path, "w") as f:
+            json.dump(dataclasses.asdict(cfg), f)
+        log_path = os.path.join(run_dir, "train.log")
+        cmd = (
+            f"python {here}/_run_one.py {cfg_path} {device} {results_path}"
+            f" 2>&1 | tee {log_path}"
+        )
+        subprocess.run(["screen", "-dmS", f"sweep_{cfg.run_id}", "bash", "-c", cmd])
+        print(f"  launched screen session sweep_{cfg.run_id} on {device}")
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_gpus",        type=int,  default=2)
-    parser.add_argument("--n_workers",     type=int,  default=None,
+    parser.add_argument("--n_gpus",          type=int,  default=2)
+    parser.add_argument("--n_workers",       type=int,  default=None,
                         help="Concurrent workers (default: n_gpus). "
                              "Set higher to run multiple jobs per GPU.")
-    parser.add_argument("--out_dir",       type=str,  default="../results/dual/vanilla")
-    parser.add_argument("--wandb_project", type=str,  default=None,
+    parser.add_argument("--out_dir",         type=str,  default="../results/dual/vanilla")
+    parser.add_argument("--wandb_project",   type=str,  default=None,
                         help="W&B project name. Omit to disable W&B logging.")
+    parser.add_argument("--per_run_screen",  action="store_true",
+                        help="Launch one screen session per run instead of using multiprocessing.")
     args = parser.parse_args()
 
     n_gpus        = min(args.n_gpus, torch.cuda.device_count()) if torch.cuda.is_available() else 1
@@ -669,6 +708,13 @@ def main():
     print(f"Results → {results_path}")
     if wandb_project:
         print(f"W&B project → {wandb_project}")
+
+    if args.per_run_screen:
+        print(f"Mode: one screen session per run (sweep_<run_id>)")
+        _launch_per_run_screens(configs, out_dir, n_gpus, results_path)
+        print(f"All {len(configs)} screen sessions launched.")
+        print(f"Monitor: screen -ls | attach: screen -r sweep_<run_id>")
+        return
 
     def _write_result(result: dict):
         with open(results_path, "a") as f:
