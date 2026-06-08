@@ -1,0 +1,4 @@
+Sweep: 20 runs | 2 GPU(s) | 10 workers
+Results → results/dual/sweep_optAB/results.jsonl
+
+Done: 20 succeeded, 0 failed.  Results in results/dual/sweep_optAB/results.jsonl

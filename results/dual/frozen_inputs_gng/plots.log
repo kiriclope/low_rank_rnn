@@ -1,0 +1,73 @@
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:403: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+Sweep: frozen_inputs_gng  device: cuda:0  out: /home/leon/rnn/results/figures/frozen_inputs_gng
+Loaded 1 runs
+
+[summary] accuracy_stages
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/accuracy_stages.pdf
+
+[summary] accuracy_by_trialtype
+  trialtype acc: frozen_inputs_gng
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/accuracy_by_trialtype.pdf
+
+[summary] fp_scatters (by stage + per input condition)
+  fp_scatter collected: frozen_inputs_gng
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/fp_scatter_by_stage.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/fp_scatter_by_input_sample_a.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/fp_scatter_by_input_sample_b.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/fp_scatter_by_input_test_c.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/fp_scatter_by_input_test_d.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/fp_scatter_by_input_go.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/fp_scatter_by_input_nogo.pdf
+
+[summary] avg_trajectories
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/traj_dpa_dpa.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/traj_dpa_go.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/traj_dpa_nogo.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/traj_naive_dpa.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/traj_naive_go.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/traj_naive_nogo.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/traj_expert_dpa.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/traj_expert_go.pdf
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/summary/traj_expert_nogo.pdf
+
+[individual] frozen_inputs_gng
+  trialtype acc: frozen_inputs_gng
+Saved /home/leon/rnn/results/figures/frozen_inputs_gng/individual/frozen_inputs_gng/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/frozen_inputs_gng/individual/frozen_inputs_gng
+  scatter saved: /home/leon/rnn/results/figures/frozen_inputs_gng/individual/frozen_inputs_gng/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/frozen_inputs_gng/individual/frozen_inputs_gng/flow

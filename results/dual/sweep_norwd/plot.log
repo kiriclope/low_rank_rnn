@@ -1,0 +1,316 @@
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+/home/leon/rnn/plot_sweep.py:437: RuntimeWarning: Mean of empty slice
+  tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
+Sweep: sweep_norwd  device: cuda:0  out: /home/leon/rnn/results/figures/sweep_norwd
+Loaded 10 runs
+
+[summary] accuracy_stages
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/accuracy_stages.pdf
+
+[summary] accuracy_by_trialtype
+  trialtype acc: s1_norwd
+  trialtype acc: s2_norwd
+  trialtype acc: s8_norwd
+  trialtype acc: s3_norwd
+  trialtype acc: s5_norwd
+  trialtype acc: s0_norwd
+  trialtype acc: s7_norwd
+  trialtype acc: s6_norwd
+  trialtype acc: s9_norwd
+  trialtype acc: s4_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/accuracy_by_trialtype.pdf
+
+[summary] fp_scatters (by stage + per input condition)
+  fp_scatter collected: s1_norwd
+  fp_scatter collected: s2_norwd
+  fp_scatter collected: s8_norwd
+  fp_scatter collected: s3_norwd
+  fp_scatter collected: s5_norwd
+  fp_scatter collected: s0_norwd
+  fp_scatter collected: s7_norwd
+  fp_scatter collected: s6_norwd
+  fp_scatter collected: s9_norwd
+  fp_scatter collected: s4_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/fp_scatter_by_stage.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/fp_scatter_by_input_sample_a.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/fp_scatter_by_input_sample_b.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/fp_scatter_by_input_test_c.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/fp_scatter_by_input_test_d.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/fp_scatter_by_input_go.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/fp_scatter_by_input_nogo.pdf
+
+[summary] avg_trajectories
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/traj_dpa_dpa.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/traj_dpa_go.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/traj_dpa_nogo.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/traj_naive_dpa.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/traj_naive_go.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/traj_naive_nogo.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/traj_expert_dpa.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/traj_expert_go.pdf
+Saved /home/leon/rnn/results/figures/sweep_norwd/summary/traj_expert_nogo.pdf
+
+[individual] s1_norwd
+  trialtype acc: s1_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/individual/s1_norwd/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s1_norwd
+  scatter saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s1_norwd/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s1_norwd/flow
+
+[individual] s2_norwd
+  trialtype acc: s2_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/individual/s2_norwd/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s2_norwd
+  scatter saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s2_norwd/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s2_norwd/flow
+
+[individual] s8_norwd
+  trialtype acc: s8_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/individual/s8_norwd/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s8_norwd
+  scatter saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s8_norwd/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s8_norwd/flow
+
+[individual] s3_norwd
+  trialtype acc: s3_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/individual/s3_norwd/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s3_norwd
+  scatter saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s3_norwd/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s3_norwd/flow
+
+[individual] s5_norwd
+  trialtype acc: s5_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/individual/s5_norwd/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s5_norwd
+  scatter saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s5_norwd/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s5_norwd/flow
+
+[individual] s0_norwd
+  trialtype acc: s0_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/individual/s0_norwd/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s0_norwd
+  scatter saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s0_norwd/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s0_norwd/flow
+
+[individual] s7_norwd
+  trialtype acc: s7_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/individual/s7_norwd/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s7_norwd
+  scatter saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s7_norwd/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s7_norwd/flow
+
+[individual] s6_norwd
+  trialtype acc: s6_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/individual/s6_norwd/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s6_norwd
+  scatter saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s6_norwd/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s6_norwd/flow
+
+[individual] s9_norwd
+  trialtype acc: s9_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/individual/s9_norwd/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s9_norwd
+  scatter saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s9_norwd/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s9_norwd/flow
+
+[individual] s4_norwd
+  trialtype acc: s4_norwd
+Saved /home/leon/rnn/results/figures/sweep_norwd/individual/s4_norwd/accuracy_by_trialtype.pdf
+  trajectories saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s4_norwd
+  scatter saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s4_norwd/scatter/fp_scatter.pdf
+  flow fields saved: /home/leon/rnn/results/figures/sweep_norwd/individual/s4_norwd/flow

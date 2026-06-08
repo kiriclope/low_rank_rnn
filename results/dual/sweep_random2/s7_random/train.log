@@ -1,0 +1,124 @@
+[s7_random] ════════════════════════════════════════════════════════════
+[s7_random]  RUN START  2026-06-05 01:09:46
+[s7_random]  run_id=s7_random  seed=7  device=cuda:1
+[s7_random]  arch:  hidden=512  rank=2  gain=2.0  input_size=7  params=6,144
+[s7_random]  task:  cue_on_go=True  rwd=True  rwd_scale=2.0  freeze_input_stages=['gng', 'dual']  init=random
+[s7_random]  dynamics: alpha=0.0750  alpha_rec=0.1000  dt=0.0225  tau=0.3  tau_rec_frac=0.75
+[s7_random]  noise:  input_sigma=0.1866 (×0.5)  model_sigma=0.0000 (×0.0)
+[s7_random]  optim:  lr=0.01  wd=0.01  batch=64  n_batch=516  clip=1.0
+[s7_random]  epochs: dpa=100  gng=100  dual=100  loss=separated
+[s7_random]  shapes: m[512, 2]  n[512, 2]  Wi[512, 7]
+[s7_random]  ┌── params: init
+[s7_random]  │  rank 0: ||m||=23.340  ||n||=23.513  corr(m,n)=-0.046
+[s7_random]  │  rank 1: ||m||=23.236  ||n||=22.508  corr(m,n)=-0.042
+[s7_random]  │  κ-Jacobian eigvals (gain·n^Tm/N): -0.0928+0.0966j  -0.0928-0.0966j
+[s7_random]  │  Wi: ||·||_F=60.688  per-channel=22.83 22.36 23.30 23.06 23.69 22.16 23.12
+[s7_random]  └──────────────────────────────────────────────────
+[s7_random] ────────────────────────────────────────────────────────────
+[s7_random]  STAGE: DPA   device=cuda:1   epochs=100
+[s7_random] ────────────────────────────────────────────────────────────
+[s7_random]  data: [516, 444, 7] → [516, 444, 2]
+Epoch 005/100 | lr: 0.01000 | train: 1.8981 | val: 1.7982
+Epoch 010/100 | lr: 0.01000 | train: 1.1256 | val: 1.0913
+Epoch 015/100 | lr: 0.01000 | train: 0.8815 | val: 0.8302
+Epoch 020/100 | lr: 0.01000 | train: 0.5373 | val: 0.5041
+Epoch 025/100 | lr: 0.01000 | train: 0.3744 | val: 0.3509
+Epoch 030/100 | lr: 0.01000 | train: 0.2987 | val: 0.2726
+Epoch 035/100 | lr: 0.01000 | train: 0.2685 | val: 0.3556
+Epoch 040/100 | lr: 0.01000 | train: 0.2383 | val: 0.1943
+Epoch 045/100 | lr: 0.01000 | train: 0.2316 | val: 0.2291
+Epoch 050/100 | lr: 0.00500 | train: 0.2055 | val: 0.1731
+Epoch 055/100 | lr: 0.00500 | train: 0.1825 | val: 0.1592
+Epoch 060/100 | lr: 0.00500 | train: 0.1638 | val: 0.1413
+Epoch 065/100 | lr: 0.00500 | train: 0.1567 | val: 0.1368
+Epoch 070/100 | lr: 0.00500 | train: 0.1480 | val: 0.1210
+Epoch 075/100 | lr: 0.00500 | train: 0.1462 | val: 0.1252
+Epoch 080/100 | lr: 0.00500 | train: 0.1358 | val: 0.1200
+Epoch 085/100 | lr: 0.00500 | train: 0.1237 | val: 0.1076
+Epoch 090/100 | lr: 0.00500 | train: 0.1251 | val: 0.1130
+Epoch 095/100 | lr: 0.00500 | train: 0.1021 | val: 0.0890
+Epoch 100/100 | lr: 0.00500 | train: 0.1303 | val: 0.1722
+[s7_random]   after DPA: dpa=0.971  gng=0.628
+[s7_random]  DPA done in 584.1s  final train=0.1303  val=0.1722  dpa=0.971  gng=0.628
+[s7_random]  ┌── params: after DPA
+[s7_random]  │  rank 0: ||m||=20.767  ||n||=35.461  corr(m,n)=+0.689
+[s7_random]  │  rank 1: ||m||=25.888  ||n||=36.503  corr(m,n)=+0.670
+[s7_random]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.2282+0.2093j  +2.2282-0.2093j
+[s7_random]  │  Wi: ||·||_F=71.753  per-channel=23.00 26.65 39.10 35.66 19.70 18.41 19.54
+[s7_random]  └──────────────────────────────────────────────────
+[s7_random] ────────────────────────────────────────────────────────────
+[s7_random]  STAGE: GNG   device=cuda:1   epochs=100
+[s7_random]  freeze recurrent cols: [0]
+[s7_random]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s7_random] ────────────────────────────────────────────────────────────
+[s7_random]  data: [516, 266, 7] → [516, 266, 2]
+Epoch 005/100 | lr: 0.01000 | train: 0.5806 | val: 0.5038
+Epoch 010/100 | lr: 0.01000 | train: 0.3884 | val: 0.4044
+Epoch 015/100 | lr: 0.01000 | train: 0.3256 | val: 0.3133
+Epoch 020/100 | lr: 0.01000 | train: 0.2794 | val: 0.2730
+Epoch 025/100 | lr: 0.01000 | train: 0.2516 | val: 0.2449
+Epoch 030/100 | lr: 0.01000 | train: 0.2291 | val: 0.2197
+Epoch 035/100 | lr: 0.01000 | train: 0.2076 | val: 0.1997
+Epoch 040/100 | lr: 0.01000 | train: 0.1927 | val: 0.1820
+Epoch 045/100 | lr: 0.01000 | train: 0.1791 | val: 0.1726
+Epoch 050/100 | lr: 0.01000 | train: 0.1672 | val: 0.1612
+Epoch 055/100 | lr: 0.01000 | train: 0.1601 | val: 0.1526
+Epoch 060/100 | lr: 0.01000 | train: 0.1521 | val: 0.1459
+Epoch 065/100 | lr: 0.01000 | train: 0.1470 | val: 0.1414
+Epoch 070/100 | lr: 0.01000 | train: 0.1404 | val: 0.1349
+Epoch 075/100 | lr: 0.01000 | train: 0.1364 | val: 0.1308
+Epoch 080/100 | lr: 0.01000 | train: 0.1322 | val: 0.1263
+Epoch 085/100 | lr: 0.01000 | train: 0.1279 | val: 0.1223
+Epoch 090/100 | lr: 0.01000 | train: 0.1252 | val: 0.1191
+Epoch 095/100 | lr: 0.01000 | train: 0.1208 | val: 0.1158
+Epoch 100/100 | lr: 0.01000 | train: 0.1177 | val: 0.1127
+[s7_random]   after GNG: dpa=0.798  gng=1.000
+[s7_random]  GNG done in 361.3s  final train=0.1177  val=0.1127  dpa=0.798  gng=1.000
+[s7_random]  ┌── params: after GNG
+[s7_random]  │  rank 0: ||m||=20.767  ||n||=35.461  corr(m,n)=+0.689
+[s7_random]  │  rank 1: ||m||=24.153  ||n||=43.225  corr(m,n)=+0.521
+[s7_random]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.0537+0.3265j  +2.0537-0.3265j
+[s7_random]  │  Wi: ||·||_F=71.753  per-channel=23.00 26.65 39.10 35.66 19.70 18.41 19.54
+[s7_random]  └──────────────────────────────────────────────────
+[s7_random] ────────────────────────────────────────────────────────────
+[s7_random]  STAGE: Dual   device=cuda:1   epochs=100
+[s7_random]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s7_random] ────────────────────────────────────────────────────────────
+[s7_random]  data: [516, 444, 7] → [516, 444, 2]
+[s7_random]  loss=separated  dpa_w=1.0  gng_w=1.0  aux_w=1.0  bl_w=1.0
+Epoch 005/100 | lr: 0.01000 | train: 0.5338 | val: 0.4461
+Epoch 010/100 | lr: 0.01000 | train: 0.4963 | val: 0.3972
+Epoch 015/100 | lr: 0.01000 | train: 0.4457 | val: 0.3677
+Epoch 020/100 | lr: 0.01000 | train: 0.4038 | val: 0.3322
+Epoch 025/100 | lr: 0.01000 | train: 0.3214 | val: 0.2715
+Epoch 030/100 | lr: 0.01000 | train: 0.2061 | val: 0.1773
+Epoch 035/100 | lr: 0.01000 | train: 0.1642 | val: 0.1474
+Epoch 040/100 | lr: 0.01000 | train: 0.1443 | val: 0.1330
+Epoch 045/100 | lr: 0.01000 | train: 0.1338 | val: 0.1203
+Epoch 050/100 | lr: 0.01000 | train: 0.1187 | val: 0.1078
+Epoch 055/100 | lr: 0.01000 | train: 0.1017 | val: 0.0924
+Epoch 060/100 | lr: 0.01000 | train: 0.0908 | val: 0.0857
+Epoch 065/100 | lr: 0.01000 | train: 0.0834 | val: 0.0774
+Epoch 070/100 | lr: 0.01000 | train: 0.0763 | val: 0.0721
+Epoch 075/100 | lr: 0.01000 | train: 0.0722 | val: 0.0691
+Epoch 080/100 | lr: 0.01000 | train: 0.0674 | val: 0.0675
+Epoch 085/100 | lr: 0.01000 | train: 0.0616 | val: 0.0604
+Epoch 090/100 | lr: 0.01000 | train: 0.0593 | val: 0.0601
+Epoch 095/100 | lr: 0.01000 | train: 0.0551 | val: 0.0534
+Epoch 100/100 | lr: 0.01000 | train: 0.0513 | val: 0.0500
+[s7_random]  loss components: {'dpa': 0.0114, 'gng': 0.0307, 'baseline': 0.0055, 'aux': 0.0033}
+[s7_random]   after Dual: dpa=1.000  gng=1.000
+[s7_random]  Dual done in 589.3s  final train=0.0513  val=0.0500  dpa=1.000  gng=1.000
+[s7_random]  ┌── params: after Dual
+[s7_random]  │  rank 0: ||m||=25.309  ||n||=37.799  corr(m,n)=+0.668
+[s7_random]  │  rank 1: ||m||=21.351  ||n||=58.795  corr(m,n)=+0.407
+[s7_random]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.4859  +2.0056
+[s7_random]  │  Wi: ||·||_F=71.753  per-channel=23.00 26.65 39.10 35.66 19.70 18.41 19.54
+[s7_random]  └──────────────────────────────────────────────────
+[s7_random] ════════════════════════════════════════════════════════════
+[s7_random]  RUN COMPLETE  2026-06-05 01:35:21  total=1536.7s
+[s7_random]  ACCURACY SUMMARY
+[s7_random]    after DPA : dpa=0.971  gng=0.628
+[s7_random]    after GNG : dpa=0.798  gng=1.000
+[s7_random]    after Dual: dpa=1.000  gng=1.000  dual_dpa=1.000  dual_gng=0.987
+[s7_random] ════════════════════════════════════════════════════════════

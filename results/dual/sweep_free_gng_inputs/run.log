@@ -1,0 +1,4 @@
+Sweep: 10 runs | 2 GPU(s) | 10 workers
+Results → results/dual/sweep_free_gng_inputs/results.jsonl
+
+Done: 10 succeeded, 0 failed.  Results in results/dual/sweep_free_gng_inputs/results.jsonl

@@ -1,0 +1,129 @@
+[s1_proja] ════════════════════════════════════════════════════════════
+[s1_proja]  RUN START  2026-06-07 15:13:47
+[s1_proja]  run_id=s1_proja  seed=1  device=cuda:1
+[s1_proja]  arch:  hidden=512  rank=2  gain=1.0  input_size=7  params=6,144
+[s1_proja]  task:  cue_on_go=True  rwd=True  rwd_scale=1.0  freeze_input_stages=['dual']  init=random
+[s1_proja]  dynamics: alpha=0.0750  alpha_rec=0.1000  dt=0.0225  tau=0.3  tau_rec_frac=0.75
+[s1_proja]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.3732 (×1.0)
+[s1_proja]  optim:  lr=0.01  wd=0.01  batch=64  n_batch=516  clip=None
+[s1_proja]  epochs: dpa=200  gng=200  dual=200  loss=separated
+[s1_proja]  shapes: m[512, 2]  n[512, 2]  Wi[512, 7]
+[s1_proja]  ┌── params: init
+[s1_proja]  │  rank 0: ||m||=22.898  ||n||=22.288  corr(m,n)=-0.020
+[s1_proja]  │  rank 1: ||m||=23.302  ||n||=22.428  corr(m,n)=+0.009
+[s1_proja]  │  κ-Jacobian eigvals (gain·n^Tm/N): -0.0155  +0.0043
+[s1_proja]  │  Wi: ||·||_F=58.820  per-channel=21.94 22.58 22.12 21.70 21.92 23.07 22.27
+[s1_proja]  └──────────────────────────────────────────────────
+[s1_proja] ────────────────────────────────────────────────────────────
+[s1_proja]  STAGE: DPA   device=cuda:1   epochs=200
+[s1_proja] ────────────────────────────────────────────────────────────
+[s1_proja]  data: [516, 444, 7] → [516, 444, 2]
+Epoch 005/200 | lr: 0.01000 | train: 1.9785 | val: 1.9689
+Epoch 010/200 | lr: 0.01000 | train: 1.8293 | val: 1.7481
+Epoch 015/200 | lr: 0.01000 | train: 1.0532 | val: 1.0718
+Epoch 020/200 | lr: 0.01000 | train: 0.9910 | val: 1.0038
+Epoch 025/200 | lr: 0.01000 | train: 0.9278 | val: 0.9435
+Epoch 030/200 | lr: 0.01000 | train: 0.8662 | val: 0.8988
+Epoch 035/200 | lr: 0.01000 | train: 0.7993 | val: 0.8175
+Epoch 040/200 | lr: 0.01000 | train: 0.6185 | val: 0.6130
+Epoch 045/200 | lr: 0.01000 | train: 0.4334 | val: 0.4223
+Epoch 050/200 | lr: 0.01000 | train: 0.3487 | val: 0.3505
+Epoch 055/200 | lr: 0.01000 | train: 0.2818 | val: 0.3056
+Epoch 060/200 | lr: 0.01000 | train: 0.2421 | val: 0.2436
+Epoch 065/200 | lr: 0.01000 | train: 0.1940 | val: 0.1946
+Epoch 070/200 | lr: 0.01000 | train: 0.1802 | val: 0.1836
+Epoch 075/200 | lr: 0.01000 | train: 0.1286 | val: 0.1391
+Epoch 080/200 | lr: 0.01000 | train: 0.1080 | val: 0.1082
+Epoch 085/200 | lr: 0.01000 | train: 0.1059 | val: 0.1116
+Stopping: losses below 0.1.
+[s1_proja]  projected go ch=4 onto n₁ unit vector
+[s1_proja]   after DPA: dpa=0.998  gng=0.665
+[s1_proja]  DPA done in 640.7s  final train=0.0963  val=0.0917  dpa=0.998  gng=0.665
+[s1_proja]  ┌── params: after DPA
+[s1_proja]  │  rank 0: ||m||=43.997  ||n||=38.008  corr(m,n)=+0.850
+[s1_proja]  │  rank 1: ||m||=33.750  ||n||=51.697  corr(m,n)=+0.842
+[s1_proja]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.6285  +3.0181
+[s1_proja]  │  Wi: ||·||_F=70.306  per-channel=24.17 24.21 37.03 41.86 10.56 11.69 20.02
+[s1_proja]  └──────────────────────────────────────────────────
+[s1_proja] ────────────────────────────────────────────────────────────
+[s1_proja]  STAGE: GNG   device=cuda:1   epochs=200
+[s1_proja]  freeze recurrent cols: [0]
+[s1_proja]  freeze input dims:     [0, 1, 2, 3, 6]
+[s1_proja] ────────────────────────────────────────────────────────────
+[s1_proja]  data: [516, 266, 7] → [516, 266, 2]
+Epoch 005/200 | lr: 0.01000 | train: 0.2281 | val: 0.1976
+Epoch 010/200 | lr: 0.01000 | train: 0.1537 | val: 0.1588
+Epoch 015/200 | lr: 0.01000 | train: 0.1254 | val: 0.1208
+Epoch 020/200 | lr: 0.01000 | train: 0.0990 | val: 0.0980
+Stopping: losses below 0.1.
+[s1_proja]   after GNG: dpa=0.985  gng=0.973
+[s1_proja]  GNG done in 92.1s  final train=0.0990  val=0.0980  dpa=0.985  gng=0.973
+[s1_proja]  ┌── params: after GNG
+[s1_proja]  │  rank 0: ||m||=43.997  ||n||=38.008  corr(m,n)=+0.850
+[s1_proja]  │  rank 1: ||m||=35.282  ||n||=49.301  corr(m,n)=+0.820
+[s1_proja]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.6639  +2.8975
+[s1_proja]  │  Wi: ||·||_F=71.992  per-channel=24.17 24.21 37.03 41.86 12.71 18.07 20.02
+[s1_proja]  └──────────────────────────────────────────────────
+[s1_proja] ────────────────────────────────────────────────────────────
+[s1_proja]  STAGE: Dual   device=cuda:1   epochs=200
+[s1_proja]  freeze recurrent cols: [0]
+[s1_proja]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s1_proja] ────────────────────────────────────────────────────────────
+[s1_proja]  data: [516, 444, 7] → [516, 444, 2]
+[s1_proja]  loss=separated  dpa_w=1.0  gng_w=1.0  aux_w=1.0  bl_w=1.0
+Epoch 005/200 | lr: 0.01000 | train: 0.8522 | val: 0.8071
+Epoch 010/200 | lr: 0.01000 | train: 0.8039 | val: 0.7013
+Epoch 015/200 | lr: 0.01000 | train: 0.7863 | val: 0.7122
+Epoch 020/200 | lr: 0.01000 | train: 0.7486 | val: 0.6448
+Epoch 025/200 | lr: 0.01000 | train: 0.7165 | val: 0.6616
+Epoch 030/200 | lr: 0.01000 | train: 0.7028 | val: 0.6370
+Epoch 035/200 | lr: 0.01000 | train: 0.6551 | val: 0.5936
+Epoch 040/200 | lr: 0.01000 | train: 0.6430 | val: 0.5805
+Epoch 045/200 | lr: 0.01000 | train: 0.6145 | val: 0.5459
+Epoch 050/200 | lr: 0.00500 | train: 0.6121 | val: 0.5339
+Epoch 055/200 | lr: 0.00500 | train: 0.6031 | val: 0.5231
+Epoch 060/200 | lr: 0.00500 | train: 0.5873 | val: 0.5266
+Epoch 065/200 | lr: 0.00500 | train: 0.5764 | val: 0.4879
+Epoch 070/200 | lr: 0.00500 | train: 0.5690 | val: 0.4755
+Epoch 075/200 | lr: 0.00500 | train: 0.5550 | val: 0.4765
+Epoch 080/200 | lr: 0.00250 | train: 0.5415 | val: 0.4679
+Epoch 085/200 | lr: 0.00250 | train: 0.5453 | val: 0.4660
+Epoch 090/200 | lr: 0.00125 | train: 0.5404 | val: 0.4562
+Epoch 095/200 | lr: 0.00063 | train: 0.5380 | val: 0.4868
+Epoch 100/200 | lr: 0.00031 | train: 0.5366 | val: 0.4684
+Epoch 105/200 | lr: 0.00031 | train: 0.5415 | val: 0.4601
+Epoch 110/200 | lr: 0.00016 | train: 0.5367 | val: 0.4792
+Epoch 115/200 | lr: 0.00008 | train: 0.5317 | val: 0.4768
+Epoch 120/200 | lr: 0.00004 | train: 0.5379 | val: 0.4981
+Epoch 125/200 | lr: 0.00002 | train: 0.5328 | val: 0.4743
+Epoch 130/200 | lr: 0.00002 | train: 0.5373 | val: 0.4582
+Epoch 135/200 | lr: 0.00001 | train: 0.5374 | val: 0.4665
+Epoch 140/200 | lr: 0.00001 | train: 0.5343 | val: 0.4704
+Epoch 145/200 | lr: 0.00001 | train: 0.5330 | val: 0.4663
+Epoch 150/200 | lr: 0.00001 | train: 0.5358 | val: 0.4807
+Epoch 155/200 | lr: 0.00001 | train: 0.5262 | val: 0.4844
+Epoch 160/200 | lr: 0.00001 | train: 0.5334 | val: 0.4782
+Epoch 165/200 | lr: 0.00001 | train: 0.5430 | val: 0.4586
+Epoch 170/200 | lr: 0.00001 | train: 0.5355 | val: 0.4824
+Epoch 175/200 | lr: 0.00001 | train: 0.5328 | val: 0.4786
+Epoch 180/200 | lr: 0.00001 | train: 0.5320 | val: 0.4740
+Epoch 185/200 | lr: 0.00001 | train: 0.5333 | val: 0.4807
+Epoch 190/200 | lr: 0.00001 | train: 0.5366 | val: 0.4783
+Epoch 195/200 | lr: 0.00001 | train: 0.5392 | val: 0.4687
+Epoch 200/200 | lr: 0.00001 | train: 0.5271 | val: 0.4500
+[s1_proja]  loss components: {'dpa': 0.1719, 'gng': 0.2871, 'baseline': 0.034, 'aux': 0.0257}
+[s1_proja]   after Dual: dpa=0.992  gng=0.990
+[s1_proja]  Dual done in 1497.1s  final train=0.5271  val=0.4500  dpa=0.992  gng=0.990
+[s1_proja]  ┌── params: after Dual
+[s1_proja]  │  rank 0: ||m||=43.997  ||n||=38.008  corr(m,n)=+0.850
+[s1_proja]  │  rank 1: ||m||=33.095  ||n||=59.824  corr(m,n)=+0.745
+[s1_proja]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.6355  +3.0228
+[s1_proja]  │  Wi: ||·||_F=71.992  per-channel=24.17 24.21 37.03 41.86 12.71 18.07 20.02
+[s1_proja]  └──────────────────────────────────────────────────
+[s1_proja] ════════════════════════════════════════════════════════════
+[s1_proja]  RUN COMPLETE  2026-06-07 15:50:56  total=2231.4s
+[s1_proja]  ACCURACY SUMMARY
+[s1_proja]    after DPA : dpa=0.998  gng=0.665
+[s1_proja]    after GNG : dpa=0.985  gng=0.973
+[s1_proja]    after Dual: dpa=0.992  gng=0.990  dual_dpa=0.993  dual_gng=0.771
+[s1_proja] ════════════════════════════════════════════════════════════

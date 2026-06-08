@@ -1,0 +1,22 @@
+[s1_nogo0_cue5]  loaded naive checkpoint: results/dual/sweep_nogo0_cue5/s1_nogo0_cue5/naive_s1_nogo0_cue5.pth
+[s1_nogo0_cue5]   after GNG (loaded): dpa=0.820  gng=0.992
+Epoch 005/200 | lr: 0.01000 | train: 0.8505 | val: 0.8768
+Epoch 010/200 | lr: 0.01000 | train: 0.7864 | val: 0.7944
+Epoch 015/200 | lr: 0.01000 | train: 0.7245 | val: 0.7881
+Epoch 020/200 | lr: 0.01000 | train: 0.6930 | val: 0.7264
+Epoch 025/200 | lr: 0.01000 | train: 0.6715 | val: 0.7184
+Epoch 030/200 | lr: 0.01000 | train: 0.6544 | val: 0.6755
+Epoch 035/200 | lr: 0.01000 | train: 0.6298 | val: 0.6686
+Epoch 040/200 | lr: 0.01000 | train: 0.6187 | val: 0.6446
+Epoch 045/200 | lr: 0.01000 | train: 0.6028 | val: 0.6265
+Epoch 050/200 | lr: 0.01000 | train: 0.5819 | val: 0.6160
+Epoch 055/200 | lr: 0.01000 | train: 0.5718 | val: 0.6037
+Epoch 060/200 | lr: 0.01000 | train: 0.5668 | val: 0.5924
+Epoch 065/200 | lr: 0.01000 | train: 0.5595 | val: 0.6112
+Epoch 070/200 | lr: 0.01000 | train: 0.5359 | val: 0.5953
+Epoch 075/200 | lr: 0.01000 | train: 0.5335 | val: 0.5712
+Epoch 080/200 | lr: 0.01000 | train: 0.5295 | val: 0.5569
+Epoch 085/200 | lr: 0.01000 | train: 0.5237 | val: 0.5544
+Epoch 090/200 | lr: 0.01000 | train: 0.5240 | val: 0.5692
+Epoch 095/200 | lr: 0.01000 | train: 0.5064 | val: 0.5438
+Epoch 100/200 | lr: 0.01000 | train: 0.5082 | val: 0.5284

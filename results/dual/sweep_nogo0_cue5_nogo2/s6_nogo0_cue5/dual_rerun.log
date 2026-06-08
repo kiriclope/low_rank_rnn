@@ -1,0 +1,45 @@
+[s6_nogo0_cue5]  loaded naive checkpoint: results/dual/sweep_nogo0_cue5/s6_nogo0_cue5/naive_s6_nogo0_cue5.pth
+[s6_nogo0_cue5]   after GNG (loaded): dpa=0.796  gng=0.997
+[s6_nogo0_cue5]  loss=separated  go_w=1.0  nogo_w=2.0
+Epoch 005/200 | lr: 0.01000 | train: 1.0934 | val: 0.9024
+Epoch 010/200 | lr: 0.01000 | train: 1.0433 | val: 0.8614
+Epoch 015/200 | lr: 0.01000 | train: 1.0044 | val: 0.8428
+Epoch 020/200 | lr: 0.01000 | train: 1.0064 | val: 0.8262
+Epoch 025/200 | lr: 0.01000 | train: 0.9897 | val: 0.8310
+Epoch 030/200 | lr: 0.01000 | train: 0.9843 | val: 0.8163
+Epoch 035/200 | lr: 0.01000 | train: 0.9674 | val: 0.8153
+Epoch 040/200 | lr: 0.01000 | train: 0.9709 | val: 0.8053
+Epoch 045/200 | lr: 0.01000 | train: 0.9337 | val: 0.7825
+Epoch 050/200 | lr: 0.01000 | train: 0.9485 | val: 0.8148
+Epoch 055/200 | lr: 0.01000 | train: 0.9198 | val: 0.7729
+Epoch 060/200 | lr: 0.01000 | train: 0.9037 | val: 0.7773
+Epoch 065/200 | lr: 0.01000 | train: 0.9062 | val: 0.7947
+Epoch 070/200 | lr: 0.01000 | train: 0.8759 | val: 0.7572
+Epoch 075/200 | lr: 0.01000 | train: 0.8592 | val: 0.7504
+Epoch 080/200 | lr: 0.01000 | train: 0.8487 | val: 0.7633
+Epoch 085/200 | lr: 0.01000 | train: 0.8351 | val: 0.7213
+Epoch 090/200 | lr: 0.01000 | train: 0.8355 | val: 0.7290
+Epoch 095/200 | lr: 0.01000 | train: 0.8045 | val: 0.7133
+Epoch 100/200 | lr: 0.01000 | train: 0.8226 | val: 0.7239
+Epoch 105/200 | lr: 0.01000 | train: 0.7887 | val: 0.6710
+Epoch 110/200 | lr: 0.01000 | train: 0.7739 | val: 0.6880
+Epoch 115/200 | lr: 0.01000 | train: 0.7648 | val: 0.6694
+Epoch 120/200 | lr: 0.01000 | train: 0.7529 | val: 0.6759
+Epoch 125/200 | lr: 0.01000 | train: 0.7262 | val: 0.6863
+Epoch 130/200 | lr: 0.01000 | train: 0.7509 | val: 0.6655
+Epoch 135/200 | lr: 0.01000 | train: 0.7115 | val: 0.6437
+Epoch 140/200 | lr: 0.01000 | train: 0.7174 | val: 0.6605
+Epoch 145/200 | lr: 0.01000 | train: 0.7237 | val: 0.6680
+Epoch 150/200 | lr: 0.01000 | train: 0.7021 | val: 0.6255
+Epoch 155/200 | lr: 0.01000 | train: 0.7052 | val: 0.6337
+Epoch 160/200 | lr: 0.01000 | train: 0.6901 | val: 0.6329
+Epoch 165/200 | lr: 0.01000 | train: 0.6653 | val: 0.6190
+Epoch 170/200 | lr: 0.01000 | train: 0.6819 | val: 0.6224
+Epoch 175/200 | lr: 0.01000 | train: 0.6579 | val: 0.6199
+Epoch 180/200 | lr: 0.01000 | train: 0.6591 | val: 0.6319
+Epoch 185/200 | lr: 0.01000 | train: 0.6611 | val: 0.6216
+Epoch 190/200 | lr: 0.01000 | train: 0.6445 | val: 0.5823
+Epoch 195/200 | lr: 0.01000 | train: 0.6395 | val: 0.6042
+Epoch 200/200 | lr: 0.01000 | train: 0.6358 | val: 0.5894
+[s6_nogo0_cue5]   after Dual: dpa=0.996  gng=0.979
+[s6_nogo0_cue5]  Dual done in 1755.8s  train=0.6358  val=0.5894  dpa=0.996  gng=0.979  dual_dpa=0.930  dual_gng=0.959

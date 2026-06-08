@@ -1,0 +1,10 @@
+pyproject.toml
+src/dynamics.py
+src/init.py
+src/models.py
+src/tasks.py
+src/train.py
+src/rnn_dual.egg-info/PKG-INFO
+src/rnn_dual.egg-info/SOURCES.txt
+src/rnn_dual.egg-info/dependency_links.txt
+src/rnn_dual.egg-info/top_level.txt

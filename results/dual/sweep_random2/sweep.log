@@ -1,0 +1,4 @@
+Sweep: 10 runs | 2 GPU(s) | 16 workers
+Results → /home/leon/results/dual/sweep_random2/results.jsonl
+
+Done: 10 succeeded, 0 failed.  Results in /home/leon/results/dual/sweep_random2/results.jsonl

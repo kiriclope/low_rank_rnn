@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import torch
+
+
+@dataclass(frozen=True)
+class TaskTiming:
+    stim_on: list[float]
+    stim_off: list[float]
+    t_steps: float
+    dt: float
+
+    @property
+    def n_stim_on(self) -> torch.Tensor:
+        return torch.tensor([int(t / self.dt) for t in self.stim_on], dtype=torch.long)
+
+    @property
+    def n_stim_off(self) -> torch.Tensor:
+        return torch.tensor([int(t / self.dt) for t in self.stim_off], dtype=torch.long)
+
+    @property
+    def n_steps(self) -> int:
+        return int(self.t_steps / self.dt)
+
+    @property
+    def x_time(self) -> np.ndarray:
+        return np.linspace(0, (self.n_steps - 1) * self.dt, self.n_steps)
+
+
+def generate_dpa_trials(
+    n_trials: int,
+    timing: TaskTiming,
+    input_size: int = 8,
+    target_rank: int = 1,
+    noise: float = 0.1,
+    baseline_value: float = 0.5,
+):
+    n_steps = timing.n_steps
+    n_on = timing.n_stim_on
+    n_off = timing.n_stim_off
+
+    inputs = noise * torch.randn(n_trials, n_steps, input_size)
+    targets = torch.zeros(n_trials, n_steps, target_rank)
+
+    idx_A = torch.rand(n_trials) > 0.5
+    idx_B = ~idx_A
+    idx_C = torch.rand(n_trials) > 0.5
+    idx_D = ~idx_C
+
+    inputs[idx_A, n_on[0]:n_off[0], 0] += 1.0
+    inputs[idx_B, n_on[0]:n_off[0], 1] += 1.0
+    inputs[idx_C, n_on[1]:n_off[1], 2] += 1.0
+    inputs[idx_D, n_on[1]:n_off[1], 3] += 1.0
+
+    if input_size == 9:
+        inputs[:, n_on[0]:, -2] += 1.0
+
+    idx_pair = (idx_A & idx_C) | (idx_B & idx_D)
+
+    if target_rank > 1:
+        targets[idx_A, n_on[0]:, 0] = 1.0
+        targets[idx_B, n_on[0]:, 0] = -1.0
+        targets[:, :n_on[0]] = 0.0
+        targets[:, n_on[0]:n_off[0], 0] = torch.nan
+        targets[:, n_on[1]:, 0] = torch.nan
+        baseline_value = None
+
+    if baseline_value is not None:
+        targets[:, :n_on[0]] = baseline_value
+
+    targets[idx_pair,  n_on[1]:, -1] = 1.0
+    targets[~idx_pair, n_on[1]:, -1] = -1.0
+    targets[:, n_on[1]:n_off[1], -1] = torch.nan
+
+    return inputs, targets
+
+
+def generate_gng_trials(
+    n_trials: int,
+    timing: TaskTiming,
+    input_size: int = 8,
+    target_rank: int = 1,
+    noise: float = 0.1,
+    baseline_value: float = 0.0,
+    cue_on_go_input: bool = False,
+    cue_scale: float = 1.0,
+    nogo_target: float = 0.0,
+    go_on_rwd_input: bool = False,
+):
+    n_steps = timing.n_steps
+    n_on = timing.n_stim_on
+    n_off = timing.n_stim_off
+
+    inputs = noise * torch.randn(n_trials, n_steps, input_size)
+    targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
+
+    idx_go   = torch.rand(n_trials) > 0.5
+    idx_nogo = ~idx_go
+
+    if go_on_rwd_input:
+        go_ch, ngo_ch = input_size - 1, 4
+        inputs[idx_go,   n_on[0]:n_off[0], go_ch]  += 1.0
+        inputs[idx_nogo, n_on[0]:n_off[0], ngo_ch] += 1.0
+        inputs[:, n_on[1]:n_off[1], go_ch] += cue_scale
+    else:
+        inputs[idx_go,   n_on[0]:n_off[0], 4] += 1.0
+        inputs[idx_nogo, n_on[0]:n_off[0], 5] += 1.0
+        if cue_on_go_input:
+            inputs[:, n_on[1]:n_off[1], 4] += cue_scale
+        else:
+            inputs[:, n_on[1]:n_off[1], 6] += cue_scale
+
+    if target_rank == 2:
+        targets[:, :n_on[0], 0] = 0.0
+        baseline_value = None
+
+    if baseline_value is not None:
+        targets[:, :n_on[0]] = baseline_value
+
+    targets[:, n_on[0]:, -1] = torch.nan
+
+    # memory
+    targets[idx_go,   n_off[0]:n_on[1], -1] = 1.0
+    targets[idx_nogo, n_off[0]:n_on[1], -1] = -1.0
+
+    # after cue
+    targets[idx_go,   n_off[1]:, -1] = 1.0
+    targets[idx_nogo, n_off[1]:, -1] = nogo_target
+
+    return inputs, targets
+
+
+def generate_dual_trials(
+    n_trials: int,
+    timing: TaskTiming,
+    input_size: int = 8,
+    target_rank: int = 1,
+    noise: float = 0.1,
+    baseline_value: float = 0.5,
+    cue_on_go_input: bool = False,
+    cue_scale: float = 1.0,
+    nogo_target: float = 0.0,
+    go_on_rwd_input: bool = False,
+):
+    n_steps = timing.n_steps
+    n_on = timing.n_stim_on
+    n_off = timing.n_stim_off
+
+    specs = [
+        (sample, gng, test)
+        for sample in ["A", "B"]
+        for gng in ["none", "go", "nogo"]
+        for test in ["C", "D"]
+    ]
+
+    n_types = len(specs)
+    reps = int(np.ceil(n_trials / n_types))
+    trial_type = torch.arange(n_types).repeat(reps)[:n_trials]
+    trial_type = trial_type[torch.randperm(n_trials)]
+
+    sample_code = torch.tensor([0 if s == "A" else 1 for s, _, _ in specs], dtype=torch.long)
+    gng_code    = torch.tensor([0 if g == "none" else 1 if g == "go" else 2 for _, g, _ in specs], dtype=torch.long)
+    test_code   = torch.tensor([0 if t == "C" else 1 for _, _, t in specs], dtype=torch.long)
+
+    sample = sample_code[trial_type]
+    gng    = gng_code[trial_type]
+    test   = test_code[trial_type]
+
+    idx_A    = sample == 0
+    idx_B    = sample == 1
+    idx_C    = test == 0
+    idx_D    = test == 1
+    idx_go   = gng == 1
+    idx_nogo = gng == 2
+    idx_gng  = idx_go | idx_nogo
+
+    inputs  = noise * torch.randn(n_trials, n_steps, input_size)
+    targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
+
+    inputs[idx_A,    n_on[0]:n_off[0], 0] += 1.0
+    inputs[idx_B,    n_on[0]:n_off[0], 1] += 1.0
+
+    if go_on_rwd_input:
+        go_ch, ngo_ch = input_size - 1, 4
+        inputs[idx_go,   n_on[1]:n_off[1], go_ch]  += 1.0
+        inputs[idx_nogo, n_on[1]:n_off[1], ngo_ch] += 1.0
+        inputs[idx_gng,  n_on[2]:n_off[2], go_ch]  += cue_scale
+    else:
+        inputs[idx_go,   n_on[1]:n_off[1], 4] += 1.0
+        inputs[idx_nogo, n_on[1]:n_off[1], 5] += 1.0
+        if cue_on_go_input:
+            inputs[idx_gng, n_on[2]:n_off[2], 4] += cue_scale
+        else:
+            inputs[idx_gng, n_on[2]:n_off[2], 6] += cue_scale
+
+    inputs[idx_C,    n_on[3]:n_off[3], 2] += 1.0
+    inputs[idx_D,    n_on[3]:n_off[3], 3] += 1.0
+
+    if target_rank > 1:
+        targets[:, :n_on[0]] = 0.0
+        baseline_value = None
+
+    if baseline_value is not None:
+        targets[:, :n_on[0]] = baseline_value
+
+    idx_pair = (idx_A & idx_C) | (idx_B & idx_D)
+    targets[idx_pair,  n_off[3]:, -1] = 1.0
+    targets[~idx_pair, n_off[3]:, -1] = -1.0
+
+    # # memory
+    # targets[idx_go,   n_off[1]:n_on[2], -1] = 1.0
+    # targets[idx_nogo, n_off[1]:n_on[2], -1] = -1.0
+
+    # after cue
+    targets[idx_go,   n_off[2]:n_on[3], -1] = 1.0
+    targets[idx_nogo, n_off[2]:n_on[3], -1] = nogo_target
+
+    condition_names = np.array([
+        f"{s}_{g}_{t}" if g != "none" else f"{s}_{t}"
+        for s, g, t in specs
+    ])[trial_type.numpy()]
+
+    return inputs, targets, trial_type, condition_names
