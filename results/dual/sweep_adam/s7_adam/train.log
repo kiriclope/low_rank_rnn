@@ -1,0 +1,96 @@
+[s7_adam] ════════════════════════════════════════════════════════════
+[s7_adam]  RUN START  2026-06-08 22:53:12
+[s7_adam]  run_id=s7_adam  seed=7  device=cuda:1
+[s7_adam]  arch:  hidden=512  rank=2  gain=1.0  input_size=7  params=6,144
+[s7_adam]  task:  cue_on_go=True  rwd=True  rwd_scale=1.0  freeze_input_stages=['gng', 'dual']  init=random
+[s7_adam]  dynamics: alpha=0.0750  alpha_rec=0.1000  dt=0.0225  tau=0.3  tau_rec_frac=0.75
+[s7_adam]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.0000 (×0.0)
+[s7_adam]  optim:  lr=0.01  wd=0.01  batch=64  n_batch=516  clip=None
+[s7_adam]  epochs: dpa=100  gng=100  dual=100  loss=separated
+[s7_adam]  shapes: m[512, 2]  n[512, 2]  Wi[512, 7]
+[s7_adam]  ┌── params: init
+[s7_adam]  │  rank 0: ||m||=23.340  ||n||=23.513  corr(m,n)=-0.046
+[s7_adam]  │  rank 1: ||m||=23.236  ||n||=22.508  corr(m,n)=-0.042
+[s7_adam]  │  κ-Jacobian eigvals (gain·n^Tm/N): -0.0464+0.0483j  -0.0464-0.0483j
+[s7_adam]  │  Wi: ||·||_F=60.688  per-channel=22.83 22.36 23.30 23.06 23.69 22.16 23.12
+[s7_adam]  └──────────────────────────────────────────────────
+[s7_adam]  DPA: loading checkpoint from results/dual/sweep_frzGNG/s7_frzGNG/dpa_s7_frzGNG.pth
+[s7_adam]   after DPA: dpa=0.993 (pair=0.994 unpair=0.992)  gng=0.427 (go=0.179 nogo=0.660)
+[s7_adam]  DPA done in 1.2s  (checkpoint)  dpa=0.993  gng=0.427
+[s7_adam]  ┌── params: after DPA
+[s7_adam]  │  rank 0: ||m||=37.167  ||n||=39.518  corr(m,n)=+0.831
+[s7_adam]  │  rank 1: ||m||=33.957  ||n||=51.420  corr(m,n)=+0.799
+[s7_adam]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.3054  +2.8014
+[s7_adam]  │  Wi: ||·||_F=66.631  per-channel=20.57 21.58 34.41 34.54 23.69 22.16 11.03
+[s7_adam]  └──────────────────────────────────────────────────
+[s7_adam] ────────────────────────────────────────────────────────────
+[s7_adam]  STAGE: GNG   device=cuda:1   epochs=100
+[s7_adam]  freeze recurrent cols: [0]
+[s7_adam]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s7_adam] ────────────────────────────────────────────────────────────
+[s7_adam]  data: [516, 266, 7] → [516, 266, 2]
+Epoch 005/100 | lr: 0.01000 | train: 1.1045 | val: 0.9581
+Epoch 010/100 | lr: 0.01000 | train: 0.5378 | val: 0.4930
+Epoch 015/100 | lr: 0.01000 | train: 0.3896 | val: 0.3630
+Epoch 020/100 | lr: 0.01000 | train: 0.2954 | val: 0.2981
+Epoch 025/100 | lr: 0.01000 | train: 0.2449 | val: 0.2490
+Epoch 030/100 | lr: 0.01000 | train: 0.2147 | val: 0.2158
+Epoch 035/100 | lr: 0.01000 | train: 0.1847 | val: 0.1926
+Epoch 040/100 | lr: 0.01000 | train: 0.1654 | val: 0.1682
+Epoch 045/100 | lr: 0.01000 | train: 0.1472 | val: 0.1487
+Epoch 050/100 | lr: 0.01000 | train: 0.1335 | val: 0.1342
+Epoch 055/100 | lr: 0.01000 | train: 0.1202 | val: 0.1256
+Epoch 060/100 | lr: 0.01000 | train: 0.1091 | val: 0.1128
+Epoch 065/100 | lr: 0.01000 | train: 0.1017 | val: 0.1022
+Stopping: losses below 0.1.
+[s7_adam]   after GNG: dpa=0.950 (pair=0.900 unpair=0.998)  gng=0.998 (go=1.000 nogo=0.996)
+[s7_adam]  GNG done in 300.5s  final train=0.0956  val=0.0971  dpa=0.950  gng=0.998
+[s7_adam]  ┌── params: after GNG
+[s7_adam]  │  rank 0: ||m||=37.167  ||n||=39.518  corr(m,n)=+0.831
+[s7_adam]  │  rank 1: ||m||=35.299  ||n||=56.134  corr(m,n)=+0.689
+[s7_adam]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.3054  +2.7424
+[s7_adam]  │  Wi: ||·||_F=66.631  per-channel=20.57 21.58 34.41 34.54 23.69 22.16 11.03
+[s7_adam]  └──────────────────────────────────────────────────
+[s7_adam] ────────────────────────────────────────────────────────────
+[s7_adam]  STAGE: Dual   device=cuda:1   epochs=100
+[s7_adam]  freeze recurrent cols: [0]
+[s7_adam]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s7_adam] ────────────────────────────────────────────────────────────
+[s7_adam]  data: [516, 444, 7] → [516, 444, 2]
+[s7_adam]  loss=separated  dpa_w=1.0  gng_w=1.0  go_w=1.0  nogo_w=2.0  aux_w=1.0  bl_w=1.0  go_hinge=1.0
+Epoch 005/100 | lr: 0.01000 | train: 0.6658 | val: 0.7258
+Epoch 010/100 | lr: 0.01000 | train: 0.6052 | val: 0.6838
+Epoch 015/100 | lr: 0.01000 | train: 0.5641 | val: 0.6602
+Epoch 020/100 | lr: 0.01000 | train: 0.5332 | val: 0.6165
+Epoch 025/100 | lr: 0.01000 | train: 0.4981 | val: 0.5945
+Epoch 030/100 | lr: 0.01000 | train: 0.4565 | val: 0.5580
+Epoch 035/100 | lr: 0.01000 | train: 0.4319 | val: 0.5281
+Epoch 040/100 | lr: 0.01000 | train: 0.3936 | val: 0.5006
+Epoch 045/100 | lr: 0.01000 | train: 0.3710 | val: 0.4778
+Epoch 050/100 | lr: 0.01000 | train: 0.3511 | val: 0.4380
+Epoch 055/100 | lr: 0.01000 | train: 0.3356 | val: 0.4190
+Epoch 060/100 | lr: 0.01000 | train: 0.3099 | val: 0.4033
+Epoch 065/100 | lr: 0.01000 | train: 0.2999 | val: 0.3758
+Epoch 070/100 | lr: 0.01000 | train: 0.2807 | val: 0.3577
+Epoch 075/100 | lr: 0.01000 | train: 0.2652 | val: 0.3643
+Epoch 080/100 | lr: 0.01000 | train: 0.2555 | val: 0.3286
+Epoch 085/100 | lr: 0.01000 | train: 0.2420 | val: 0.3162
+Epoch 090/100 | lr: 0.01000 | train: 0.2296 | val: 0.3084
+Epoch 095/100 | lr: 0.01000 | train: 0.2271 | val: 0.2782
+Epoch 100/100 | lr: 0.01000 | train: 0.2164 | val: 0.2736
+[s7_adam]  loss components: {'dpa': 0.1448, 'gng': 0.0554, 'gng_go': 0.038, 'gng_nogo': 0.0087, 'baseline': 0.0087, 'aux': 0.011}
+[s7_adam]   after Dual: dpa=1.000 (pair=1.000 unpair=1.000)  gng=1.000 (go=1.000 nogo=1.000)
+[s7_adam]  Dual done in 709.9s  final train=0.2164  val=0.2736  dpa=1.000  gng=1.000
+[s7_adam]  ┌── params: after Dual
+[s7_adam]  │  rank 0: ||m||=37.167  ||n||=39.518  corr(m,n)=+0.831
+[s7_adam]  │  rank 1: ||m||=32.408  ||n||=75.636  corr(m,n)=+0.564
+[s7_adam]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.3172  +2.7674
+[s7_adam]  │  Wi: ||·||_F=66.631  per-channel=20.57 21.58 34.41 34.54 23.69 22.16 11.03
+[s7_adam]  └──────────────────────────────────────────────────
+[s7_adam] ════════════════════════════════════════════════════════════
+[s7_adam]  RUN COMPLETE  2026-06-08 23:10:04  total=1013.3s
+[s7_adam]  ACCURACY SUMMARY
+[s7_adam]    after DPA : dpa=0.993  gng=0.427
+[s7_adam]    after GNG : dpa=0.950  gng=0.998
+[s7_adam]    after Dual: dpa=1.000  gng=1.000  dual_dpa=0.983  dual_gng=0.990
+[s7_adam] ════════════════════════════════════════════════════════════

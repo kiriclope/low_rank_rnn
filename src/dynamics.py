@@ -6,6 +6,7 @@ from typing import Optional
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+import scipy.special
 from scipy.optimize import root
 
 from .tasks import TaskTiming
@@ -67,14 +68,42 @@ def low_rank_numpy_params(model):
         else float(model.gain) if hasattr(model, "gain") else 1.0
     )
 
+    nl_str = getattr(model, "nonlinearity_str", "tanh")
+    if nl_str == "relu":
+        phi_np       = lambda u: np.maximum(u, 0.0)
+        phi_prime_np = lambda u: (u > 0).astype(np.float64)
+    elif nl_str == "softplus":
+        # numerically stable: softplus(u) = u for u>>0, log1p(exp(u)) otherwise
+        phi_np       = lambda u: np.where(u > 20.0, u, np.log1p(np.exp(np.minimum(u, 20.0))))
+        phi_prime_np = lambda u: 1.0 / (1.0 + np.exp(-np.clip(u, -20.0, 20.0)))
+    elif nl_str == "erf":
+        _2_sqrt_pi   = 2.0 / np.sqrt(np.pi)
+        phi_np       = scipy.special.erf
+        phi_prime_np = lambda u: _2_sqrt_pi * np.exp(-np.clip(u, -20.0, 20.0) ** 2)
+    elif nl_str == "elu":
+        # ELU: x for x>0, exp(x)-1 for x<=0 (alpha=1); φ'= 1 for x>0, exp(x) for x<=0
+        phi_np       = lambda u: np.where(u > 0, u, np.exp(np.minimum(u, 0.0)) - 1.0)
+        phi_prime_np = lambda u: np.where(u > 0, 1.0, np.exp(np.minimum(u, 0.0)))
+    elif nl_str == "lif":
+        # Brunel erfc approximation: Gaussian CDF, φ ∈ [0,1], φ'(0) = 1/sqrt(2π) ≈ 0.399
+        _sqrt2    = np.sqrt(2.0)
+        _sqrt2pi  = np.sqrt(2.0 * np.pi)
+        phi_np       = lambda u: 0.5 * (1.0 + scipy.special.erf(u / _sqrt2))
+        phi_prime_np = lambda u: np.exp(-np.clip(u, -20.0, 20.0) ** 2 / 2.0) / _sqrt2pi
+    else:  # tanh (default)
+        phi_np       = np.tanh
+        phi_prime_np = lambda u: 1.0 - np.tanh(u) ** 2
+
     return {
-        "M":    model.m.detach().cpu().numpy().astype(np.float64),
-        "Nvec": n_eff.detach().cpu().numpy().astype(np.float64),
-        "Wi":   model.wi.weight.detach().cpu().numpy().astype(np.float64),
-        "bi":   model.wi.bias.detach().cpu().numpy().astype(np.float64),
-        "Ai":   Ai,
-        "gain": gain,
-        "beta": 1.0 - np.exp(-alpha),
+        "M":         model.m.detach().cpu().numpy().astype(np.float64),
+        "Nvec":      n_eff.detach().cpu().numpy().astype(np.float64),
+        "Wi":        model.wi.weight.detach().cpu().numpy().astype(np.float64),
+        "bi":        model.wi.bias.detach().cpu().numpy().astype(np.float64),
+        "Ai":        Ai,
+        "gain":      gain,
+        "beta":      1.0 - np.exp(-alpha),
+        "phi":       phi_np,
+        "phi_prime": phi_prime_np,
     }
 
 
@@ -102,9 +131,10 @@ def low_rank_field_np(params, kappa, ff_input=None, include_beta=False):
         else np.asarray(ff_input, dtype=np.float64)
     )
 
+    phi = params.get("phi", np.tanh)
     input_drive = Ai * (ff_input @ Wi.T + bi)
     h   = kappa_flat @ M.T
-    r   = np.tanh(gain * (input_drive[None, :] + h))
+    r   = phi(gain * (input_drive[None, :] + h))
     psi = r @ Nvec / M.shape[0]
 
     field = psi - kappa_flat
@@ -125,9 +155,10 @@ def low_rank_jacobian_flow_np(params, kappa, ff_input=None):
         else np.asarray(ff_input, dtype=np.float64)
     )
 
+    phi_prime_fn = params.get("phi_prime", lambda u: 1.0 - np.tanh(u) ** 2)
     input_drive = Ai * (ff_input @ Wi.T + bi)
     u           = gain * (input_drive + M @ kappa)
-    phi_prime   = 1.0 - np.tanh(u) ** 2
+    phi_prime   = phi_prime_fn(u)
 
     J  = Nvec.T @ (phi_prime[:, None] * (gain * M)) / M.shape[0]
     J -= np.eye(M.shape[1])
@@ -599,6 +630,7 @@ def plot_task_flow_fields(
     figsize_per_panel=4.2, input_threshold=0.35, inactive_atol=0.35,
     show_single_trials=False, max_single_trials=12, max_autonomous_conditions=None,
     cue_on_go_input=False,
+    use_sim_field=False, sim_n_warmup=0,
 ):
     """Generic low-rank phase portrait for DPA, GNG, and Dual tasks."""
     task = task.lower()
@@ -642,18 +674,36 @@ def plot_task_flow_fields(
 
     colors = _condition_colors(cond_idx.keys())
 
+    sim_scattered = use_sim_field and sim_n_warmup > 0   # quiver vs streamplot
+
     caches, all_speeds = [], []
     for spec in specs:
         ff_input = make_input(input_size, active_dims=spec["dims"], value=1.0, device=device, dtype=dtype)
-        K1, K2, U, V, speed, params, ff_input_np = make_vector_field_grid(
-            model, ff_input=ff_input, xlim=xlim, ylim=ylim, n_grid=n_grid,
-            include_beta=include_beta_in_field,
-        )
-        fixed_points, fixed_residuals = find_all_fixed_points(
-            model, xlim=xlim, ylim=ylim, ff_input=ff_input,
-            n_seeds=n_fp_seeds, residual_tol=1e-8, merge_tol=5e-2,
-        )
-        fp_labels, fp_eigvals = classify_fixed_points(model, fixed_points, ff_input=ff_input)
+
+        if use_sim_field:
+            K1, K2, U, V, speed = sim_kappa_field(
+                model, ff_input, xlim=xlim, ylim=ylim, n_grid=n_grid,
+                n_warmup=sim_n_warmup,
+            )
+            fixed_points, fixed_residuals = find_sim_fixed_points(
+                model, ff_input, xlim=xlim, ylim=ylim,
+                n_seeds=n_fp_seeds, n_warmup=sim_n_warmup,
+                residual_tol=1e-5, merge_tol=5e-2,
+            )
+            fp_labels, fp_eigvals = classify_sim_fixed_points(
+                model, fixed_points, ff_input, n_warmup=sim_n_warmup,
+            )
+        else:
+            K1, K2, U, V, speed, params, ff_input_np = make_vector_field_grid(
+                model, ff_input=ff_input, xlim=xlim, ylim=ylim, n_grid=n_grid,
+                include_beta=include_beta_in_field,
+            )
+            fixed_points, fixed_residuals = find_all_fixed_points(
+                model, xlim=xlim, ylim=ylim, ff_input=ff_input,
+                n_seeds=n_fp_seeds, residual_tol=1e-8, merge_tol=5e-2,
+            )
+            fp_labels, fp_eigvals = classify_fixed_points(model, fixed_points, ff_input=ff_input)
+
         panel_mask = _canonical_input_mask(
             effective_x, dims=spec["dims"], threshold=input_threshold, atol_inactive=inactive_atol
         )
@@ -692,8 +742,13 @@ def plot_task_flow_fields(
 
         last_hm = ax.pcolormesh(K1, K2, speed, shading="auto", cmap="magma",
                                 vmax=speed_vmax, rasterized=True, zorder=0)
-        ax.streamplot(K1[0, :], K2[:, 0], U, V, color="white", density=1.05,
-                      linewidth=0.70, arrowsize=0.80, zorder=2)
+        if sim_scattered:
+            # Warmed-up sim field: K1/K2 are scattered → quiver
+            ax.quiver(K1, K2, U, V, color="white", alpha=0.7,
+                      scale=None, scale_units="xy", angles="xy", zorder=2)
+        else:
+            ax.streamplot(K1[0, :], K2[:, 0], U, V, color="white", density=1.05,
+                          linewidth=0.70, arrowsize=0.80, zorder=2)
 
         for label, marker in [("attractor","o"),("saddle","x"),("repeller","^"),("nonhyperbolic","D")]:
             if len(cache["fp_labels"]) == 0: continue
@@ -755,8 +810,12 @@ def plot_task_flow_fields(
     axes[0].legend(unique.values(), unique.keys(), frameon=False, fontsize=7, loc="best", handlelength=1.1)
 
     cbar = fig.colorbar(last_hm, cax=cax)
-    cbar.set_label(r"$\beta\|\Psi(\kappa;x)-\kappa\|$" if include_beta_in_field
-                   else r"$\|\Psi(\kappa;x)-\kappa\|$")
+    if use_sim_field:
+        cbar.set_label(r"$\|\Delta\kappa\|$ (simulation)")
+    elif include_beta_in_field:
+        cbar.set_label(r"$\beta\|\Psi(\kappa;x)-\kappa\|$")
+    else:
+        cbar.set_label(r"$\|\Psi(\kappa;x)-\kappa\|$")
     fig.suptitle(f"{task.upper()} low-rank dynamics: autonomous and frozen-input fields", y=0.965)
     fig.set_layout_engine("none")
 
@@ -767,6 +826,170 @@ def plot_task_flow_fields(
         "condition_indices": cond_idx, "condition_meta": meta,
         "panel_specs": specs, "caches": caches,
     }
+
+
+# ---------------------------------------------------------------------------
+# Simulation-based κ-plane flow field  (exact: includes W_fixed, full dynamics)
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def sim_kappa_field(model, ff_input, xlim, ylim, n_grid=61, n_warmup=0, device=None):
+    """
+    Simulation-based κ-plane flow field.
+
+    Initializes G = n_grid² states from a (κ₀, κ₁) grid using the adiabatic
+    approximation (rates = tanh(gain·(Wi·x + M·κ)), h = M·κ), runs n_warmup
+    steps of the actual model (including W_fixed), then records one additional
+    Δκ step.
+
+    n_warmup=0 (default): field is measured at the exact grid κ values →
+        K0, K1 form a regular grid, compatible with matplotlib streamplot.
+    n_warmup>0: states are allowed to drift before measurement →
+        K0, K1 are scattered; use quiver for visualization.
+
+    Returns
+    -------
+    K0, K1 : ndarray (n_grid, n_grid)  κ₀ / κ₁ origin of each arrow.
+    U, V   : ndarray (n_grid, n_grid)  Δκ₀ / Δκ₁.
+    speed  : ndarray (n_grid, n_grid)  ‖Δκ‖.
+    """
+    if device is None:
+        device = _model_device(model)
+    dtype = _model_dtype(model)
+    model.eval()
+
+    ff       = torch.as_tensor(ff_input, device=device, dtype=dtype)
+    N, m, n  = model.hidden_size, model.m.detach(), model.n.detach()
+
+    k0v = torch.linspace(xlim[0], xlim[1], n_grid, device=device, dtype=dtype)
+    k1v = torch.linspace(ylim[0], ylim[1], n_grid, device=device, dtype=dtype)
+    K0g, K1g = torch.meshgrid(k0v, k1v, indexing="xy")           # (n_grid, n_grid)
+    kappa_grid = torch.stack([K0g.reshape(-1), K1g.reshape(-1)], dim=-1)  # (G, 2)
+    G          = kappa_grid.shape[0]
+
+    ff_batch = ff.unsqueeze(0).expand(G, -1)                      # (G, input_size)
+
+    # Adiabatic init: h = M·κ,  rates = tanh(gain·(Wi·x + h))
+    h = kappa_grid @ m.T                                          # (G, N)
+    if model.wi is not None:
+        input_drive = model.Ai * model.wi(ff_batch)              # (G, N)
+    else:
+        input_drive = torch.zeros(G, N, device=device, dtype=dtype)
+    rates = model.nonlinearity(model.gain * (input_drive + h))
+
+    for _ in range(n_warmup):
+        rates, h = model.update_dynamics(ff_batch, h, rates)
+
+    kappa_base    = rates @ n / N                                  # (G, 2)
+    rates_next, _ = model.update_dynamics(ff_batch, h, rates)
+    kappa_next    = rates_next @ n / N                             # (G, 2)
+
+    if n_warmup == 0:
+        # Keep arrows anchored at exact grid points (streamplot-compatible).
+        # Δκ = one simulation step from the analytically-initialized state,
+        # reported relative to the grid origin.
+        origin      = kappa_grid
+        delta_kappa = kappa_next - origin
+    else:
+        # Warmup let the state drift; report Δκ from wherever it settled.
+        origin      = kappa_base
+        delta_kappa = kappa_next - kappa_base
+
+    K0    = origin[:, 0].reshape(n_grid, n_grid).cpu().numpy()
+    K1    = origin[:, 1].reshape(n_grid, n_grid).cpu().numpy()
+    U     = delta_kappa[:, 0].reshape(n_grid, n_grid).cpu().numpy()
+    V     = delta_kappa[:, 1].reshape(n_grid, n_grid).cpu().numpy()
+    speed = np.sqrt(U**2 + V**2)
+    return K0, K1, U, V, speed
+
+
+@torch.no_grad()
+def _sim_step_single(model, ff_input, kappa_np, n_warmup=0):
+    """One-step sim map for a single κ point. Returns Δκ as a float64 array."""
+    device  = _model_device(model)
+    dtype   = _model_dtype(model)
+    ff      = torch.as_tensor(ff_input, device=device, dtype=dtype).unsqueeze(0)
+    N, m, n = model.hidden_size, model.m.detach(), model.n.detach()
+
+    kappa = torch.as_tensor(kappa_np, device=device, dtype=dtype).unsqueeze(0)
+    h     = kappa @ m.T
+    if model.wi is not None:
+        input_drive = model.Ai * model.wi(ff)
+    else:
+        input_drive = torch.zeros(1, N, device=device, dtype=dtype)
+    rates = model.nonlinearity(model.gain * (input_drive + h))
+
+    for _ in range(n_warmup):
+        rates, h = model.update_dynamics(ff, h, rates)
+
+    kappa_base    = rates @ n / N
+    rates_next, _ = model.update_dynamics(ff, h, rates)
+    return (rates_next @ n / N - kappa_base).cpu().numpy()[0].astype(np.float64)
+
+
+def find_sim_fixed_points(model, ff_input, xlim, ylim, n_seeds=21, n_warmup=0,
+                           residual_tol=1e-5, merge_tol=5e-2):
+    """
+    Find fixed points of the simulation-based one-step map via scipy.optimize.root.
+
+    Identical API to find_all_fixed_points but uses the actual model (including
+    W_fixed) instead of the analytical κ-plane equation. Numerical Jacobian is
+    used (no analytic Jacobian available for the sim path).
+    """
+    def f(kappa_np):
+        return _sim_step_single(model, ff_input, kappa_np, n_warmup=n_warmup)
+
+    roots, residuals = [], []
+    for k0 in np.linspace(xlim[0], xlim[1], n_seeds):
+        for k1 in np.linspace(ylim[0], ylim[1], n_seeds):
+            sol = root(f, np.array([k0, k1], dtype=np.float64),
+                       method="hybr", options={"xtol": 1e-12, "maxfev": 2000})
+            if not sol.success:
+                continue
+            fp    = sol.x
+            resid = float(np.linalg.norm(f(fp)))
+            in_bounds = (xlim[0] <= fp[0] <= xlim[1] and ylim[0] <= fp[1] <= ylim[1])
+            if resid <= residual_tol and in_bounds:
+                roots.append(fp)
+                residuals.append(resid)
+
+    return merge_roots(roots, np.asarray(residuals), merge_tol)
+
+
+def classify_sim_fixed_points(model, fixed_points, ff_input, n_warmup=0,
+                               eig_tol=1e-5, eps=1e-4):
+    """
+    Classify fixed points using a numerical Jacobian of the simulation-based map.
+
+    Same return convention as classify_fixed_points: (labels, eigvals).
+    """
+    labels, eigvals = [], []
+    for fp in fixed_points:
+        J = np.zeros((2, 2), dtype=np.float64)
+        for j in range(2):
+            step       = np.zeros(2, dtype=np.float64)
+            step[j]    = eps
+            fp_plus    = _sim_step_single(model, ff_input, fp + step, n_warmup)
+            fp_minus   = _sim_step_single(model, ff_input, fp - step, n_warmup)
+            J[:, j]    = (fp_plus - fp_minus) / (2.0 * eps)
+
+        J_map = np.eye(2) + J
+        ev    = np.linalg.eigvals(J_map)
+        rad   = np.abs(ev)
+
+        n_stable   = np.sum(rad < 1.0 - eig_tol)
+        n_unstable = np.sum(rad > 1.0 + eig_tol)
+        if n_stable == len(rad):      label = "attractor"
+        elif n_unstable == len(rad):  label = "repeller"
+        elif n_stable > 0:            label = "saddle"
+        else:                         label = "nonhyperbolic"
+
+        labels.append(label)
+        eigvals.append(ev)
+
+    if not eigvals:
+        return np.asarray([], dtype=object), np.empty((0, 2), dtype=np.complex128)
+    return np.asarray(labels, dtype=object), np.stack(eigvals)
 
 
 # ---------------------------------------------------------------------------
@@ -815,7 +1038,7 @@ def rank2_kappa_delta_torch(model, x_t, kappa, q_slice="same"):
     else:
         input_drive = 0.0
 
-    phi        = torch.tanh(model.gain * (input_drive + q_next @ m.T))
+    phi        = model.nonlinearity(model.gain * (input_drive + q_next @ m.T))
     F          = phi @ n / N
     kappa_next = beta_r * kappa + (1.0 - beta_r) * F
     return kappa_next - kappa

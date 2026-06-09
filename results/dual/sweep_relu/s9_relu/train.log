@@ -1,0 +1,99 @@
+[s9_relu] ════════════════════════════════════════════════════════════
+[s9_relu]  RUN START  2026-06-09 04:21:00
+[s9_relu]  run_id=s9_relu  seed=9  device=cuda:1
+[s9_relu]  arch:  hidden=512  rank=2  gain=1.0  input_size=7  params=6,144
+[s9_relu]  task:  cue_on_go=True  rwd=True  rwd_scale=1.0  freeze_input_stages=['gng', 'dual']  init=random
+[s9_relu]  dynamics: alpha=0.0750  alpha_rec=0.1000  dt=0.0225  tau=0.3  tau_rec_frac=0.75
+[s9_relu]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.0000 (×0.0)
+[s9_relu]  optim:  lr=0.01  wd=0.01  batch=64  n_batch=516  clip=None
+[s9_relu]  epochs: dpa=100  gng=100  dual=100  loss=separated
+[s9_relu]  shapes: m[512, 2]  n[512, 2]  Wi[512, 7]
+[s9_relu]  ┌── params: init
+[s9_relu]  │  rank 0: ||m||=23.029  ||n||=22.465  corr(m,n)=+0.028
+[s9_relu]  │  rank 1: ||m||=22.407  ||n||=23.814  corr(m,n)=+0.019
+[s9_relu]  │  κ-Jacobian eigvals (gain·n^Tm/N): +0.0303  +0.0176
+[s9_relu]  │  Wi: ||·||_F=60.662  per-channel=22.99 23.55 22.57 23.32 22.36 21.71 23.91
+[s9_relu]  └──────────────────────────────────────────────────
+[s9_relu] ────────────────────────────────────────────────────────────
+[s9_relu]  STAGE: DPA   device=cuda:1   epochs=100
+[s9_relu]  freeze input dims:     [4, 5]
+[s9_relu] ────────────────────────────────────────────────────────────
+[s9_relu]  data: [516, 444, 7] → [516, 444, 2]
+Epoch 005/100 | lr: 0.01000 | train: 1.9796 | val: 1.9723
+Epoch 010/100 | lr: 0.01000 | train: 1.8484 | val: 1.7726
+Epoch 015/100 | lr: 0.01000 | train: 1.0380 | val: 0.9988
+Epoch 020/100 | lr: 0.01000 | train: 0.8691 | val: 0.8256
+Epoch 025/100 | lr: 0.01000 | train: 0.4858 | val: 0.4555
+Epoch 030/100 | lr: 0.01000 | train: 0.1693 | val: 0.1741
+Stopping: losses below 0.1.
+[s9_relu]   after DPA: dpa=1.000 (pair=1.000 unpair=1.000)  gng=0.528 (go=0.000 nogo=1.000)
+[s9_relu]  DPA done in 775.8s  final train=0.0866  val=0.0943  dpa=1.000  gng=0.528
+[s9_relu]  ┌── params: after DPA
+[s9_relu]  │  rank 0: ||m||=38.800  ||n||=29.583  corr(m,n)=+0.758
+[s9_relu]  │  rank 1: ||m||=34.838  ||n||=30.917  corr(m,n)=+0.739
+[s9_relu]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.8357  +1.4175
+[s9_relu]  │  Wi: ||·||_F=68.692  per-channel=24.21 24.32 32.54 31.48 22.36 21.71 22.79
+[s9_relu]  └──────────────────────────────────────────────────
+[s9_relu] ────────────────────────────────────────────────────────────
+[s9_relu]  STAGE: GNG   device=cuda:1   epochs=100
+[s9_relu]  freeze recurrent cols: [0]
+[s9_relu]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s9_relu] ────────────────────────────────────────────────────────────
+[s9_relu]  data: [516, 266, 7] → [516, 266, 2]
+Epoch 005/100 | lr: 0.01000 | train: 1.0269 | val: 0.9655
+Epoch 010/100 | lr: 0.01000 | train: 0.3295 | val: 0.3588
+Epoch 015/100 | lr: 0.01000 | train: 0.1918 | val: 0.1971
+Epoch 020/100 | lr: 0.01000 | train: 0.1399 | val: 0.1417
+Epoch 025/100 | lr: 0.01000 | train: 0.1076 | val: 0.1185
+Stopping: losses below 0.1.
+[s9_relu]   after GNG: dpa=0.688 (pair=0.425 unpair=0.937)  gng=0.998 (go=1.000 nogo=0.996)
+[s9_relu]  GNG done in 410.5s  final train=0.0939  val=0.0996  dpa=0.688  gng=0.998
+[s9_relu]  ┌── params: after GNG
+[s9_relu]  │  rank 0: ||m||=38.800  ||n||=29.583  corr(m,n)=+0.758
+[s9_relu]  │  rank 1: ||m||=41.004  ||n||=33.809  corr(m,n)=+0.740
+[s9_relu]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.6392  +2.0637
+[s9_relu]  │  Wi: ||·||_F=68.692  per-channel=24.21 24.32 32.54 31.48 22.36 21.71 22.79
+[s9_relu]  └──────────────────────────────────────────────────
+[s9_relu] ────────────────────────────────────────────────────────────
+[s9_relu]  STAGE: Dual   device=cuda:1   epochs=100
+[s9_relu]  freeze recurrent cols: [0]
+[s9_relu]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s9_relu] ────────────────────────────────────────────────────────────
+[s9_relu]  data: [516, 444, 7] → [516, 444, 2]
+[s9_relu]  loss=separated  dpa_w=1.0  gng_w=1.0  go_w=1.0  nogo_w=2.0  aux_w=1.0  bl_w=1.0  go_hinge=1.0
+Epoch 005/100 | lr: 0.01000 | train: 0.7342 | val: 0.6012
+Epoch 010/100 | lr: 0.01000 | train: 0.5315 | val: 0.4718
+Epoch 015/100 | lr: 0.01000 | train: 0.4795 | val: 0.4294
+Epoch 020/100 | lr: 0.01000 | train: 0.4529 | val: 0.4105
+Epoch 025/100 | lr: 0.01000 | train: 0.4310 | val: 0.3945
+Epoch 030/100 | lr: 0.01000 | train: 0.4148 | val: 0.3805
+Epoch 035/100 | lr: 0.01000 | train: 0.4051 | val: 0.3696
+Epoch 040/100 | lr: 0.01000 | train: 0.3902 | val: 0.3632
+Epoch 045/100 | lr: 0.01000 | train: 0.3828 | val: 0.3569
+Epoch 050/100 | lr: 0.01000 | train: 0.3664 | val: 0.3484
+Epoch 055/100 | lr: 0.01000 | train: 0.3626 | val: 0.3425
+Epoch 060/100 | lr: 0.01000 | train: 0.3509 | val: 0.3354
+Epoch 065/100 | lr: 0.01000 | train: 0.3448 | val: 0.3283
+Epoch 070/100 | lr: 0.01000 | train: 0.3342 | val: 0.3203
+Epoch 075/100 | lr: 0.01000 | train: 0.3206 | val: 0.3121
+Epoch 080/100 | lr: 0.01000 | train: 0.3110 | val: 0.3039
+Epoch 085/100 | lr: 0.01000 | train: 0.3008 | val: 0.2945
+Epoch 090/100 | lr: 0.01000 | train: 0.2948 | val: 0.2856
+Epoch 095/100 | lr: 0.01000 | train: 0.2839 | val: 0.2786
+Epoch 100/100 | lr: 0.01000 | train: 0.2794 | val: 0.2717
+[s9_relu]  loss components: {'dpa': 0.0453, 'gng': 0.1971, 'gng_go': 0.1497, 'gng_nogo': 0.0237, 'baseline': 0.0064, 'aux': 0.0039}
+[s9_relu]   after Dual: dpa=0.999 (pair=0.998 unpair=1.000)  gng=1.000 (go=1.000 nogo=1.000)
+[s9_relu]  Dual done in 2213.5s  final train=0.2794  val=0.2717  dpa=0.999  gng=1.000
+[s9_relu]  ┌── params: after Dual
+[s9_relu]  │  rank 0: ||m||=38.800  ||n||=29.583  corr(m,n)=+0.758
+[s9_relu]  │  rank 1: ||m||=38.170  ||n||=33.886  corr(m,n)=+0.659
+[s9_relu]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.7191  +1.6454
+[s9_relu]  │  Wi: ||·||_F=68.692  per-channel=24.21 24.32 32.54 31.48 22.36 21.71 22.79
+[s9_relu]  └──────────────────────────────────────────────────
+[s9_relu] ════════════════════════════════════════════════════════════
+[s9_relu]  RUN COMPLETE  2026-06-09 05:17:40  total=3405.8s
+[s9_relu]  ACCURACY SUMMARY
+[s9_relu]    after DPA : dpa=1.000  gng=0.528
+[s9_relu]    after GNG : dpa=0.688  gng=0.998
+[s9_relu]    after Dual: dpa=0.999  gng=1.000  dual_dpa=0.998  dual_gng=0.979
+[s9_relu] ════════════════════════════════════════════════════════════

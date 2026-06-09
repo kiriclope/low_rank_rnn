@@ -1,0 +1,33 @@
+[s0_goH1] ════════════════════════════════════════════════════════════
+[s0_goH1]  RUN START  2026-06-08 18:36:42
+[s0_goH1]  run_id=s0_goH1  seed=0  device=cuda:0
+[s0_goH1]  arch:  hidden=512  rank=2  gain=1.0  input_size=7  params=6,144
+[s0_goH1]  task:  cue_on_go=True  rwd=True  rwd_scale=1.0  freeze_input_stages=['dual']  init=random
+[s0_goH1]  dynamics: alpha=0.0750  alpha_rec=0.1000  dt=0.0225  tau=0.3  tau_rec_frac=0.75
+[s0_goH1]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.0000 (×0.0)
+[s0_goH1]  optim:  lr=0.01  wd=0.01  batch=64  n_batch=516  clip=None
+[s0_goH1]  epochs: dpa=100  gng=100  dual=100  loss=separated
+[s0_goH1]  shapes: m[512, 2]  n[512, 2]  Wi[512, 7]
+[s0_goH1]  ┌── params: init
+[s0_goH1]  │  rank 0: ||m||=22.187  ||n||=22.116  corr(m,n)=-0.011
+[s0_goH1]  │  rank 1: ||m||=22.375  ||n||=22.846  corr(m,n)=+0.037
+[s0_goH1]  │  κ-Jacobian eigvals (gain·n^Tm/N): +0.0132+0.0342j  +0.0132-0.0342j
+[s0_goH1]  │  Wi: ||·||_F=59.379  per-channel=22.21 22.79 22.15 22.73 21.77 21.92 23.48
+[s0_goH1]  └──────────────────────────────────────────────────
+[s0_goH1] ────────────────────────────────────────────────────────────
+[s0_goH1]  STAGE: DPA   device=cuda:0   epochs=100
+[s0_goH1] ────────────────────────────────────────────────────────────
+[s0_goH1]  data: [516, 444, 7] → [516, 444, 2]
+Epoch 005/100 | lr: 0.01000 | train: 1.9677 | val: 1.9398
+Epoch 010/100 | lr: 0.01000 | train: 1.4491 | val: 1.2683
+Epoch 015/100 | lr: 0.01000 | train: 1.0091 | val: 0.9811
+Epoch 020/100 | lr: 0.01000 | train: 0.9269 | val: 0.8851
+Epoch 025/100 | lr: 0.01000 | train: 0.7996 | val: 0.7489
+Epoch 030/100 | lr: 0.01000 | train: 0.5947 | val: 0.5777
+Epoch 035/100 | lr: 0.01000 | train: 0.4176 | val: 0.4668
+Epoch 040/100 | lr: 0.01000 | train: 0.3649 | val: 0.4487
+Epoch 045/100 | lr: 0.01000 | train: 0.3151 | val: 0.3513
+Epoch 050/100 | lr: 0.01000 | train: 0.2611 | val: 0.4020
+Epoch 055/100 | lr: 0.01000 | train: 0.2312 | val: 0.3494
+Epoch 060/100 | lr: 0.01000 | train: 0.1976 | val: 0.2720
+Epoch 065/100 | lr: 0.01000 | train: 0.1772 | val: 0.2882

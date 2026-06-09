@@ -1,0 +1,130 @@
+[s1_tanh_reg] ════════════════════════════════════════════════════════════
+[s1_tanh_reg]  RUN START  2026-06-09 13:48:15
+[s1_tanh_reg]  run_id=s1_tanh_reg  seed=1  device=cuda:1
+[s1_tanh_reg]  arch:  hidden=512  rank=2  gain=2.0  input_size=7  params=6,144
+[s1_tanh_reg]  task:  cue_on_go=True  rwd=True  rwd_scale=1.0  freeze_input_stages=['gng', 'dual']  init=random
+[s1_tanh_reg]  dynamics: alpha=0.0750  alpha_rec=0.1000  dt=0.0225  tau=0.3  tau_rec_frac=0.75
+[s1_tanh_reg]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.0000 (×0.0)
+[s1_tanh_reg]  optim:  lr=0.01  wd=0.01  batch=64  n_batch=516  clip=None
+[s1_tanh_reg]  epochs: dpa=100  gng=100  dual=200  loss=separated
+[s1_tanh_reg]  shapes: m[512, 2]  n[512, 2]  Wi[512, 7]
+[s1_tanh_reg]  ┌── params: init
+[s1_tanh_reg]  │  rank 0: ||m||=22.898  ||n||=22.288  corr(m,n)=-0.020
+[s1_tanh_reg]  │  rank 1: ||m||=23.302  ||n||=22.428  corr(m,n)=+0.009
+[s1_tanh_reg]  │  κ-Jacobian eigvals (gain·n^Tm/N): -0.0310  +0.0087
+[s1_tanh_reg]  │  Wi: ||·||_F=58.820  per-channel=21.94 22.58 22.12 21.70 21.92 23.07 22.27
+[s1_tanh_reg]  └──────────────────────────────────────────────────
+[s1_tanh_reg] ────────────────────────────────────────────────────────────
+[s1_tanh_reg]  STAGE: DPA   device=cuda:1   epochs=100
+[s1_tanh_reg]  freeze input dims:     [4, 5]
+[s1_tanh_reg] ────────────────────────────────────────────────────────────
+[s1_tanh_reg]  data: [516, 444, 7] → [516, 444, 2]
+Epoch 005/100 | lr: 0.01000 | train: 1.9560 | val: 1.9378
+Epoch 010/100 | lr: 0.01000 | train: 1.1834 | val: 1.2129
+Epoch 015/100 | lr: 0.01000 | train: 1.0155 | val: 1.0256
+Epoch 020/100 | lr: 0.01000 | train: 0.8969 | val: 0.9131
+Epoch 025/100 | lr: 0.01000 | train: 0.7512 | val: 0.7433
+Epoch 030/100 | lr: 0.01000 | train: 0.5226 | val: 0.4928
+Epoch 035/100 | lr: 0.01000 | train: 0.3651 | val: 0.3436
+Epoch 040/100 | lr: 0.01000 | train: 0.2678 | val: 0.2493
+Epoch 045/100 | lr: 0.01000 | train: 0.2087 | val: 0.2204
+Epoch 050/100 | lr: 0.01000 | train: 0.1639 | val: 0.1603
+Epoch 055/100 | lr: 0.01000 | train: 0.1300 | val: 0.1300
+Epoch 060/100 | lr: 0.01000 | train: 0.1033 | val: 0.1159
+Epoch 065/100 | lr: 0.01000 | train: 0.0850 | val: 0.1382
+Stopping: losses below 0.1.
+[s1_tanh_reg]   after DPA: dpa=0.997 (pair=0.996 unpair=0.998)  gng=0.502 (go=0.008 nogo=0.998)
+[s1_tanh_reg]  DPA done in 236.2s  final train=0.0999  val=0.0974  dpa=0.997  gng=0.502
+[s1_tanh_reg]  ┌── params: after DPA
+[s1_tanh_reg]  │  rank 0: ||m||=32.581  ||n||=38.455  corr(m,n)=+0.777
+[s1_tanh_reg]  │  rank 1: ||m||=29.472  ||n||=45.455  corr(m,n)=+0.827
+[s1_tanh_reg]  │  κ-Jacobian eigvals (gain·n^Tm/N): +3.7452  +4.3851
+[s1_tanh_reg]  │  Wi: ||·||_F=63.002  per-channel=20.51 21.54 28.00 32.45 21.92 23.07 15.35
+[s1_tanh_reg]  └──────────────────────────────────────────────────
+[s1_tanh_reg] ────────────────────────────────────────────────────────────
+[s1_tanh_reg]  STAGE: GNG   device=cuda:1   epochs=100
+[s1_tanh_reg]  freeze recurrent cols: [0]
+[s1_tanh_reg]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s1_tanh_reg] ────────────────────────────────────────────────────────────
+[s1_tanh_reg]  data: [516, 266, 7] → [516, 266, 2]
+Epoch 005/100 | lr: 0.01000 | train: 1.2994 | val: 1.2488
+Epoch 010/100 | lr: 0.01000 | train: 0.6337 | val: 0.5704
+Epoch 015/100 | lr: 0.01000 | train: 0.3757 | val: 0.3543
+Epoch 020/100 | lr: 0.01000 | train: 0.2679 | val: 0.2447
+Epoch 025/100 | lr: 0.01000 | train: 0.2039 | val: 0.1903
+Epoch 030/100 | lr: 0.01000 | train: 0.1626 | val: 0.1549
+Epoch 035/100 | lr: 0.01000 | train: 0.1324 | val: 0.1254
+Epoch 040/100 | lr: 0.01000 | train: 0.1103 | val: 0.1072
+Stopping: losses below 0.1.
+[s1_tanh_reg]   after GNG: dpa=0.997 (pair=0.996 unpair=0.998)  gng=0.989 (go=1.000 nogo=0.978)
+[s1_tanh_reg]  GNG done in 94.6s  final train=0.0988  val=0.0942  dpa=0.997  gng=0.989
+[s1_tanh_reg]  ┌── params: after GNG
+[s1_tanh_reg]  │  rank 0: ||m||=32.581  ||n||=38.455  corr(m,n)=+0.777
+[s1_tanh_reg]  │  rank 1: ||m||=28.584  ||n||=49.890  corr(m,n)=+0.721
+[s1_tanh_reg]  │  κ-Jacobian eigvals (gain·n^Tm/N): +3.9104+0.1604j  +3.9104-0.1604j
+[s1_tanh_reg]  │  Wi: ||·||_F=63.002  per-channel=20.51 21.54 28.00 32.45 21.92 23.07 15.35
+[s1_tanh_reg]  └──────────────────────────────────────────────────
+[s1_tanh_reg] ────────────────────────────────────────────────────────────
+[s1_tanh_reg]  STAGE: Dual   device=cuda:1   epochs=200
+[s1_tanh_reg]  freeze recurrent cols: [0]
+[s1_tanh_reg]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s1_tanh_reg] ────────────────────────────────────────────────────────────
+[s1_tanh_reg]  data: [516, 444, 7] → [516, 444, 2]
+[s1_tanh_reg]  loss=separated  dpa_w=1.0  gng_w=1.0  go_w=1.0  nogo_w=2.0  aux_w=1.0  bl_w=1.0  go_hinge=1.0
+[s1_tanh_reg]  κ₁ regularizer: weight=1.0  penalises gain·λ₁ > 1
+Epoch 005/200 | lr: 0.01000 | train: 3.3872 | val: 1.1927
+Epoch 010/200 | lr: 0.01000 | train: 1.5925 | val: 1.3547
+Epoch 015/200 | lr: 0.01000 | train: 1.4039 | val: 1.3868
+Epoch 020/200 | lr: 0.01000 | train: 1.3879 | val: 1.3819
+Epoch 025/200 | lr: 0.01000 | train: 1.3737 | val: 1.3695
+Epoch 030/200 | lr: 0.01000 | train: 1.3593 | val: 1.3572
+Epoch 035/200 | lr: 0.01000 | train: 1.3443 | val: 1.3433
+Epoch 040/200 | lr: 0.01000 | train: 1.3295 | val: 1.3316
+Epoch 045/200 | lr: 0.01000 | train: 1.3136 | val: 1.3175
+Epoch 050/200 | lr: 0.01000 | train: 1.2999 | val: 1.3028
+Epoch 055/200 | lr: 0.01000 | train: 1.2820 | val: 1.2879
+Epoch 060/200 | lr: 0.01000 | train: 1.2639 | val: 1.2702
+Epoch 065/200 | lr: 0.01000 | train: 1.2440 | val: 1.2500
+Epoch 070/200 | lr: 0.01000 | train: 1.2246 | val: 1.2305
+Epoch 075/200 | lr: 0.01000 | train: 1.1997 | val: 1.2068
+Epoch 080/200 | lr: 0.01000 | train: 1.1723 | val: 1.1809
+Epoch 085/200 | lr: 0.01000 | train: 1.1414 | val: 1.1507
+Epoch 090/200 | lr: 0.01000 | train: 1.1061 | val: 1.1176
+Epoch 095/200 | lr: 0.01000 | train: 1.0635 | val: 1.0717
+Epoch 100/200 | lr: 0.01000 | train: 1.0102 | val: 1.0174
+Epoch 105/200 | lr: 0.01000 | train: 0.9455 | val: 0.9601
+Epoch 110/200 | lr: 0.01000 | train: 0.8621 | val: 0.8667
+Epoch 115/200 | lr: 0.01000 | train: 0.7509 | val: 0.7585
+Epoch 120/200 | lr: 0.01000 | train: 0.6419 | val: 0.6490
+Epoch 125/200 | lr: 0.01000 | train: 0.5542 | val: 0.5615
+Epoch 130/200 | lr: 0.01000 | train: 0.5146 | val: 0.5186
+Epoch 135/200 | lr: 0.01000 | train: 0.4522 | val: 0.4650
+Epoch 140/200 | lr: 0.01000 | train: 0.4191 | val: 0.4321
+Epoch 145/200 | lr: 0.01000 | train: 0.3789 | val: 0.4360
+Epoch 150/200 | lr: 0.01000 | train: 0.3684 | val: 0.3898
+Epoch 155/200 | lr: 0.01000 | train: 0.3369 | val: 0.3811
+Epoch 160/200 | lr: 0.01000 | train: 0.3290 | val: 0.4028
+Epoch 165/200 | lr: 0.01000 | train: 0.3048 | val: 0.3583
+Epoch 170/200 | lr: 0.01000 | train: 0.3007 | val: 0.3357
+Epoch 175/200 | lr: 0.01000 | train: 0.2781 | val: 0.3241
+Epoch 180/200 | lr: 0.01000 | train: 0.2805 | val: 0.3144
+Epoch 185/200 | lr: 0.01000 | train: 0.2604 | val: 0.3096
+Epoch 190/200 | lr: 0.01000 | train: 0.2481 | val: 0.3229
+Epoch 195/200 | lr: 0.01000 | train: 0.2450 | val: 0.3366
+Epoch 200/200 | lr: 0.01000 | train: 0.2357 | val: 0.2784
+[s1_tanh_reg]  loss components: {'dpa': 0.0846, 'gng': 0.1382, 'gng_go': 0.0388, 'gng_nogo': 0.0497, 'baseline': 0.0225, 'aux': 0.0103}
+[s1_tanh_reg]   after Dual: dpa=1.000 (pair=1.000 unpair=1.000)  gng=0.925 (go=0.843 nogo=1.000)
+[s1_tanh_reg]  Dual done in 723.6s  final train=0.2357  val=0.2784  dpa=1.000  gng=0.925
+[s1_tanh_reg]  ┌── params: after Dual
+[s1_tanh_reg]  │  rank 0: ||m||=32.581  ||n||=38.455  corr(m,n)=+0.777
+[s1_tanh_reg]  │  rank 1: ||m||=43.647  ||n||=83.029  corr(m,n)=+0.071
+[s1_tanh_reg]  │  κ-Jacobian eigvals (gain·n^Tm/N): +3.7640  +1.0491
+[s1_tanh_reg]  │  Wi: ||·||_F=63.002  per-channel=20.51 21.54 28.00 32.45 21.92 23.07 15.35
+[s1_tanh_reg]  └──────────────────────────────────────────────────
+[s1_tanh_reg] ════════════════════════════════════════════════════════════
+[s1_tanh_reg]  RUN COMPLETE  2026-06-09 14:05:50  total=1055.3s
+[s1_tanh_reg]  ACCURACY SUMMARY
+[s1_tanh_reg]    after DPA : dpa=0.997  gng=0.502
+[s1_tanh_reg]    after GNG : dpa=0.997  gng=0.989
+[s1_tanh_reg]    after Dual: dpa=1.000  gng=0.925  dual_dpa=0.980  dual_gng=0.994
+[s1_tanh_reg] ════════════════════════════════════════════════════════════

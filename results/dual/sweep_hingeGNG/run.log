@@ -1,0 +1,15 @@
+Sweep: 10 runs | 2 GPU(s) | 16 workers
+Results → results/dual/sweep_hingeGNG/results.jsonl
+Mode: one screen session per run (sweep_<run_id>)
+  launched screen session sweep_s0_hingeGNG on cuda:0
+  launched screen session sweep_s1_hingeGNG on cuda:1
+  launched screen session sweep_s2_hingeGNG on cuda:0
+  launched screen session sweep_s3_hingeGNG on cuda:1
+  launched screen session sweep_s4_hingeGNG on cuda:0
+  launched screen session sweep_s5_hingeGNG on cuda:1
+  launched screen session sweep_s6_hingeGNG on cuda:0
+  launched screen session sweep_s7_hingeGNG on cuda:1
+  launched screen session sweep_s8_hingeGNG on cuda:0
+  launched screen session sweep_s9_hingeGNG on cuda:1
+All 10 screen sessions launched.
+Monitor: screen -ls | attach: screen -r sweep_<run_id>

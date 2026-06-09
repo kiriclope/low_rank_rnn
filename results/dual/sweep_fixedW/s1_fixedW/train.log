@@ -1,0 +1,100 @@
+[s1_fixedW] ════════════════════════════════════════════════════════════
+[s1_fixedW]  RUN START  2026-06-08 16:37:48
+[s1_fixedW]  run_id=s1_fixedW  seed=1  device=cuda:1
+[s1_fixedW]  arch:  hidden=512  rank=2  gain=1.0  input_size=7  params=6,144
+[s1_fixedW]  task:  cue_on_go=True  rwd=True  rwd_scale=1.0  freeze_input_stages=['dual']  init=random
+[s1_fixedW]  dynamics: alpha=0.0750  alpha_rec=0.1000  dt=0.0225  tau=0.3  tau_rec_frac=0.75
+[s1_fixedW]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.0000 (×0.0)
+[s1_fixedW]  optim:  lr=0.01  wd=0.01  batch=64  n_batch=516  clip=None
+[s1_fixedW]  epochs: dpa=100  gng=100  dual=100  loss=separated
+[s1_fixedW]  shapes: m[512, 2]  n[512, 2]  Wi[512, 7]
+[s1_fixedW]  ┌── params: init
+[s1_fixedW]  │  rank 0: ||m||=22.898  ||n||=22.288  corr(m,n)=-0.020
+[s1_fixedW]  │  rank 1: ||m||=23.302  ||n||=22.428  corr(m,n)=+0.009
+[s1_fixedW]  │  κ-Jacobian eigvals (gain·n^Tm/N): -0.0155  +0.0043
+[s1_fixedW]  │  Wi: ||·||_F=58.820  per-channel=21.94 22.58 22.12 21.70 21.92 23.07 22.27
+[s1_fixedW]  └──────────────────────────────────────────────────
+[s1_fixedW] ────────────────────────────────────────────────────────────
+[s1_fixedW]  STAGE: DPA   device=cuda:1   epochs=100
+[s1_fixedW] ────────────────────────────────────────────────────────────
+[s1_fixedW]  data: [516, 444, 7] → [516, 444, 2]
+Epoch 005/100 | lr: 0.01000 | train: 1.9477 | val: 1.9279
+Epoch 010/100 | lr: 0.01000 | train: 1.2330 | val: 1.2295
+Epoch 015/100 | lr: 0.01000 | train: 0.9850 | val: 0.9895
+Epoch 020/100 | lr: 0.01000 | train: 0.8612 | val: 0.8759
+Epoch 025/100 | lr: 0.01000 | train: 0.7302 | val: 0.7299
+Epoch 030/100 | lr: 0.01000 | train: 0.5270 | val: 0.5397
+Epoch 035/100 | lr: 0.01000 | train: 0.3090 | val: 0.3241
+Epoch 040/100 | lr: 0.01000 | train: 0.2239 | val: 0.2292
+Epoch 045/100 | lr: 0.01000 | train: 0.1745 | val: 0.1706
+Epoch 050/100 | lr: 0.01000 | train: 0.1760 | val: 0.1606
+Epoch 055/100 | lr: 0.01000 | train: 0.1124 | val: 0.1036
+Stopping: losses below 0.1.
+[s1_fixedW]   after DPA: dpa=0.997  gng=0.718
+[s1_fixedW]  DPA done in 537.4s  final train=0.0903  val=0.0987  dpa=0.997  gng=0.718
+[s1_fixedW]  ┌── params: after DPA
+[s1_fixedW]  │  rank 0: ||m||=32.386  ||n||=38.683  corr(m,n)=+0.781
+[s1_fixedW]  │  rank 1: ||m||=34.578  ||n||=44.739  corr(m,n)=+0.770
+[s1_fixedW]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.9238  +2.3152
+[s1_fixedW]  │  Wi: ||·||_F=54.158  per-channel=18.87 18.69 29.06 30.50 10.03 10.87 15.30
+[s1_fixedW]  └──────────────────────────────────────────────────
+[s1_fixedW] ────────────────────────────────────────────────────────────
+[s1_fixedW]  STAGE: GNG   device=cuda:1   epochs=100
+[s1_fixedW]  freeze recurrent cols: [0]
+[s1_fixedW]  freeze input dims:     [0, 1, 2, 3, 6]
+[s1_fixedW] ────────────────────────────────────────────────────────────
+[s1_fixedW]  data: [516, 266, 7] → [516, 266, 2]
+Epoch 005/100 | lr: 0.01000 | train: 0.1824 | val: 0.1504
+Epoch 010/100 | lr: 0.01000 | train: 0.0963 | val: 0.0862
+Stopping: losses below 0.1.
+[s1_fixedW]   after GNG: dpa=0.995  gng=0.999
+[s1_fixedW]  GNG done in 61.1s  final train=0.0963  val=0.0862  dpa=0.995  gng=0.999
+[s1_fixedW]  ┌── params: after GNG
+[s1_fixedW]  │  rank 0: ||m||=32.386  ||n||=38.683  corr(m,n)=+0.781
+[s1_fixedW]  │  rank 1: ||m||=34.286  ||n||=44.845  corr(m,n)=+0.743
+[s1_fixedW]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.9671  +2.1748
+[s1_fixedW]  │  Wi: ||·||_F=55.135  per-channel=18.87 18.69 29.06 30.50 11.93 13.54 15.30
+[s1_fixedW]  └──────────────────────────────────────────────────
+[s1_fixedW] ────────────────────────────────────────────────────────────
+[s1_fixedW]  STAGE: Dual   device=cuda:1   epochs=100
+[s1_fixedW]  freeze recurrent cols: [0]
+[s1_fixedW]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s1_fixedW] ────────────────────────────────────────────────────────────
+[s1_fixedW]  data: [516, 444, 7] → [516, 444, 2]
+[s1_fixedW]  loss=separated  dpa_w=1.0  gng_w=1.0  go_w=1.0  nogo_w=2.0  aux_w=1.0  bl_w=1.0
+Epoch 005/100 | lr: 0.01000 | train: 0.5134 | val: 0.5337
+Epoch 010/100 | lr: 0.01000 | train: 0.4723 | val: 0.4809
+Epoch 015/100 | lr: 0.01000 | train: 0.4140 | val: 0.4461
+Epoch 020/100 | lr: 0.01000 | train: 0.3650 | val: 0.4023
+Epoch 025/100 | lr: 0.01000 | train: 0.3203 | val: 0.3783
+Epoch 030/100 | lr: 0.01000 | train: 0.2879 | val: 0.3206
+Epoch 035/100 | lr: 0.01000 | train: 0.2739 | val: 0.2805
+Epoch 040/100 | lr: 0.01000 | train: 0.2251 | val: 0.3129
+Epoch 045/100 | lr: 0.01000 | train: 0.2029 | val: 0.2724
+Epoch 050/100 | lr: 0.01000 | train: 0.1870 | val: 0.2205
+Epoch 055/100 | lr: 0.01000 | train: 0.1635 | val: 0.2140
+Epoch 060/100 | lr: 0.01000 | train: 0.1559 | val: 0.1866
+Epoch 065/100 | lr: 0.01000 | train: 0.1430 | val: 0.1715
+Epoch 070/100 | lr: 0.01000 | train: 0.1363 | val: 0.1983
+Epoch 075/100 | lr: 0.01000 | train: 0.1187 | val: 0.1715
+Epoch 080/100 | lr: 0.01000 | train: 0.1137 | val: 0.1481
+Epoch 085/100 | lr: 0.01000 | train: 0.1054 | val: 0.1339
+Epoch 090/100 | lr: 0.00500 | train: 0.0975 | val: 0.1303
+Epoch 095/100 | lr: 0.00500 | train: 0.0944 | val: 0.1227
+Epoch 100/100 | lr: 0.00500 | train: 0.0951 | val: 0.1185
+[s1_fixedW]  loss components: {'dpa': 0.0845, 'gng': 0.0436, 'gng_go': 0.0116, 'gng_nogo': 0.016, 'baseline': 0.0115, 'aux': 0.0126}
+[s1_fixedW]   after Dual: dpa=0.991  gng=1.000
+[s1_fixedW]  Dual done in 963.9s  final train=0.0951  val=0.1185  dpa=0.991  gng=1.000
+[s1_fixedW]  ┌── params: after Dual
+[s1_fixedW]  │  rank 0: ||m||=32.386  ||n||=38.683  corr(m,n)=+0.781
+[s1_fixedW]  │  rank 1: ||m||=34.748  ||n||=62.692  corr(m,n)=+0.609
+[s1_fixedW]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.9035  +2.5988
+[s1_fixedW]  │  Wi: ||·||_F=55.135  per-channel=18.87 18.69 29.06 30.50 11.93 13.54 15.30
+[s1_fixedW]  └──────────────────────────────────────────────────
+[s1_fixedW] ════════════════════════════════════════════════════════════
+[s1_fixedW]  RUN COMPLETE  2026-06-08 17:03:51  total=1565.4s
+[s1_fixedW]  ACCURACY SUMMARY
+[s1_fixedW]    after DPA : dpa=0.997  gng=0.718
+[s1_fixedW]    after GNG : dpa=0.995  gng=0.999
+[s1_fixedW]    after Dual: dpa=0.991  gng=1.000  dual_dpa=0.999  dual_gng=0.994
+[s1_fixedW] ════════════════════════════════════════════════════════════

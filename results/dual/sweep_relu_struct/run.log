@@ -1,0 +1,10 @@
+Sweep: 5 runs | 2 GPU(s) | 10 workers
+Results → results/dual/sweep_relu_struct/results.jsonl
+Mode: one screen session per run (sweep_<run_id>)
+  launched screen session sweep_s0_relu_struct on cuda:0
+  launched screen session sweep_s1_relu_struct on cuda:1
+  launched screen session sweep_s2_relu_struct on cuda:0
+  launched screen session sweep_s3_relu_struct on cuda:1
+  launched screen session sweep_s4_relu_struct on cuda:0
+All 5 screen sessions launched.
+Monitor: screen -ls | attach: screen -r sweep_<run_id>

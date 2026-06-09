@@ -62,7 +62,7 @@ STAGE_KEYS      = ["after_dpa", "after_gng", "after_dual"]
 STAGE_X         = np.arange(3)
 STAGE_TASK      = {"dpa": "dpa", "naive": "gng", "expert": "dual"}
 CONDITION_COLS  = ("tab:blue", "tab:orange")
-XLIM = YLIM     = (-2.0, 2.0)
+XLIM = YLIM     = (-1.5, 1.5)
 
 # ── Central color config ──────────────────────────────────────────────────────
 # Each entry: (primary, light_shade).  Used by trajectories, accuracy plots,
@@ -106,6 +106,7 @@ class RunMeta:
     tau:            float = 0.3
     dt_base:        float = 0.03
     tau_rec_frac:   float = 0.75
+    nonlinearity:   str   = "tanh"
 
     @property
     def alpha(self) -> float:
@@ -153,6 +154,7 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             tau             = float(cfg.get("tau", 0.3)),
             dt_base         = float(cfg.get("dt_base", 0.03)),
             tau_rec_frac    = float(cfg.get("tau_rec_frac", 0.75)),
+            nonlinearity    = cfg.get("nonlinearity", "tanh"),
         ))
     return rows
 
@@ -163,17 +165,18 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
 
 def _build_model(meta: RunMeta, device: str) -> LowRankModel:
     return LowRankModel(
-        input_size  = meta.input_size,
-        hidden_size = 512,
-        output_size = 0,
-        rank        = 2,
-        gain        = meta.gain,
-        alpha       = meta.alpha,
-        alpha_rec   = meta.alpha_rec,
-        noise       = 0.0,
-        rwd         = meta.rwd,
-        rwd_scale   = meta.rwd_scale,
-        device      = device,
+        input_size    = meta.input_size,
+        hidden_size   = 512,
+        output_size   = 0,
+        rank          = 2,
+        gain          = meta.gain,
+        alpha         = meta.alpha,
+        alpha_rec     = meta.alpha_rec,
+        noise         = 0.0,
+        rwd           = meta.rwd,
+        rwd_scale     = meta.rwd_scale,
+        nonlinearity  = meta.nonlinearity,
+        device        = device,
     )
 
 
@@ -322,6 +325,33 @@ def _compute_kappa(model, X_t: torch.Tensor, y_t: torch.Tensor, device: str,
     return readout.detach().cpu().numpy()
 
 
+def _make_gng_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None = None,
+                    seed: int = 0) -> tuple:
+    """Returns (X_t, y_t, is_go) for a pure GNG trial batch.
+    is_go derived from targets: go trials have decision target == 1.0 after the cue."""
+    rng_state = np.random.get_state()
+    torch_state = torch.get_rng_state()
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    timing  = TIMINGS["gng"]
+    n_sigma = _noise_sigma(ref_meta.noise) if noise is None else noise
+    X, y = generate_gng_trials(
+        n_batch, timing=timing, input_size=ref_meta.input_size,
+        noise=n_sigma, target_rank=2, cue_on_go_input=ref_meta.cue_on_go_input,
+        cue_scale=ref_meta.cue_scale, nogo_target=ref_meta.nogo_target,
+    )
+    np.random.set_state(rng_state)
+    torch.set_rng_state(torch_state)
+    # go trials have decision target == 1.0 after the cue (last non-nan value)
+    is_go = (y[:, -1, -1] > 0.5).numpy()
+    return (
+        torch.as_tensor(X, dtype=torch.float32),
+        torch.as_tensor(y, dtype=torch.float32),
+        is_go,
+    )
+
+
 def _make_dual_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None = None,
                      seed: int = 0) -> tuple:
     rng_state = np.random.get_state()
@@ -457,6 +487,72 @@ def _plot_traj_figure(kappa_dict: dict[str, np.ndarray],
     ]
     fig.legend(handles=legend_handles, loc="upper center", ncol=3,
                frameon=False, fontsize=10, bbox_to_anchor=(0.5, 1.04))
+    return fig
+
+
+def _plot_gng_traj_figure(kappa_dict: dict[str, np.ndarray],
+                          targets_np: np.ndarray,
+                          is_go: np.ndarray,
+                          timing: TaskTiming,
+                          title: str) -> plt.Figure:
+    """GNG trajectory figure: rows = Go / NoGo, cols (per group) = κ₁ / κ₂."""
+    groups   = list(kappa_dict.keys())
+    n_groups = len(groups)
+    n_dims   = 2
+    n_cols   = n_dims * n_groups
+
+    fig, axes = plt.subplots(
+        2, n_cols,
+        figsize=(n_dims * n_groups * 5.0, 2 * 3.1),
+        sharex=True,
+        constrained_layout=True,
+    )
+    if n_groups == 1 and n_cols == 2:
+        axes = axes.reshape(2, 2)
+    fig.suptitle(title, fontsize=13)
+
+    t = np.arange(targets_np.shape[1]) * timing.dt
+    row_specs = [("Go", is_go, TRIAL_COLORS["go"][0]),
+                 ("NoGo", ~is_go, TRIAL_COLORS["nogo"][0])]
+
+    for gi, (group_name, kappa_np) in enumerate(kappa_dict.items()):
+        for row, (row_lbl, mask, color) in enumerate(row_specs):
+            for col in range(n_dims):
+                ax = axes[row, gi * n_dims + col]
+                k_lim = np.nanpercentile(np.abs(kappa_np[:, :, col]), 99)
+                ylim  = 1.1 * max(float(k_lim), 1.5)
+                ax.set_ylim(-ylim, ylim)
+
+                for on, off in zip(timing.stim_on, timing.stim_off):
+                    ax.axvspan(on, off, alpha=0.10, color="tab:blue", lw=0, zorder=0)
+                ax.axhline(0, color="k", lw=0.8, ls="--", alpha=0.35, zorder=1)
+
+                if mask.any():
+                    k_trials = kappa_np[mask, :, col]
+                    k_mean   = k_trials.mean(0)
+                    k_std    = k_trials.std(0, ddof=1)
+                    tgt_dim  = col if col < targets_np.shape[-1] else -1
+                    tgt_mean = np.nanmean(targets_np[mask, :, tgt_dim], axis=0)
+                    ax.fill_between(t, k_mean - k_std, k_mean + k_std,
+                                    color=color, alpha=0.25, lw=0, zorder=8)
+                    ax.plot(t, tgt_mean, color="k", lw=2.0, alpha=0.8, zorder=9)
+                    ax.plot(t, k_mean,   color=color, lw=2.5, alpha=0.9, zorder=10)
+
+                if row == 0:
+                    ax.set_title(f"{group_name} — κ{col+1}", fontsize=10)
+                if row == 1:
+                    ax.set_xlabel("Time (s)")
+                if gi == 0 and col == 0:
+                    ax.set_ylabel(f"κ{col+1}\n{row_lbl}", fontsize=9)
+                elif col == 0:
+                    ax.set_ylabel(row_lbl, fontsize=9)
+
+    fig.legend(
+        handles=[mlines.Line2D([], [], color="k", lw=2.0, label="Target"),
+                 mlines.Line2D([], [], color=TRIAL_COLORS["go"][0],   lw=2.5, label="Go"),
+                 mlines.Line2D([], [], color=TRIAL_COLORS["nogo"][0], lw=2.5, label="NoGo")],
+        loc="upper center", ncol=3, frameon=False, fontsize=10, bbox_to_anchor=(0.5, 1.04),
+    )
     return fig
 
 
@@ -734,9 +830,8 @@ def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
 def summary_avg_trajectories(all_metas: list[RunMeta], ckpt_dir: str,
                               out_dir: str, device: str, n_batch: int = 512):
     ref = all_metas[0]
-    X_t, y_t, cnames = _make_dual_batch(ref, n_batch=n_batch, seed=0)
-    targets_np = y_t.numpy()
-    timing     = TIMINGS["dual"]
+    X_dual, y_dual, cnames = _make_dual_batch(ref, n_batch=n_batch, seed=0)
+    X_gng,  y_gng,  is_go  = _make_gng_batch(ref,  n_batch=n_batch, seed=0)
 
     groups: dict[str, list[RunMeta]] = {}
     for m in all_metas:
@@ -746,29 +841,30 @@ def summary_avg_trajectories(all_metas: list[RunMeta], ckpt_dir: str,
     stage_labels = {"dpa": "DPA stage", "naive": "After GNG", "expert": "After Dual"}
 
     for stage in stages:
-        group_kappas: dict[str, np.ndarray | None] = {}
+        group_kappas_dual: dict[str, np.ndarray | None] = {}
+        group_kappas_gng:  dict[str, np.ndarray | None] = {}
         for group_name, metas in groups.items():
-            kappa_sum  = None
-            kappa_count= 0
+            sum_dual = sum_gng = None
+            count = 0
             for meta in metas:
                 model = _build_model(meta, device)
                 if not _load_ckpt(model, ckpt_dir, stage, meta.run_id, device):
                     del model; continue
-                kappa = _compute_kappa(model, X_t, y_t, device, meta.model_noise_sigma())
+                k_dual = _compute_kappa(model, X_dual, y_dual, device, meta.model_noise_sigma())
+                k_gng  = _compute_kappa(model, X_gng,  y_gng,  device, meta.model_noise_sigma())
                 del model
-                if kappa_sum is None:
-                    kappa_sum = kappa
-                else:
-                    kappa_sum = kappa_sum + kappa
-                kappa_count += 1
-            if kappa_count:
-                group_kappas[group_name] = kappa_sum / kappa_count
-        if not group_kappas:
+                sum_dual = k_dual if sum_dual is None else sum_dual + k_dual
+                sum_gng  = k_gng  if sum_gng  is None else sum_gng  + k_gng
+                count += 1
+            if count:
+                group_kappas_dual[group_name] = sum_dual / count
+                group_kappas_gng[group_name]  = sum_gng  / count
+        if not group_kappas_dual:
             continue
 
         for gng_key, (gng_title, gng_status) in GNG_SPECS.items():
             fig = _plot_traj_figure(
-                group_kappas, targets_np, cnames, timing,
+                group_kappas_dual, y_dual.numpy(), cnames, TIMINGS["dual"],
                 gng_status,
                 f"{stage_labels[stage]} — {gng_title} (mean across runs)",
             )
@@ -776,6 +872,15 @@ def summary_avg_trajectories(all_metas: list[RunMeta], ckpt_dir: str,
             fig.savefig(out_path, bbox_inches="tight")
             print(f"Saved {out_path}")
             plt.close(fig)
+
+        fig = _plot_gng_traj_figure(
+            group_kappas_gng, y_gng.numpy(), is_go, TIMINGS["gng"],
+            f"{stage_labels[stage]} — GNG task (mean across runs)",
+        )
+        out_path = os.path.join(out_dir, f"traj_{stage}_gng_task.pdf")
+        fig.savefig(out_path, bbox_inches="tight")
+        print(f"Saved {out_path}")
+        plt.close(fig)
 
 
 # ============================================================
@@ -832,27 +937,36 @@ def individual_accuracy_by_trialtype(meta: RunMeta, ckpt_dir: str,
 
 def individual_trajectories(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
                              n_batch: int = 512):
-    X_t, y_t, cnames = _make_dual_batch(meta, n_batch=n_batch, seed=0)
-    targets_np = y_t.numpy()
-    timing     = TIMINGS["dual"]
-    stages     = ["dpa", "naive", "expert"]
+    X_dual, y_dual, cnames = _make_dual_batch(meta, n_batch=n_batch, seed=0)
+    X_gng,  y_gng,  is_go  = _make_gng_batch(meta,  n_batch=n_batch, seed=0)
+    stages       = ["dpa", "naive", "expert"]
     stage_labels = {"dpa": "DPA stage", "naive": "After GNG", "expert": "After Dual"}
 
     for stage in stages:
         model = _build_model(meta, device)
         if not _load_ckpt(model, ckpt_dir, stage, meta.run_id, device):
             del model; continue
-        kappa = _compute_kappa(model, X_t, y_t, device, meta.model_noise_sigma())
+        kappa_dual = _compute_kappa(model, X_dual, y_dual, device, meta.model_noise_sigma())
+        kappa_gng  = _compute_kappa(model, X_gng,  y_gng,  device, meta.model_noise_sigma())
         del model
 
         for gng_key, (gng_title, gng_status) in GNG_SPECS.items():
             fig = _plot_traj_figure(
-                {meta.run_id: kappa}, targets_np, cnames, timing,
+                {meta.run_id: kappa_dual}, y_dual.numpy(), cnames, TIMINGS["dual"],
                 gng_status, f"{stage_labels[stage]} — {gng_title}",
             )
             out_path = os.path.join(out_dir, f"traj_{stage}_{gng_key}.pdf")
             fig.savefig(out_path, bbox_inches="tight")
             plt.close(fig)
+
+        fig = _plot_gng_traj_figure(
+            {meta.run_id: kappa_gng}, y_gng.numpy(), is_go, TIMINGS["gng"],
+            f"{stage_labels[stage]} — GNG task",
+        )
+        out_path = os.path.join(out_dir, f"traj_{stage}_gng_task.pdf")
+        fig.savefig(out_path, bbox_inches="tight")
+        plt.close(fig)
+
     print(f"  trajectories saved: {out_dir}")
 
 
@@ -914,7 +1028,8 @@ def individual_fp_scatter(meta: RunMeta, ckpt_dir: str, out_dir: str,
 
 
 def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
-                    n_batch: int = 256, n_fp_seeds: int = 21):
+                    n_batch: int = 256, n_fp_seeds: int = 21,
+                    use_sim_field: bool = False, sim_n_warmup: int = 0):
     flow_dir = os.path.join(out_dir, "flow")
     os.makedirs(flow_dir, exist_ok=True)
     cue = meta.cue_on_go_input
@@ -959,6 +1074,8 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
             cue_on_go_input = cue,
             xlim            = XLIM,
             ylim            = YLIM,
+            use_sim_field   = use_sim_field,
+            sim_n_warmup    = sim_n_warmup,
         )
         fig.suptitle(f"{meta.run_id} — {stage} ({task.upper()})", y=1.01)
         out_path = os.path.join(flow_dir, f"fp_{stage}.pdf")
@@ -1005,6 +1122,10 @@ Examples:
                         help="Skip individual-run figures")
     parser.add_argument("--n_fp_seeds",   type=int, default=21,
                         help="Grid seeds for fixed-point finding (default: 21)")
+    parser.add_argument("--use_sim_field", action="store_true",
+                        help="Use simulation-based flow field instead of analytical κ-plane")
+    parser.add_argument("--sim_n_warmup", type=int, default=0,
+                        help="Warmup steps for sim flow field (0=grid-aligned/streamplot, >0=scattered/quiver)")
     parser.add_argument("--device",       type=str, default=None)
     args = parser.parse_args()
 
@@ -1022,6 +1143,10 @@ Examples:
 
     all_metas = _load_sweep_meta(args.sweep_dir)
     print(f"Loaded {len(all_metas)} runs")
+    if args.run_ids:
+        id_set    = set(args.run_ids)
+        all_metas = [m for m in all_metas if m.run_id in id_set]
+        print(f"  filtered to {len(all_metas)} runs by --run_ids")
 
     # ---- SUMMARY ----
     if not args.no_summary:
@@ -1030,6 +1155,8 @@ Examples:
 
         if "acc" in want:
             df = load_results(os.path.join(args.sweep_dir, "results.jsonl"))
+            if args.run_ids:
+                df = df[df["run_id"].isin(set(args.run_ids))]
             print("\n[summary] accuracy_stages")
             summary_accuracy_stages(df, sum_dir)
             print("\n[summary] accuracy_by_trialtype")
@@ -1046,20 +1173,10 @@ Examples:
 
     # ---- INDIVIDUAL ----
     if not args.no_individual:
-        run_ids_to_plot = (
-            args.run_ids if args.run_ids
-            else [m.run_id for m in all_metas]
-        )
-        meta_map = {m.run_id: m for m in all_metas}
-
-        for run_id in run_ids_to_plot:
-            if run_id not in meta_map:
-                print(f"  WARNING: {run_id} not in results.jsonl, skipping")
-                continue
-            meta    = meta_map[run_id]
-            ind_dir = os.path.join(out_root, sweep_name, "individual", run_id)
+        for meta in all_metas:
+            ind_dir = os.path.join(out_root, sweep_name, "individual", meta.run_id)
             os.makedirs(ind_dir, exist_ok=True)
-            print(f"\n[individual] {run_id}")
+            print(f"\n[individual] {meta.run_id}")
 
             if "acc" in want:
                 individual_accuracy_stages(meta, ind_dir)
@@ -1074,7 +1191,9 @@ Examples:
 
             if "flow" in want:
                 individual_flow(meta, args.sweep_dir, ind_dir, device,
-                                n_fp_seeds=args.n_fp_seeds)
+                                n_fp_seeds=args.n_fp_seeds,
+                                use_sim_field=args.use_sim_field,
+                                sim_n_warmup=args.sim_n_warmup)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,77 @@
+[s5_noHinge2] ════════════════════════════════════════════════════════════
+[s5_noHinge2]  RUN START  2026-06-09 00:46:38
+[s5_noHinge2]  run_id=s5_noHinge2  seed=5  device=cuda:1
+[s5_noHinge2]  arch:  hidden=512  rank=2  gain=1.0  input_size=7  params=6,144
+[s5_noHinge2]  task:  cue_on_go=True  rwd=True  rwd_scale=1.0  freeze_input_stages=['gng', 'dual']  init=random
+[s5_noHinge2]  dynamics: alpha=0.0750  alpha_rec=0.1000  dt=0.0225  tau=0.3  tau_rec_frac=0.75
+[s5_noHinge2]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.0000 (×0.0)
+[s5_noHinge2]  optim:  lr=0.01  wd=0.01  batch=64  n_batch=516  clip=None
+[s5_noHinge2]  epochs: dpa=100  gng=100  dual=100  loss=separated
+[s5_noHinge2]  shapes: m[512, 2]  n[512, 2]  Wi[512, 7]
+[s5_noHinge2]  ┌── params: init
+[s5_noHinge2]  │  rank 0: ||m||=23.437  ||n||=22.965  corr(m,n)=+0.028
+[s5_noHinge2]  │  rank 1: ||m||=22.893  ||n||=23.012  corr(m,n)=+0.061
+[s5_noHinge2]  │  κ-Jacobian eigvals (gain·n^Tm/N): +0.0320  +0.0594
+[s5_noHinge2]  │  Wi: ||·||_F=58.987  per-channel=22.32 23.25 22.23 22.01 21.84 22.14 22.26
+[s5_noHinge2]  └──────────────────────────────────────────────────
+[s5_noHinge2]  DPA: loading checkpoint from results/dual/sweep_adam2/s5_adam2/dpa_s5_adam2.pth
+[s5_noHinge2]   after DPA: dpa=0.999 (pair=1.000 unpair=0.998)  gng=0.470 (go=0.023 nogo=0.920)
+[s5_noHinge2]  DPA done in 1.6s  (checkpoint)  dpa=0.999  gng=0.470
+[s5_noHinge2]  ┌── params: after DPA
+[s5_noHinge2]  │  rank 0: ||m||=37.549  ||n||=39.656  corr(m,n)=+0.807
+[s5_noHinge2]  │  rank 1: ||m||=33.323  ||n||=52.505  corr(m,n)=+0.781
+[s5_noHinge2]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.2472  +2.7685
+[s5_noHinge2]  │  Wi: ||·||_F=66.558  per-channel=22.18 20.22 32.31 35.98 21.84 22.14 14.95
+[s5_noHinge2]  └──────────────────────────────────────────────────
+[s5_noHinge2]  GNG: loading checkpoint from results/dual/sweep_adam2/s5_adam2/naive_s5_adam2.pth
+[s5_noHinge2]   after GNG: dpa=0.948 (pair=0.907 unpair=0.990)  gng=0.993 (go=1.000 nogo=0.986)
+[s5_noHinge2]  GNG done in 1.6s  (checkpoint)  dpa=0.948  gng=0.993
+[s5_noHinge2]  ┌── params: after GNG
+[s5_noHinge2]  │  rank 0: ||m||=37.549  ||n||=39.656  corr(m,n)=+0.807
+[s5_noHinge2]  │  rank 1: ||m||=33.933  ||n||=57.948  corr(m,n)=+0.677
+[s5_noHinge2]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.3308  +2.6177
+[s5_noHinge2]  │  Wi: ||·||_F=66.558  per-channel=22.18 20.22 32.31 35.98 21.84 22.14 14.95
+[s5_noHinge2]  └──────────────────────────────────────────────────
+[s5_noHinge2] ────────────────────────────────────────────────────────────
+[s5_noHinge2]  STAGE: Dual   device=cuda:1   epochs=100
+[s5_noHinge2]  freeze recurrent cols: [0]
+[s5_noHinge2]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s5_noHinge2] ────────────────────────────────────────────────────────────
+[s5_noHinge2]  data: [516, 444, 7] → [516, 444, 2]
+[s5_noHinge2]  loss=separated  dpa_w=1.0  gng_w=1.0  go_w=1.0  nogo_w=2.0  aux_w=1.0  bl_w=1.0  go_hinge=None
+Epoch 005/100 | lr: 0.01000 | train: 1.4338 | val: 1.5382
+Epoch 010/100 | lr: 0.01000 | train: 1.2176 | val: 1.3860
+Epoch 015/100 | lr: 0.01000 | train: 1.1046 | val: 1.2779
+Epoch 020/100 | lr: 0.01000 | train: 1.0202 | val: 1.1845
+Epoch 025/100 | lr: 0.01000 | train: 0.9504 | val: 1.1211
+Epoch 030/100 | lr: 0.01000 | train: 0.8724 | val: 1.0378
+Epoch 035/100 | lr: 0.01000 | train: 0.8245 | val: 0.9859
+Epoch 040/100 | lr: 0.01000 | train: 0.7683 | val: 0.9684
+Epoch 045/100 | lr: 0.01000 | train: 0.7443 | val: 0.8892
+Epoch 050/100 | lr: 0.01000 | train: 0.6966 | val: 0.8674
+Epoch 055/100 | lr: 0.01000 | train: 0.6688 | val: 0.8343
+Epoch 060/100 | lr: 0.01000 | train: 0.6327 | val: 0.8251
+Epoch 065/100 | lr: 0.01000 | train: 0.6049 | val: 0.7675
+Epoch 070/100 | lr: 0.01000 | train: 0.5746 | val: 0.7526
+Epoch 075/100 | lr: 0.01000 | train: 0.5566 | val: 0.7034
+Epoch 080/100 | lr: 0.01000 | train: 0.5204 | val: 0.6913
+Epoch 085/100 | lr: 0.01000 | train: 0.4913 | val: 0.6718
+Epoch 090/100 | lr: 0.01000 | train: 0.4706 | val: 0.6524
+Epoch 095/100 | lr: 0.01000 | train: 0.4570 | val: 0.6363
+Epoch 100/100 | lr: 0.01000 | train: 0.4336 | val: 0.6174
+[s5_noHinge2]  loss components: {'dpa': 0.256, 'gng': 0.5619, 'gng_go': 0.4947, 'gng_nogo': 0.0336, 'baseline': 0.0299, 'aux': 0.0166}
+[s5_noHinge2]   after Dual: dpa=0.990 (pair=0.981 unpair=1.000)  gng=0.999 (go=0.998 nogo=1.000)
+[s5_noHinge2]  Dual done in 732.6s  final train=0.4336  val=0.6174  dpa=0.990  gng=0.999
+[s5_noHinge2]  ┌── params: after Dual
+[s5_noHinge2]  │  rank 0: ||m||=37.549  ||n||=39.656  corr(m,n)=+0.807
+[s5_noHinge2]  │  rank 1: ||m||=39.174  ||n||=80.883  corr(m,n)=+0.504
+[s5_noHinge2]  │  κ-Jacobian eigvals (gain·n^Tm/N): +2.3163  +3.1491
+[s5_noHinge2]  │  Wi: ||·||_F=66.558  per-channel=22.18 20.22 32.31 35.98 21.84 22.14 14.95
+[s5_noHinge2]  └──────────────────────────────────────────────────
+[s5_noHinge2] ════════════════════════════════════════════════════════════
+[s5_noHinge2]  RUN COMPLETE  2026-06-09 00:58:53  total=737.5s
+[s5_noHinge2]  ACCURACY SUMMARY
+[s5_noHinge2]    after DPA : dpa=0.999  gng=0.470
+[s5_noHinge2]    after GNG : dpa=0.948  gng=0.993
+[s5_noHinge2]    after Dual: dpa=0.990  gng=0.999  dual_dpa=0.940  dual_gng=0.984
+[s5_noHinge2] ════════════════════════════════════════════════════════════

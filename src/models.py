@@ -29,6 +29,9 @@ class LowRankModel(nn.Module):
         rwd=True,
         rwd_scale=1.0,
         noise=0.1,
+        use_fixed_weights=False,
+        fixed_weight_scale=0.8,
+        nonlinearity="tanh",
         device="cpu",
     ):
         super().__init__()
@@ -74,11 +77,34 @@ class LowRankModel(nn.Module):
                 self.wo.weight.requires_grad_(False)
                 self.wo.bias.requires_grad_(False)
 
-        self.nonlinearity = torch.tanh
+        _nl = {"tanh": torch.tanh, "relu": torch.relu,
+               "softplus": torch.nn.functional.softplus,
+               "erf":      torch.erf,
+               "elu":      torch.nn.functional.elu,
+               "lif":      lambda x: (1.0 + torch.erf(x / 1.4142135623730951)) / 2.0}
+        self.nonlinearity     = _nl[nonlinearity]
+        self.nonlinearity_str = nonlinearity
         self.register_buffer("alpha_rec",     torch.tensor(float(alpha_rec)))
         self.register_buffer("exp_alpha_rec", torch.exp(-torch.tensor(float(alpha_rec))))
         self.register_buffer("alpha",         torch.tensor(float(alpha)))
         self.register_buffer("exp_alpha",     torch.exp(-torch.tensor(float(alpha))))
+
+        # Fixed random weights — not saved in state_dict (persistent=False) so old
+        # checkpoints load without issue; re-created from scratch at init time.
+        # Projected to be orthogonal to the initial m and n so that n^T W_fixed = 0
+        # and W_fixed^T m = 0, keeping the κ-plane analysis approximately valid.
+        self.use_fixed_weights = use_fixed_weights
+        if use_fixed_weights:
+            w_fixed = torch.randn(hidden_size, hidden_size, device=self.device)
+            # Remove components along n (rows) and m (columns)
+            n_hat = self.n / self.n.norm(dim=0, keepdim=True).clamp_min(1e-12)  # (N, rank)
+            m_hat = self.m / self.m.norm(dim=0, keepdim=True).clamp_min(1e-12)  # (N, rank)
+            w_fixed = w_fixed - n_hat @ (n_hat.T @ w_fixed)        # n^T W_fixed = 0
+            w_fixed = w_fixed - (w_fixed @ m_hat) @ m_hat.T        # W_fixed^T m = 0
+            w_fixed *= fixed_weight_scale / (hidden_size ** 0.5)
+            self.register_buffer("w_fixed", w_fixed.detach(), persistent=False)
+        else:
+            self.w_fixed = None
 
     def get_readout(self, rates, rec_inputs):
         rec = rates @ self.n / self.hidden_size
@@ -90,6 +116,8 @@ class LowRankModel(nn.Module):
     def update_dynamics(self, ff_inputs, rec_inputs, rates):
         input_drive = self.Ai * self.wi(ff_inputs) if self.wi is not None else 0.0
         hidden      = (rates @ self.n) @ self.m.T / self.hidden_size
+        if self.w_fixed is not None:
+            hidden = hidden + rates @ self.w_fixed.T
         rec_inputs  = self.exp_alpha_rec * rec_inputs + (1.0 - self.exp_alpha_rec) * hidden
         phi         = self.nonlinearity(self.gain * (input_drive + rec_inputs))
         rates       = self.exp_alpha * rates + (1.0 - self.exp_alpha) * phi

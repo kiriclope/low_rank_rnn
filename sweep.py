@@ -63,6 +63,9 @@ class RunConfig:
     noise:        float = 0.5    # input noise prefactor; sigma = noise * sqrt(1 - exp(-alpha)^2)
     model_noise:  float = 0.0    # recurrent noise prefactor (same sigma formula)
 
+    # Nonlinearity
+    nonlinearity: str = "tanh"   # "tanh" | "relu" | "softplus" | "erf" | "elu" | "lif"
+
     # Initialisation
     init_style:         str   = "structured"   # "structured" | "random"
     memory_lambda:      float = 0.8
@@ -75,9 +78,11 @@ class RunConfig:
     rwd_input_scale:    float = 1.0   # scale of reward input alignment with u_read (structured init only)
     rwd_align_weight:   float = 0.0   # weight of reward-input ↔ n1 cosine alignment loss during DPA
     freeze_rank0_dual:  bool  = False  # also freeze rank-0 of m/n during the Dual stage
-    project_go_on_n1:   bool  = False  # project go input column onto n₁ direction before GNG
-    project_gng_orth_n0: bool = False  # project go+nogo input columns orthogonal to n₀ before GNG
-    rwd_gng:            bool  = True   # teacher-forced reward during GNG stage (False = disable)
+    project_go_on_n1:    bool  = False  # project go input column onto n₁ direction before GNG
+    project_gng_orth_n0: bool  = False  # project go+nogo input columns orthogonal to n₀ before GNG
+    use_fixed_weights:   bool  = False  # add frozen random W_fixed to recurrent dynamics
+    fixed_weight_scale:  float = 0.8   # spectral radius of W_fixed (subcritical < 1/gain)
+    rwd_gng:             bool  = True   # teacher-forced reward during GNG stage (False = disable)
 
     # Training (shared across all stages)
     learning_rate:  float = 0.01
@@ -102,6 +107,14 @@ class RunConfig:
     # Which stages freeze ALL input dims. Subset of ['dpa', 'gng', 'dual'].
     # GNG always freezes DPA+rwd dims regardless; 'gng' extends that to all channels.
     freeze_input_stages: list = field(default_factory=lambda: ["dual"])
+    # Freeze GNG input dims (go/nogo/cue = channels 4..input_size-2) during DPA.
+    # Prevents AdamW weight decay from zeroing them before GNG training starts.
+    # Has no effect on DPA learning (those channels are always zero during DPA).
+    freeze_gng_input_during_dpa: bool = False
+    use_scheduler: bool = True  # set False to use constant lr throughout
+    optimizer: str = "adamw"    # "adamw" or "adam" (adam has no weight decay)
+    dpa_ckpt: str | None = None  # path to existing DPA checkpoint; skips DPA training if set
+    gng_ckpt: str | None = None  # path to existing GNG (naive) checkpoint; skips DPA+GNG if set
 
     # Dual-stage loss selection
     #   "multi"      → MaskedMultiTargetLoss (default; MSE toward ±1/0, all stages identical)
@@ -113,10 +126,12 @@ class RunConfig:
     loss_thresh: float = 0.5    # threshold for dual_loss == "threshold"
     dpa_weight:      float = 1.0
     gng_weight:      float = 1.0
-    gng_go_weight:   float = 1.0   # relative weight on go trials within gng_loss
-    gng_nogo_weight: float = 1.0   # relative weight on nogo trials within gng_loss
+    gng_go_weight:   float = 1.0        # relative weight on go trials within gng_loss
+    gng_nogo_weight: float = 1.0        # relative weight on nogo trials within gng_loss
+    go_hinge_thresh: float | None = None  # if set, go response window uses relu(thresh-pred)² instead of MSE
     aux_weight:      float = 1.0   # weight on the memory (non-decision) channels
     bl_weight:       float = 1.0   # weight on the pre-sample baseline term
+    kappa1_reg_weight: float = 0.0  # penalise gain*n1^T m1/N > 1 during Dual: weight*relu(λ₁-1)²
 
     # Output
     out_dir: str = "../results/dual/vanilla"
@@ -147,6 +162,25 @@ def _dpa_accuracy(model, timing, input_size, noise, device, n_trials=1024, targe
 
 
 @torch.no_grad()
+def _dpa_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1):
+    model.eval()
+    X, y = generate_dpa_trials(n_trials, timing=timing, input_size=input_size,
+                                noise=noise, target_rank=target_rank)
+    pred         = model(X.to(device), y.to(device))[..., -1].cpu()
+    decision_t   = int(timing.n_stim_off[1])
+    pred_final   = pred[:, decision_t:].mean(1)
+    target_final = y[:, -1, -1]
+    correct      = (pred_final > 0) == (target_final > 0)
+    pair_mask    = target_final > 0
+    unpair_mask  = target_final < 0
+    return {
+        "overall": correct.float().mean().item(),
+        "pair":    correct[pair_mask].float().mean().item() if pair_mask.any() else float("nan"),
+        "unpair":  correct[unpair_mask].float().mean().item() if unpair_mask.any() else float("nan"),
+    }
+
+
+@torch.no_grad()
 def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
                   cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False):
     model.eval()
@@ -163,6 +197,30 @@ def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, targe
     pred_final  = pred[:, decision_t:].mean(1)
     thresh      = (1.0 + nogo_target) / 2.0
     return ((pred_final > thresh) == is_go).float().mean().item()
+
+
+@torch.no_grad()
+def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
+                           cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False):
+    model.eval()
+    X, y = generate_gng_trials(n_trials, timing=timing, input_size=input_size,
+                                noise=noise, target_rank=target_rank, cue_on_go_input=cue_on_go_input,
+                                cue_scale=cue_scale, nogo_target=nogo_target,
+                                go_on_rwd_input=go_on_rwd_input)
+    pred        = model(X.to(device), y.to(device))[..., -1].cpu()
+    stim_epoch  = slice(int(timing.n_stim_on[0]), int(timing.n_stim_off[0]))
+    go_ch       = input_size - 1 if go_on_rwd_input else 4
+    ngo_ch      = 4              if go_on_rwd_input else 5
+    is_go       = X[:, stim_epoch, go_ch].mean(1) > X[:, stim_epoch, ngo_ch].mean(1)
+    decision_t  = int(timing.n_stim_off[1])
+    pred_final  = pred[:, decision_t:].mean(1)
+    thresh      = (1.0 + nogo_target) / 2.0
+    correct     = (pred_final > thresh) == is_go
+    return {
+        "overall": correct.float().mean().item(),
+        "go":      correct[is_go].float().mean().item()  if is_go.any()  else float("nan"),
+        "nogo":    correct[~is_go].float().mean().item() if (~is_go).any() else float("nan"),
+    }
 
 
 @torch.no_grad()
@@ -267,10 +325,9 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     def _stage_summary(name: str, train_l: list, val_l: list,
                        acc: dict, t0: float):
         elapsed = time.time() - t0
-        lr_final = train_l  # use last value
         p = f"[{rid}]"
-        print(f"{p}  {name} done in {elapsed:.1f}s"
-              f"  final train={train_l[-1]:.4f}  val={val_l[-1]:.4f}"
+        loss_str = f"  final train={train_l[-1]:.4f}  val={val_l[-1]:.4f}" if train_l else "  (checkpoint)"
+        print(f"{p}  {name} done in {elapsed:.1f}s{loss_str}"
               f"  dpa={acc['dpa']:.3f}  gng={acc['gng']:.3f}",
               flush=True)
 
@@ -278,7 +335,11 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         input_size=config.input_size, hidden_size=config.hidden_size,
         output_size=0, rank=config.rank, gain=config.gain,
         alpha=alpha, alpha_rec=alpha_rec, noise=0.0,
-        rwd=config.rwd, rwd_scale=config.rwd_scale, device=device,
+        rwd=config.rwd, rwd_scale=config.rwd_scale,
+        use_fixed_weights=config.use_fixed_weights,
+        fixed_weight_scale=config.fixed_weight_scale,
+        nonlinearity=config.nonlinearity,
+        device=device,
     )
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -335,7 +396,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             print(f"[{rid}] W&B init failed ({e}); continuing without logging.", flush=True)
 
     criterion     = MaskedMultiTargetLoss(target_weight=1.0, zero_weight=1.0)
-    gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0)
+    gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
+                                   go_hinge_thresh=config.go_hinge_thresh)
                      if config.nogo_target == 0.0 else criterion)
     losses    = {}
     _global_step = [0]   # mutable so the nested helper can increment it
@@ -349,51 +411,67 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             _global_step[0] += 1
 
     def _opt_and_sched():
-        opt  = optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
-        sched= optim.lr_scheduler.ReduceLROnPlateau(opt, patience=5, factor=0.5, min_lr=1e-5)
+        if config.optimizer == "adam":
+            opt = optim.Adam(model.parameters(), lr=config.learning_rate)
+        else:
+            opt = optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
+        sched = optim.lr_scheduler.ReduceLROnPlateau(opt, patience=5, factor=0.5, min_lr=1e-5) \
+                if config.use_scheduler else None
         return opt, sched
 
     def _eval(label):
         model.noise = 0.0
-        dpa = _dpa_accuracy(model, dpa_timing, config.input_size, noise=noise, device=device,
-                            target_rank=config.target_rank)
-        gng = _gng_accuracy(model, gng_timing, config.input_size, noise=noise, device=device,
-                            target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
-                            cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-                            go_on_rwd_input=config.go_on_rwd_input)
-        print(f"[{rid}]   {label}: dpa={dpa:.3f}  gng={gng:.3f}", flush=True)
-        model.noise = 0.0   # keep off during remaining training too
-        return {"dpa": dpa, "gng": gng}
+        dpa = _dpa_accuracy_by_type(model, dpa_timing, config.input_size, noise=noise, device=device,
+                                    target_rank=config.target_rank)
+        gng = _gng_accuracy_by_type(model, gng_timing, config.input_size, noise=noise, device=device,
+                                    target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
+                                    cue_scale=config.cue_scale, nogo_target=config.nogo_target,
+                                    go_on_rwd_input=config.go_on_rwd_input)
+        print(f"[{rid}]   {label}: "
+              f"dpa={dpa['overall']:.3f} (pair={dpa['pair']:.3f} unpair={dpa['unpair']:.3f})  "
+              f"gng={gng['overall']:.3f} (go={gng['go']:.3f} nogo={gng['nogo']:.3f})", flush=True)
+        model.noise = 0.0
+        return {"dpa": dpa["overall"], "gng": gng["overall"]}
 
     # ------------------------------------------------------------------
     # Stage 1 — DPA
     # ------------------------------------------------------------------
-    dpa_freeze_input = list(range(config.input_size)) if "dpa" in config.freeze_input_stages else []
-    _stage_header("DPA", config.epochs_dpa, dpa_freeze_input, [])
-    t0 = time.time()
-    X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank)
-    print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
-    tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
-    opt, sched = _opt_and_sched()
-    model.noise = model_noise_sigma
-    dpa_regularizer = None
-    if config.rwd and config.rwd_align_weight > 0.0:
-        _w = config.rwd_align_weight
-        def dpa_regularizer(m, _w=_w):
-            wi_rwd = m.wi.weight[:, -1]
-            n1     = m.n[:, 1]
-            cos    = torch.dot(wi_rwd, n1) / (wi_rwd.norm() * n1.norm()).clamp_min(1e-8)
-            return _w * (1.0 - cos)
+    if config.dpa_ckpt is not None:
+        print(f"[{rid}]  DPA: loading checkpoint from {config.dpa_ckpt}", flush=True)
+        model.load_state_dict(torch.load(config.dpa_ckpt, map_location=device))
+        losses["dpa"] = {}
+        train_l, val_l, t0 = [], [], time.time()
+        torch.save(model.state_dict(), os.path.join(models_dir, f"dpa_{rid}.pth"))
+    else:
+        dpa_freeze_input = list(range(config.input_size)) if "dpa" in config.freeze_input_stages else []
+        if config.freeze_gng_input_during_dpa:
+            gng_dims = list(range(4, config.input_size - 1))  # go/nogo/cue; excludes reward (last)
+            dpa_freeze_input = sorted(set(dpa_freeze_input) | set(gng_dims))
+        _stage_header("DPA", config.epochs_dpa, dpa_freeze_input, [])
+        t0 = time.time()
+        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank)
+        print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
+        tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
+        opt, sched = _opt_and_sched()
+        model.noise = model_noise_sigma
+        dpa_regularizer = None
+        if config.rwd and config.rwd_align_weight > 0.0:
+            _w = config.rwd_align_weight
+            def dpa_regularizer(m, _w=_w):
+                wi_rwd = m.wi.weight[:, -1]
+                n1     = m.n[:, 1]
+                cos    = torch.dot(wi_rwd, n1) / (wi_rwd.norm() * n1.norm()).clamp_min(1e-8)
+                return _w * (1.0 - cos)
 
-    trainer    = Optimization(model, tl, vl, criterion, opt, sched,
-                              config.grad_clip_norm, num_epochs=config.epochs_dpa,
-                              freeze_input_dims=dpa_freeze_input,
-                              regularizer=dpa_regularizer,
-                              stop_loss=config.stop_loss,
-                              verbose=True)
-    train_l, val_l, _ = trainer.fit()
-    losses["dpa"] = {"train": train_l, "val": val_l}
-    torch.save(model.state_dict(), os.path.join(models_dir, f"dpa_{rid}.pth"))
+        trainer    = Optimization(model, tl, vl, criterion, opt, sched,
+                                  config.grad_clip_norm, num_epochs=config.epochs_dpa,
+                                  freeze_input_dims=dpa_freeze_input,
+                                  regularizer=dpa_regularizer,
+                                  stop_loss=config.stop_loss,
+                                  verbose=True)
+        train_l, val_l, _ = trainer.fit()
+        losses["dpa"] = {"train": train_l, "val": val_l}
+        torch.save(model.state_dict(), os.path.join(models_dir, f"dpa_{rid}.pth"))
 
     # Option A: project go input column onto n₁ (decision readout direction) before GNG
     if config.project_go_on_n1:
@@ -431,31 +509,41 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     # ------------------------------------------------------------------
     # Stage 2 — GNG  (freeze rank-0 of m,n and DPA input dims; also freeze reward dim if rwd=True)
     # ------------------------------------------------------------------
-    gng_freeze_input = (list(range(config.input_size)) if "gng" in config.freeze_input_stages
-                        else [0, 1, 2, 3] + ([config.input_size - 1] if config.rwd else []))
-    _stage_header("GNG", config.epochs_gng, gng_freeze_input, [0])
-    t0 = time.time()
-    X, y   = generate_gng_trials(config.n_batch, gng_timing, config.input_size, noise=noise, target_rank=config.target_rank,
-                                  cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
-                                  nogo_target=config.nogo_target, go_on_rwd_input=config.go_on_rwd_input)
-    print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
-    tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
-    opt, sched = _opt_and_sched()
-    model.noise = model_noise_sigma
-    model.rwd   = config.rwd_gng   # optionally disable reward during GNG training
-    trainer    = Optimization(model, tl, vl, gng_criterion, opt, sched,
-                              config.grad_clip_norm, num_epochs=config.epochs_gng,
-                              freeze_low_rank_cols=[0],
-                              freeze_input_dims=gng_freeze_input,
-                              stop_loss=config.stop_loss,
-                              verbose=True)
-    train_l, val_l, _ = trainer.fit()
-    model.rwd = config.rwd         # restore reward for eval and subsequent stages
-    losses["gng"] = {"train": train_l, "val": val_l}
-    torch.save(model.state_dict(), os.path.join(models_dir, f"naive_{rid}.pth"))
-    acc_after_gng = _eval("after GNG")
-    _stage_summary("GNG", train_l, val_l, acc_after_gng, t0)
-    _log_params("after GNG")
+    if config.gng_ckpt is not None:
+        print(f"[{rid}]  GNG: loading checkpoint from {config.gng_ckpt}", flush=True)
+        model.load_state_dict(torch.load(config.gng_ckpt, map_location=device))
+        losses["gng"] = {}
+        train_l, val_l, t0 = [], [], time.time()
+        torch.save(model.state_dict(), os.path.join(models_dir, f"naive_{rid}.pth"))
+        acc_after_gng = _eval("after GNG")
+        _stage_summary("GNG", train_l, val_l, acc_after_gng, t0)
+        _log_params("after GNG")
+    else:
+        gng_freeze_input = (list(range(config.input_size)) if "gng" in config.freeze_input_stages
+                            else [0, 1, 2, 3] + ([config.input_size - 1] if config.rwd else []))
+        _stage_header("GNG", config.epochs_gng, gng_freeze_input, [0])
+        t0 = time.time()
+        X, y   = generate_gng_trials(config.n_batch, gng_timing, config.input_size, noise=noise, target_rank=config.target_rank,
+                                      cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
+                                      nogo_target=config.nogo_target, go_on_rwd_input=config.go_on_rwd_input)
+        print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
+        tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
+        opt, sched = _opt_and_sched()
+        model.noise = model_noise_sigma
+        model.rwd   = config.rwd_gng   # optionally disable reward during GNG training
+        trainer    = Optimization(model, tl, vl, gng_criterion, opt, sched,
+                                  config.grad_clip_norm, num_epochs=config.epochs_gng,
+                                  freeze_low_rank_cols=[0],
+                                  freeze_input_dims=gng_freeze_input,
+                                  stop_loss=config.stop_loss,
+                                  verbose=True)
+        train_l, val_l, _ = trainer.fit()
+        model.rwd = config.rwd         # restore reward for eval and subsequent stages
+        losses["gng"] = {"train": train_l, "val": val_l}
+        torch.save(model.state_dict(), os.path.join(models_dir, f"naive_{rid}.pth"))
+        acc_after_gng = _eval("after GNG")
+        _stage_summary("GNG", train_l, val_l, acc_after_gng, t0)
+        _log_params("after GNG")
 
     _wb_log_losses("gng", train_l, val_l)
     if wb_run is not None:
@@ -482,11 +570,13 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             dpa_weight=config.dpa_weight, gng_weight=config.gng_weight,
             gng_go_weight=config.gng_go_weight, gng_nogo_weight=config.gng_nogo_weight,
             aux_weight=config.aux_weight, bl_weight=config.bl_weight,
+            go_hinge_thresh=config.go_hinge_thresh,
         )
         print(f"[{rid}]  loss=separated"
               f"  dpa_w={config.dpa_weight}  gng_w={config.gng_weight}"
               f"  go_w={config.gng_go_weight}  nogo_w={config.gng_nogo_weight}"
-              f"  aux_w={config.aux_weight}  bl_w={config.bl_weight}", flush=True)
+              f"  aux_w={config.aux_weight}  bl_w={config.bl_weight}"
+              f"  go_hinge={config.go_hinge_thresh}", flush=True)
     elif config.dual_loss == "threshold":
         dual_criterion = ThresholdLoss(thresh=config.loss_thresh)
         print(f"[{rid}]  loss=threshold  thresh={config.loss_thresh}", flush=True)
@@ -495,11 +585,23 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         print(f"[{rid}]  loss=multi (MaskedMultiTargetLoss)", flush=True)
 
     dual_freeze_rank0 = [0] if config.freeze_rank0_dual else None
+
+    dual_regularizer = None
+    if config.kappa1_reg_weight > 0.0:
+        _w   = config.kappa1_reg_weight
+        _gain = float(model.gain) if torch.is_tensor(model.gain) else float(model.gain)
+        def dual_regularizer(m, _w=_w, _gain=_gain):
+            N     = m.m.shape[0]
+            lam1  = _gain * (m.n[:, 1] @ m.m[:, 1]) / N   # gain * n1^T m1 / N
+            return _w * torch.relu(lam1 - 1.0) ** 2
+        print(f"[{rid}]  κ₁ regularizer: weight={_w}  penalises gain·λ₁ > 1", flush=True)
+
     trainer    = Optimization(model, tl, vl, dual_criterion, opt, sched,
                               config.grad_clip_norm, num_epochs=config.epochs_dual,
                               freeze_low_rank_cols=dual_freeze_rank0,
                               freeze_input_dims=dual_freeze_input,
                               stop_loss=config.stop_loss,
+                              regularizer=dual_regularizer,
                               verbose=True)
 
     train_l, val_l, _ = trainer.fit()
@@ -557,10 +659,10 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         "status": "ok",
         "config": dataclasses.asdict(config),
         "accuracy": acc,
-        "final_train_loss": {stage: v["train"][-1] for stage, v in losses.items()},
-        "final_val_loss":   {stage: v["val"][-1]   for stage, v in losses.items()},
+        "final_train_loss": {stage: v["train"][-1] for stage, v in losses.items() if v.get("train")},
+        "final_val_loss":   {stage: v["val"][-1]   for stage, v in losses.items() if v.get("val")},
         "loss_curves": {stage: {"train": v["train"], "val": v["val"]}
-                        for stage, v in losses.items()},
+                        for stage, v in losses.items() if v.get("train")},
         "dual_loss_components": dual_loss_components,
     }
 
@@ -621,12 +723,14 @@ def make_configs(out_dir: str) -> list[RunConfig]:
 
     base = dict(
         init_style="random",
-        gain=1.0,
+        gain=3.0,
+        nonlinearity="lif",
         noise=1.0,
         model_noise=0.0,
         cue_on_go_input=True,
         go_on_rwd_input=False,
-        freeze_input_stages=["dual"],
+        freeze_input_stages=["gng", "dual"],
+        freeze_gng_input_during_dpa=True,
         freeze_rank0_dual=True,
         nogo_target=0.0,
         cue_scale=2.0,
@@ -634,17 +738,18 @@ def make_configs(out_dir: str) -> list[RunConfig]:
         dual_loss="separated",
         epochs_dpa=100,
         epochs_gng=100,
-        epochs_dual=100,
+        epochs_dual=200,
+        use_fixed_weights=False,
+        gng_nogo_weight=2.0,
+        go_hinge_thresh=1.0,
+        optimizer="adam",
+        use_scheduler=False,
+        kappa1_reg_weight=0.0,
         out_dir=out_dir,
     )
 
-    for seed in range(10):
-        configs.append(RunConfig(
-            run_id=f"s{seed}_orth_n0",
-            seed=seed,
-            project_gng_orth_n0=True,
-            **base,
-        ))
+    for seed in range(5):
+        configs.append(RunConfig(run_id=f"s{seed}_lif", seed=seed, **base))
 
     return configs
 
@@ -685,6 +790,8 @@ def main():
                         help="W&B project name. Omit to disable W&B logging.")
     parser.add_argument("--per_run_screen",  action="store_true",
                         help="Launch one screen session per run instead of using multiprocessing.")
+    parser.add_argument("--run_filter",      type=str,  default=None,
+                        help="Only run configs whose run_id contains this substring.")
     args = parser.parse_args()
 
     n_gpus        = min(args.n_gpus, torch.cuda.device_count()) if torch.cuda.is_available() else 1
@@ -692,6 +799,9 @@ def main():
     out_dir       = args.out_dir
     wandb_project = args.wandb_project
     configs       = make_configs(out_dir)
+    if args.run_filter:
+        configs = [c for c in configs if args.run_filter in c.run_id]
+        print(f"run_filter={args.run_filter!r}: {len(configs)} matching configs")
     results_path  = os.path.join(out_dir, "results.jsonl")
 
     os.makedirs(out_dir, exist_ok=True)

@@ -313,8 +313,10 @@ class MaskedMultiTargetLoss(nn.Module):
 class MaskedGNGLoss(nn.Module):
     """
     GNG-stage loss. Identical to MaskedMultiTargetLoss for all channels and timesteps,
-    except: in the response window (t >= n_on[1]) of the decision channel, nogo trials
-    with target == 0 use a hinge loss relu(pred)² instead of MSE toward 0.
+    except in the response window (t >= n_on[1]) of the decision channel:
+      - nogo (target == 0): relu(pred)²  — penalise positive readout only.
+      - go   (target  > 0): relu(thresh - pred)² when go_hinge_thresh is set,
+                            else standard MSE toward +1.
     Trials with target < 0 (nogo_target=-1) are always trained with standard MSE.
     """
 
@@ -325,13 +327,15 @@ class MaskedGNGLoss(nn.Module):
         criterion: nn.Module | None = None,
         target_weight: float = 1.0,
         zero_weight: float = 1.0,
+        go_hinge_thresh: float | None = None,
     ):
         super().__init__()
-        self.timing        = timing
-        self.readout_index = readout_index
-        self.criterion     = criterion or nn.MSELoss(reduction="none")
-        self.target_weight = target_weight
-        self.zero_weight   = zero_weight
+        self.timing          = timing
+        self.readout_index   = readout_index
+        self.criterion       = criterion or nn.MSELoss(reduction="none")
+        self.target_weight   = target_weight
+        self.zero_weight     = zero_weight
+        self.go_hinge_thresh = go_hinge_thresh
 
     @staticmethod
     def masked_mean(loss, mask):
@@ -343,9 +347,9 @@ class MaskedGNGLoss(nn.Module):
         device  = y.device
         dec     = self.readout_index % C
         t       = torch.arange(T, device=device)
-        resp_mask = (t >= self.timing.n_stim_on[1].to(device))[None, :]  # response window
+        resp_mask = (t >= self.timing.n_stim_on[1].to(device))[None, :]
 
-        loss = y_pred.sum() * 0.0  # zero scalar with grad
+        loss = y_pred.sum() * 0.0
         for ch in range(C):
             pred   = y_pred[..., ch]
             target = y[..., ch]
@@ -354,16 +358,24 @@ class MaskedGNGLoss(nn.Module):
             safe_pred = torch.where(finite, pred,   torch.zeros_like(pred))
 
             if ch == dec:
-                # response window, target == 0: hinge for nogo-zero
                 nogo_zero_mask = finite & resp_mask & (safe_tgt == 0)
-                # everything else in decision channel: standard masked MSE
-                other_mask     = finite & ~nogo_zero_mask
-                hinge_loss = self.masked_mean(torch.relu(safe_pred) ** 2, nogo_zero_mask)
+                go_resp_mask   = finite & resp_mask & (safe_tgt > 0)
+                other_mask     = finite & ~nogo_zero_mask & ~go_resp_mask
+
+                nogo_hinge = self.masked_mean(torch.relu(safe_pred) ** 2, nogo_zero_mask)
+
+                if self.go_hinge_thresh is not None:
+                    go_loss = self.masked_mean(
+                        torch.relu(self.go_hinge_thresh - safe_pred) ** 2, go_resp_mask)
+                else:
+                    go_loss = self.masked_mean(
+                        self.criterion(safe_pred, safe_tgt), go_resp_mask)
+
                 other_raw  = torch.where(safe_tgt == 0,
                                          self.criterion(safe_pred, torch.zeros_like(safe_pred)),
                                          self.criterion(safe_pred, safe_tgt))
                 other_loss = self.masked_mean(other_raw, other_mask)
-                loss = loss + self.zero_weight * hinge_loss + self.zero_weight * other_loss
+                loss = loss + self.zero_weight * nogo_hinge + self.target_weight * go_loss + self.zero_weight * other_loss
             else:
                 zero_mask = finite & (safe_tgt == 0)
                 tgt_mask  = finite & (safe_tgt.abs() == 1)
@@ -402,14 +414,15 @@ class MaskedMultiTargetDualLoss(nn.Module):
         timing: TaskTiming,
         readout_index: int = -1,
         criterion: nn.Module | None = None,
-        dpa_weight:     float = 1.0,
-        gng_weight:     float = 1.0,
-        gng_go_weight:  float = 1.0,
+        dpa_weight:      float = 1.0,
+        gng_weight:      float = 1.0,
+        gng_go_weight:   float = 1.0,
         gng_nogo_weight: float = 1.0,
-        aux_weight:     float = 1.0,
-        bl_weight:      float = 1.0,
-        target_weight:  float = 1.0,
-        zero_weight:    float = 1.0,
+        aux_weight:      float = 1.0,
+        bl_weight:       float = 1.0,
+        target_weight:   float = 1.0,
+        zero_weight:     float = 1.0,
+        go_hinge_thresh: float | None = None,
     ):
         super().__init__()
         self.timing          = timing
@@ -423,6 +436,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
         self.bl_weight       = bl_weight
         self.target_weight   = target_weight
         self.zero_weight     = zero_weight
+        self.go_hinge_thresh = go_hinge_thresh
         self.last_components: dict[str, float] = {}
 
     @staticmethod
@@ -462,9 +476,14 @@ class MaskedMultiTargetDualLoss(nn.Module):
         go_mask   = gng_win_mask & (safe_t > 0)   # target = +1 → go
         nogo_mask = gng_win_mask & (safe_t <= 0)  # target ≤  0 → nogo
 
-        bl_loss   = self.masked_mean(self.criterion(safe_p, torch.zeros_like(safe_p)), bl_mask)
-        go_loss   = self.masked_mean(self.criterion(safe_p, safe_t), go_mask)
-        # hinge when target==0 (penalise positive readout only); MSE when target<0
+        bl_loss = self.masked_mean(self.criterion(safe_p, torch.zeros_like(safe_p)), bl_mask)
+        # go: hinge relu(thresh - pred)² once pred ≥ thresh; else MSE toward +1
+        if self.go_hinge_thresh is not None:
+            go_loss = self.masked_mean(
+                torch.relu(self.go_hinge_thresh - safe_p) ** 2, go_mask)
+        else:
+            go_loss = self.masked_mean(self.criterion(safe_p, safe_t), go_mask)
+        # nogo: hinge relu(pred)² when target==0; MSE when target<0
         nogo_raw  = torch.where(safe_t == 0,
                                 torch.relu(safe_p) ** 2,
                                 self.criterion(safe_p, safe_t))

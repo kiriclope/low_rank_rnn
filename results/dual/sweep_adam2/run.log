@@ -1,0 +1,15 @@
+Sweep: 10 runs | 2 GPU(s) | 16 workers
+Results → results/dual/sweep_adam2/results.jsonl
+Mode: one screen session per run (sweep_<run_id>)
+  launched screen session sweep_s0_adam2 on cuda:0
+  launched screen session sweep_s1_adam2 on cuda:1
+  launched screen session sweep_s2_adam2 on cuda:0
+  launched screen session sweep_s3_adam2 on cuda:1
+  launched screen session sweep_s4_adam2 on cuda:0
+  launched screen session sweep_s5_adam2 on cuda:1
+  launched screen session sweep_s6_adam2 on cuda:0
+  launched screen session sweep_s7_adam2 on cuda:1
+  launched screen session sweep_s8_adam2 on cuda:0
+  launched screen session sweep_s9_adam2 on cuda:1
+All 10 screen sessions launched.
+Monitor: screen -ls | attach: screen -r sweep_<run_id>

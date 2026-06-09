@@ -1,0 +1,144 @@
+[s2_tanh_struct] ════════════════════════════════════════════════════════════
+[s2_tanh_struct]  RUN START  2026-06-09 17:04:26
+[s2_tanh_struct]  run_id=s2_tanh_struct  seed=2  device=cuda:0
+[s2_tanh_struct]  arch:  hidden=512  rank=2  gain=1.5  input_size=7  params=6,144
+[s2_tanh_struct]  task:  cue_on_go=True  rwd=True  rwd_scale=1.0  freeze_input_stages=['gng', 'dual']  init=structured
+[s2_tanh_struct]  dynamics: alpha=0.0750  alpha_rec=0.1000  dt=0.0225  tau=0.3  tau_rec_frac=0.75
+[s2_tanh_struct]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.0000 (×0.0)
+[s2_tanh_struct]  optim:  lr=0.01  wd=0.01  batch=64  n_batch=516  clip=None
+[s2_tanh_struct]  epochs: dpa=100  gng=100  dual=200  loss=separated
+[s2_tanh_struct]  shapes: m[512, 2]  n[512, 2]  Wi[512, 7]
+Low-rank recurrent core C = n^T m / N:
+tensor([[ 8.0000e-01, -2.3365e-09],
+        [ 1.2951e-08,  5.0000e-01]])
+eig(C): tensor([0.8000+0.j, 0.5000+0.j])
+
+C[0,0] = +0.8000  # sample memory
+C[1,1] = +0.5000  # decision memory
+C[0,1] = -0.0000
+C[1,0] = +0.0000
+
+corr(m0, n0) = +0.8000
+corr(m1, n1) = +0.8003
+corr(m0, n1) = -0.0000
+corr(m1, n0) = +0.0000
+
+corr(inA, n1) = +0.0000
+corr(inB, n1) = -0.0000
+corr(inC, n1) = -0.0000
+corr(inD, n1) = +0.0000
+[s2_tanh_struct]  ┌── params: init
+[s2_tanh_struct]  │  rank 0: ||m||=22.605  ||n||=22.650  corr(m,n)=+0.800
+[s2_tanh_struct]  │  rank 1: ||m||=14.151  ||n||=22.605  corr(m,n)=+0.800
+[s2_tanh_struct]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.2000  +0.7500
+[s2_tanh_struct]  │  Wi: ||·||_F=58.860  per-channel=22.61 22.61 22.61 22.61 21.50 21.14 22.61
+[s2_tanh_struct]  └──────────────────────────────────────────────────
+[s2_tanh_struct] ────────────────────────────────────────────────────────────
+[s2_tanh_struct]  STAGE: DPA   device=cuda:0   epochs=100
+[s2_tanh_struct]  freeze input dims:     [4, 5]
+[s2_tanh_struct] ────────────────────────────────────────────────────────────
+[s2_tanh_struct]  data: [516, 444, 7] → [516, 444, 2]
+Epoch 005/100 | lr: 0.01000 | train: 1.2114 | val: 1.1451
+Epoch 010/100 | lr: 0.01000 | train: 1.0054 | val: 1.0106
+Epoch 015/100 | lr: 0.01000 | train: 0.8701 | val: 0.8512
+Epoch 020/100 | lr: 0.01000 | train: 0.4973 | val: 0.4403
+Epoch 025/100 | lr: 0.01000 | train: 0.4302 | val: 0.3958
+Epoch 030/100 | lr: 0.01000 | train: 0.2683 | val: 0.3033
+Epoch 035/100 | lr: 0.01000 | train: 0.2469 | val: 0.2256
+Epoch 040/100 | lr: 0.01000 | train: 0.2107 | val: 0.2082
+Epoch 045/100 | lr: 0.01000 | train: 0.1594 | val: 0.2202
+Epoch 050/100 | lr: 0.01000 | train: 0.1496 | val: 0.1956
+Epoch 055/100 | lr: 0.01000 | train: 0.1177 | val: 0.1825
+Epoch 060/100 | lr: 0.01000 | train: 0.1060 | val: 0.2009
+Epoch 065/100 | lr: 0.01000 | train: 0.0966 | val: 0.2007
+Epoch 070/100 | lr: 0.01000 | train: 0.0884 | val: 0.2075
+Epoch 075/100 | lr: 0.01000 | train: 0.0814 | val: 0.2026
+Epoch 080/100 | lr: 0.01000 | train: 0.0761 | val: 0.2025
+Epoch 085/100 | lr: 0.01000 | train: 0.0690 | val: 0.2589
+Epoch 090/100 | lr: 0.01000 | train: 0.0656 | val: 0.2119
+Epoch 095/100 | lr: 0.01000 | train: 0.1953 | val: 0.5362
+Epoch 100/100 | lr: 0.01000 | train: 0.2572 | val: 0.2135
+[s2_tanh_struct]   after DPA: dpa=1.000 (pair=1.000 unpair=1.000)  gng=0.519 (go=0.000 nogo=1.000)
+[s2_tanh_struct]  DPA done in 467.7s  final train=0.2572  val=0.2135  dpa=1.000  gng=0.519
+[s2_tanh_struct]  ┌── params: after DPA
+[s2_tanh_struct]  │  rank 0: ||m||=34.284  ||n||=35.168  corr(m,n)=+0.847
+[s2_tanh_struct]  │  rank 1: ||m||=21.981  ||n||=44.703  corr(m,n)=+0.933
+[s2_tanh_struct]  │  κ-Jacobian eigvals (gain·n^Tm/N): +3.0555  +2.6197
+[s2_tanh_struct]  │  Wi: ||·||_F=64.734  per-channel=19.74 18.96 33.11 35.29 21.50 21.14 13.79
+[s2_tanh_struct]  └──────────────────────────────────────────────────
+[s2_tanh_struct] ────────────────────────────────────────────────────────────
+[s2_tanh_struct]  STAGE: GNG   device=cuda:0   epochs=100
+[s2_tanh_struct]  freeze recurrent cols: [0]
+[s2_tanh_struct]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s2_tanh_struct] ────────────────────────────────────────────────────────────
+[s2_tanh_struct]  data: [516, 266, 7] → [516, 266, 2]
+Epoch 005/100 | lr: 0.01000 | train: 1.0178 | val: 0.9071
+Epoch 010/100 | lr: 0.01000 | train: 0.4509 | val: 0.4465
+Epoch 015/100 | lr: 0.01000 | train: 0.2903 | val: 0.2957
+Epoch 020/100 | lr: 0.01000 | train: 0.2174 | val: 0.1820
+Epoch 025/100 | lr: 0.01000 | train: 0.1698 | val: 0.1508
+Epoch 030/100 | lr: 0.01000 | train: 0.1403 | val: 0.1157
+Epoch 035/100 | lr: 0.01000 | train: 0.1212 | val: 0.0989
+Epoch 040/100 | lr: 0.01000 | train: 0.1088 | val: 0.1008
+Epoch 045/100 | lr: 0.01000 | train: 0.1006 | val: 0.0821
+Stopping: losses below 0.1.
+[s2_tanh_struct]   after GNG: dpa=0.979 (pair=0.990 unpair=0.970)  gng=0.974 (go=1.000 nogo=0.950)
+[s2_tanh_struct]  GNG done in 131.9s  final train=0.0960  val=0.0769  dpa=0.979  gng=0.974
+[s2_tanh_struct]  ┌── params: after GNG
+[s2_tanh_struct]  │  rank 0: ||m||=34.284  ||n||=35.168  corr(m,n)=+0.847
+[s2_tanh_struct]  │  rank 1: ||m||=25.506  ||n||=49.865  corr(m,n)=+0.826
+[s2_tanh_struct]  │  κ-Jacobian eigvals (gain·n^Tm/N): +3.0345+0.2125j  +3.0345-0.2125j
+[s2_tanh_struct]  │  Wi: ||·||_F=64.734  per-channel=19.74 18.96 33.11 35.29 21.50 21.14 13.79
+[s2_tanh_struct]  └──────────────────────────────────────────────────
+[s2_tanh_struct] ────────────────────────────────────────────────────────────
+[s2_tanh_struct]  STAGE: Dual   device=cuda:0   epochs=200
+[s2_tanh_struct]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s2_tanh_struct] ────────────────────────────────────────────────────────────
+[s2_tanh_struct]  data: [516, 444, 7] → [516, 444, 2]
+[s2_tanh_struct]  loss=separated  dpa_w=1.0  gng_w=1.0  go_w=1.0  nogo_w=2.0  aux_w=1.0  bl_w=1.0  go_hinge=1.0
+Epoch 005/200 | lr: 0.01000 | train: 0.7945 | val: 0.8116
+Epoch 010/200 | lr: 0.01000 | train: 0.6573 | val: 0.6736
+Epoch 015/200 | lr: 0.01000 | train: 0.5432 | val: 0.5433
+Epoch 020/200 | lr: 0.01000 | train: 0.4437 | val: 0.4378
+Epoch 025/200 | lr: 0.01000 | train: 0.4023 | val: 0.3662
+Epoch 030/200 | lr: 0.01000 | train: 0.3103 | val: 0.3259
+Epoch 035/200 | lr: 0.01000 | train: 0.2669 | val: 0.2794
+Epoch 040/200 | lr: 0.01000 | train: 0.2480 | val: 0.2555
+Epoch 045/200 | lr: 0.01000 | train: 0.2126 | val: 0.2506
+Epoch 050/200 | lr: 0.01000 | train: 0.2039 | val: 0.2204
+Epoch 055/200 | lr: 0.01000 | train: 0.1948 | val: 0.2128
+Epoch 060/200 | lr: 0.01000 | train: 0.1686 | val: 0.1952
+Epoch 065/200 | lr: 0.01000 | train: 0.1634 | val: 0.1854
+Epoch 070/200 | lr: 0.01000 | train: 0.1496 | val: 0.1764
+Epoch 075/200 | lr: 0.01000 | train: 0.1447 | val: 0.1680
+Epoch 080/200 | lr: 0.01000 | train: 0.1327 | val: 0.1609
+Epoch 085/200 | lr: 0.01000 | train: 0.1302 | val: 0.1554
+Epoch 090/200 | lr: 0.01000 | train: 0.1310 | val: 0.1540
+Epoch 095/200 | lr: 0.01000 | train: 0.1256 | val: 0.1642
+Epoch 100/200 | lr: 0.01000 | train: 0.1166 | val: 0.1364
+Epoch 105/200 | lr: 0.01000 | train: 0.1086 | val: 0.1311
+Epoch 110/200 | lr: 0.01000 | train: 0.1052 | val: 0.1284
+Epoch 115/200 | lr: 0.01000 | train: 0.1024 | val: 0.1291
+Epoch 120/200 | lr: 0.01000 | train: 0.0942 | val: 0.1201
+Epoch 125/200 | lr: 0.01000 | train: 0.0925 | val: 0.1136
+Epoch 130/200 | lr: 0.01000 | train: 0.0846 | val: 0.1134
+Epoch 135/200 | lr: 0.01000 | train: 0.0849 | val: 0.1112
+Epoch 140/200 | lr: 0.01000 | train: 0.0874 | val: 0.1045
+Epoch 145/200 | lr: 0.01000 | train: 0.0977 | val: 0.1083
+Stopping: losses below 0.1.
+[s2_tanh_struct]  loss components: {'dpa': 0.0351, 'gng': 0.0215, 'gng_go': 0.0143, 'gng_nogo': 0.0036, 'baseline': 0.0113, 'aux': 0.0128}
+[s2_tanh_struct]   after Dual: dpa=0.988 (pair=0.978 unpair=1.000)  gng=0.999 (go=0.998 nogo=1.000)
+[s2_tanh_struct]  Dual done in 944.0s  final train=0.0803  val=0.0941  dpa=0.988  gng=0.999
+[s2_tanh_struct]  ┌── params: after Dual
+[s2_tanh_struct]  │  rank 0: ||m||=46.441  ||n||=35.706  corr(m,n)=+0.797
+[s2_tanh_struct]  │  rank 1: ||m||=28.477  ||n||=73.428  corr(m,n)=+0.570
+[s2_tanh_struct]  │  κ-Jacobian eigvals (gain·n^Tm/N): +3.8694  +3.4943
+[s2_tanh_struct]  │  Wi: ||·||_F=64.734  per-channel=19.74 18.96 33.11 35.29 21.50 21.14 13.79
+[s2_tanh_struct]  └──────────────────────────────────────────────────
+[s2_tanh_struct] ════════════════════════════════════════════════════════════
+[s2_tanh_struct]  RUN COMPLETE  2026-06-09 17:30:10  total=1544.7s
+[s2_tanh_struct]  ACCURACY SUMMARY
+[s2_tanh_struct]    after DPA : dpa=1.000  gng=0.519
+[s2_tanh_struct]    after GNG : dpa=0.979  gng=0.974
+[s2_tanh_struct]    after Dual: dpa=0.988  gng=0.999  dual_dpa=1.000  dual_gng=0.999
+[s2_tanh_struct] ════════════════════════════════════════════════════════════

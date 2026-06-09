@@ -1,0 +1,15 @@
+Sweep: 10 runs | 2 GPU(s) | 16 workers
+Results → results/dual/sweep_frzGNG/results.jsonl
+Mode: one screen session per run (sweep_<run_id>)
+  launched screen session sweep_s0_frzGNG on cuda:0
+  launched screen session sweep_s1_frzGNG on cuda:1
+  launched screen session sweep_s2_frzGNG on cuda:0
+  launched screen session sweep_s3_frzGNG on cuda:1
+  launched screen session sweep_s4_frzGNG on cuda:0
+  launched screen session sweep_s5_frzGNG on cuda:1
+  launched screen session sweep_s6_frzGNG on cuda:0
+  launched screen session sweep_s7_frzGNG on cuda:1
+  launched screen session sweep_s8_frzGNG on cuda:0
+  launched screen session sweep_s9_frzGNG on cuda:1
+All 10 screen sessions launched.
+Monitor: screen -ls | attach: screen -r sweep_<run_id>

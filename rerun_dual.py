@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from sweep import (
     RunConfig,
-    _dpa_accuracy, _gng_accuracy, _dual_accuracy,
+    _dpa_accuracy_by_type, _gng_accuracy_by_type, _dual_accuracy,
     train_val_split,
 )
 from src.models import LowRankModel
@@ -42,7 +42,8 @@ from src.train import Optimization, MaskedMultiTargetLoss, MaskedMultiTargetDual
 
 
 def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: str,
-                      epochs_dual: int | None = None, no_scheduler: bool = False) -> dict:
+                      epochs_dual: int | None = None, no_scheduler: bool = False,
+                      ckpt_prefix: str = "naive") -> dict:
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
     if torch.cuda.is_available():
@@ -66,20 +67,22 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
         rwd=config.rwd, rwd_scale=config.rwd_scale, device=device,
     )
 
-    naive_path = os.path.join(naive_dir, f"naive_{rid}.pth")
+    naive_path = os.path.join(naive_dir, f"{ckpt_prefix}_{rid}.pth")
     model.load_state_dict(torch.load(naive_path, map_location=device))
-    print(f"[{rid}]  loaded naive checkpoint: {naive_path}", flush=True)
+    print(f"[{rid}]  loaded {ckpt_prefix} checkpoint: {naive_path}", flush=True)
 
     def _eval(label):
         model.noise = 0.0
-        dpa = _dpa_accuracy(model, dpa_timing, config.input_size, noise=noise, device=device,
-                            target_rank=config.target_rank)
-        gng = _gng_accuracy(model, gng_timing, config.input_size, noise=noise, device=device,
-                            target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
-                            cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-                            go_on_rwd_input=config.go_on_rwd_input)
-        print(f"[{rid}]   {label}: dpa={dpa:.3f}  gng={gng:.3f}", flush=True)
-        return {"dpa": dpa, "gng": gng}
+        dpa = _dpa_accuracy_by_type(model, dpa_timing, config.input_size, noise=noise, device=device,
+                                    target_rank=config.target_rank)
+        gng = _gng_accuracy_by_type(model, gng_timing, config.input_size, noise=noise, device=device,
+                                    target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
+                                    cue_scale=config.cue_scale, nogo_target=config.nogo_target,
+                                    go_on_rwd_input=config.go_on_rwd_input)
+        print(f"[{rid}]   {label}: "
+              f"dpa={dpa['overall']:.3f} (pair={dpa['pair']:.3f} unpair={dpa['unpair']:.3f})  "
+              f"gng={gng['overall']:.3f} (go={gng['go']:.3f} nogo={gng['nogo']:.3f})", flush=True)
+        return {"dpa": dpa["overall"], "gng": gng["overall"]}
 
     acc_after_gng = _eval("after GNG (loaded)")
 
@@ -103,9 +106,11 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
             dpa_weight=config.dpa_weight, gng_weight=config.gng_weight,
             gng_go_weight=config.gng_go_weight, gng_nogo_weight=config.gng_nogo_weight,
             aux_weight=config.aux_weight, bl_weight=config.bl_weight,
+            go_hinge_thresh=config.go_hinge_thresh,
         )
         print(f"[{rid}]  loss=separated"
-              f"  go_w={config.gng_go_weight}  nogo_w={config.gng_nogo_weight}", flush=True)
+              f"  go_w={config.gng_go_weight}  nogo_w={config.gng_nogo_weight}"
+              f"  go_hinge={config.go_hinge_thresh}", flush=True)
     else:
         dual_criterion = MaskedMultiTargetLoss(target_weight=1.0, zero_weight=1.0)
 
@@ -150,7 +155,7 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
 
 def _worker(worker_id: int, n_gpus: int, job_queue: mp.Queue, result_queue: mp.Queue,
             sweep_dir: str, source_dir: str,
-            epochs_dual: int | None, no_scheduler: bool):
+            epochs_dual: int | None, no_scheduler: bool, ckpt_prefix: str = "naive"):
     device = f"cuda:{worker_id % n_gpus}" if torch.cuda.is_available() else "cpu"
     while True:
         item = job_queue.get()
@@ -166,7 +171,8 @@ def _worker(worker_id: int, n_gpus: int, job_queue: mp.Queue, result_queue: mp.Q
             sys.stdout = sys.stderr = log_f
             try:
                 out = rerun_dual_single(config, device, out_dir, naive_dir,
-                                        epochs_dual=epochs_dual, no_scheduler=no_scheduler)
+                                        epochs_dual=epochs_dual, no_scheduler=no_scheduler,
+                                        ckpt_prefix=ckpt_prefix)
                 new_result = dict(old_result)
                 new_result["config"]                       = dataclasses.asdict(config)
                 new_result["accuracy"]["after_gng"]        = out["acc_after_gng"]
@@ -197,6 +203,8 @@ def main():
     parser.add_argument("--no_scheduler",    action="store_true")
     parser.add_argument("--gng_go_weight",   type=float, default=None)
     parser.add_argument("--gng_nogo_weight", type=float, default=None)
+    parser.add_argument("--ckpt_prefix",     type=str,   default="naive",
+                        help="Checkpoint prefix to load: 'naive' (after GNG) or 'expert' (after Dual)")
     args = parser.parse_args()
 
     sweep_dir   = args.sweep_dir
@@ -205,6 +213,7 @@ def main():
     n_workers   = args.n_workers if args.n_workers is not None else n_gpus
     epochs_dual = args.epochs_dual
     no_scheduler = args.no_scheduler
+    ckpt_prefix  = args.ckpt_prefix
 
     # Load configs from source sweep
     source_results = os.path.join(source_dir, "results.jsonl")
@@ -243,7 +252,7 @@ def main():
 
     workers = [ctx.Process(target=_worker,
                            args=(i, n_gpus, job_queue, result_queue,
-                                 sweep_dir, source_dir, epochs_dual, no_scheduler))
+                                 sweep_dir, source_dir, epochs_dual, no_scheduler, ckpt_prefix))
                for i in range(n_workers)]
     for w in workers:
         w.start()

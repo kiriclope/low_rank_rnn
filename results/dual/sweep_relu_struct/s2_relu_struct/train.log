@@ -1,0 +1,129 @@
+[s2_relu_struct] ════════════════════════════════════════════════════════════
+[s2_relu_struct]  RUN START  2026-06-09 14:52:33
+[s2_relu_struct]  run_id=s2_relu_struct  seed=2  device=cuda:0
+[s2_relu_struct]  arch:  hidden=512  rank=2  gain=2.0  input_size=7  params=6,144
+[s2_relu_struct]  task:  cue_on_go=True  rwd=True  rwd_scale=1.0  freeze_input_stages=['gng', 'dual']  init=structured
+[s2_relu_struct]  dynamics: alpha=0.0750  alpha_rec=0.1000  dt=0.0225  tau=0.3  tau_rec_frac=0.75
+[s2_relu_struct]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.0000 (×0.0)
+[s2_relu_struct]  optim:  lr=0.01  wd=0.01  batch=64  n_batch=516  clip=None
+[s2_relu_struct]  epochs: dpa=100  gng=100  dual=200  loss=separated
+[s2_relu_struct]  shapes: m[512, 2]  n[512, 2]  Wi[512, 7]
+Low-rank recurrent core C = n^T m / N:
+tensor([[ 8.0000e-01, -2.3365e-09],
+        [ 1.2951e-08,  5.0000e-01]])
+eig(C): tensor([0.8000+0.j, 0.5000+0.j])
+
+C[0,0] = +0.8000  # sample memory
+C[1,1] = +0.5000  # decision memory
+C[0,1] = -0.0000
+C[1,0] = +0.0000
+
+corr(m0, n0) = +0.8000
+corr(m1, n1) = +0.8003
+corr(m0, n1) = -0.0000
+corr(m1, n0) = +0.0000
+
+corr(inA, n1) = +0.0000
+corr(inB, n1) = -0.0000
+corr(inC, n1) = -0.0000
+corr(inD, n1) = +0.0000
+[s2_relu_struct]  ┌── params: init
+[s2_relu_struct]  │  rank 0: ||m||=22.605  ||n||=22.650  corr(m,n)=+0.800
+[s2_relu_struct]  │  rank 1: ||m||=14.151  ||n||=22.605  corr(m,n)=+0.800
+[s2_relu_struct]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.6000  +1.0000
+[s2_relu_struct]  │  Wi: ||·||_F=58.860  per-channel=22.61 22.61 22.61 22.61 21.50 21.14 22.61
+[s2_relu_struct]  └──────────────────────────────────────────────────
+[s2_relu_struct] ────────────────────────────────────────────────────────────
+[s2_relu_struct]  STAGE: DPA   device=cuda:0   epochs=100
+[s2_relu_struct]  freeze input dims:     [4, 5]
+[s2_relu_struct] ────────────────────────────────────────────────────────────
+[s2_relu_struct]  data: [516, 444, 7] → [516, 444, 2]
+Epoch 005/100 | lr: 0.01000 | train: 0.7133 | val: 0.6034
+Epoch 010/100 | lr: 0.01000 | train: 0.1597 | val: 0.1267
+Stopping: losses below 0.1.
+[s2_relu_struct]   after DPA: dpa=1.000 (pair=1.000 unpair=1.000)  gng=0.504 (go=0.000 nogo=1.000)
+[s2_relu_struct]  DPA done in 59.3s  final train=0.0977  val=0.0744  dpa=1.000  gng=0.504
+[s2_relu_struct]  ┌── params: after DPA
+[s2_relu_struct]  │  rank 0: ||m||=26.043  ||n||=22.415  corr(m,n)=+0.829
+[s2_relu_struct]  │  rank 1: ||m||=20.082  ||n||=24.571  corr(m,n)=+0.883
+[s2_relu_struct]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.8898  +1.7022
+[s2_relu_struct]  │  Wi: ||·||_F=53.975  per-channel=15.84 15.73 25.31 24.92 21.50 21.14 15.62
+[s2_relu_struct]  └──────────────────────────────────────────────────
+[s2_relu_struct] ────────────────────────────────────────────────────────────
+[s2_relu_struct]  STAGE: GNG   device=cuda:0   epochs=100
+[s2_relu_struct]  freeze recurrent cols: [0]
+[s2_relu_struct]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s2_relu_struct] ────────────────────────────────────────────────────────────
+[s2_relu_struct]  data: [516, 266, 7] → [516, 266, 2]
+Epoch 005/100 | lr: 0.01000 | train: 0.5880 | val: 0.4337
+Epoch 010/100 | lr: 0.01000 | train: 0.1849 | val: 0.1431
+Epoch 015/100 | lr: 0.01000 | train: 0.1171 | val: 0.1084
+Stopping: losses below 0.1.
+[s2_relu_struct]   after GNG: dpa=0.582 (pair=0.596 unpair=0.569)  gng=0.985 (go=1.000 nogo=0.972)
+[s2_relu_struct]  GNG done in 52.8s  final train=0.0991  val=0.0817  dpa=0.582  gng=0.985
+[s2_relu_struct]  ┌── params: after GNG
+[s2_relu_struct]  │  rank 0: ||m||=26.043  ||n||=22.415  corr(m,n)=+0.829
+[s2_relu_struct]  │  rank 1: ||m||=22.834  ||n||=25.637  corr(m,n)=+0.845
+[s2_relu_struct]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.9111+0.1489j  +1.9111-0.1489j
+[s2_relu_struct]  │  Wi: ||·||_F=53.975  per-channel=15.84 15.73 25.31 24.92 21.50 21.14 15.62
+[s2_relu_struct]  └──────────────────────────────────────────────────
+[s2_relu_struct] ────────────────────────────────────────────────────────────
+[s2_relu_struct]  STAGE: Dual   device=cuda:0   epochs=200
+[s2_relu_struct]  freeze recurrent cols: [0]
+[s2_relu_struct]  freeze input dims:     [0, 1, 2, 3, 4, 5, 6]
+[s2_relu_struct] ────────────────────────────────────────────────────────────
+[s2_relu_struct]  data: [516, 444, 7] → [516, 444, 2]
+[s2_relu_struct]  loss=separated  dpa_w=1.0  gng_w=1.0  go_w=1.0  nogo_w=2.0  aux_w=1.0  bl_w=1.0  go_hinge=1.0
+Epoch 005/200 | lr: 0.01000 | train: 0.4700 | val: 0.4670
+Epoch 010/200 | lr: 0.01000 | train: 0.3640 | val: 0.3589
+Epoch 015/200 | lr: 0.01000 | train: 0.3401 | val: 0.3195
+Epoch 020/200 | lr: 0.01000 | train: 0.3094 | val: 0.2881
+Epoch 025/200 | lr: 0.01000 | train: 0.2816 | val: 0.2623
+Epoch 030/200 | lr: 0.01000 | train: 0.2638 | val: 0.2451
+Epoch 035/200 | lr: 0.01000 | train: 0.2411 | val: 0.2439
+Epoch 040/200 | lr: 0.01000 | train: 0.2292 | val: 0.2210
+Epoch 045/200 | lr: 0.01000 | train: 0.2192 | val: 0.2182
+Epoch 050/200 | lr: 0.01000 | train: 0.2091 | val: 0.2023
+Epoch 055/200 | lr: 0.01000 | train: 0.2025 | val: 0.1994
+Epoch 060/200 | lr: 0.01000 | train: 0.1903 | val: 0.1945
+Epoch 065/200 | lr: 0.01000 | train: 0.1890 | val: 0.1868
+Epoch 070/200 | lr: 0.01000 | train: 0.1847 | val: 0.1788
+Epoch 075/200 | lr: 0.01000 | train: 0.1784 | val: 0.1745
+Epoch 080/200 | lr: 0.01000 | train: 0.1681 | val: 0.1723
+Epoch 085/200 | lr: 0.01000 | train: 0.1717 | val: 0.1637
+Epoch 090/200 | lr: 0.01000 | train: 0.1607 | val: 0.1857
+Epoch 095/200 | lr: 0.01000 | train: 0.1558 | val: 0.1702
+Epoch 100/200 | lr: 0.01000 | train: 0.1498 | val: 0.1613
+Epoch 105/200 | lr: 0.01000 | train: 0.1471 | val: 0.1533
+Epoch 110/200 | lr: 0.01000 | train: 0.1471 | val: 0.1429
+Epoch 115/200 | lr: 0.01000 | train: 0.1410 | val: 0.1612
+Epoch 120/200 | lr: 0.01000 | train: 0.1341 | val: 0.1441
+Epoch 125/200 | lr: 0.01000 | train: 0.1303 | val: 0.1364
+Epoch 130/200 | lr: 0.01000 | train: 0.1266 | val: 0.1358
+Epoch 135/200 | lr: 0.01000 | train: 0.1311 | val: 0.1238
+Epoch 140/200 | lr: 0.01000 | train: 0.1231 | val: 0.1199
+Epoch 145/200 | lr: 0.01000 | train: 0.1263 | val: 0.1685
+Epoch 150/200 | lr: 0.01000 | train: 0.1127 | val: 0.1272
+Epoch 155/200 | lr: 0.01000 | train: 0.1121 | val: 0.1351
+Epoch 160/200 | lr: 0.01000 | train: 0.1065 | val: 0.1077
+Epoch 165/200 | lr: 0.01000 | train: 0.1091 | val: 0.1398
+Epoch 170/200 | lr: 0.01000 | train: 0.1011 | val: 0.1044
+Epoch 175/200 | lr: 0.01000 | train: 0.1110 | val: 0.0982
+Epoch 180/200 | lr: 0.01000 | train: 0.0984 | val: 0.1047
+Stopping: losses below 0.1.
+[s2_relu_struct]  loss components: {'dpa': 0.0471, 'gng': 0.023, 'gng_go': 0.0224, 'gng_nogo': 0.0003, 'baseline': 0.0194, 'aux': 0.0081}
+[s2_relu_struct]   after Dual: dpa=1.000 (pair=1.000 unpair=1.000)  gng=1.000 (go=1.000 nogo=1.000)
+[s2_relu_struct]  Dual done in 811.7s  final train=0.0958  val=0.0980  dpa=1.000  gng=1.000
+[s2_relu_struct]  ┌── params: after Dual
+[s2_relu_struct]  │  rank 0: ||m||=26.043  ||n||=22.415  corr(m,n)=+0.829
+[s2_relu_struct]  │  rank 1: ||m||=29.159  ||n||=29.693  corr(m,n)=+0.400
+[s2_relu_struct]  │  κ-Jacobian eigvals (gain·n^Tm/N): +1.8895  +1.3534
+[s2_relu_struct]  │  Wi: ||·||_F=53.975  per-channel=15.84 15.73 25.31 24.92 21.50 21.14 15.62
+[s2_relu_struct]  └──────────────────────────────────────────────────
+[s2_relu_struct] ════════════════════════════════════════════════════════════
+[s2_relu_struct]  RUN COMPLETE  2026-06-09 15:07:57  total=925.0s
+[s2_relu_struct]  ACCURACY SUMMARY
+[s2_relu_struct]    after DPA : dpa=1.000  gng=0.504
+[s2_relu_struct]    after GNG : dpa=0.582  gng=0.985
+[s2_relu_struct]    after Dual: dpa=1.000  gng=1.000  dual_dpa=1.000  dual_gng=0.999
+[s2_relu_struct] ════════════════════════════════════════════════════════════

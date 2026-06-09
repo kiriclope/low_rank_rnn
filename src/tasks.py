@@ -122,13 +122,17 @@ def generate_gng_trials(
 
     targets[:, n_on[0]:, -1] = torch.nan
 
-    # memory
+    # # memory
     targets[idx_go,   n_off[0]:n_on[1], -1] = 1.0
     targets[idx_nogo, n_off[0]:n_on[1], -1] = -1.0
 
-    # after cue
-    targets[idx_go,   n_off[1]:, -1] = 1.0
-    targets[idx_nogo, n_off[1]:, -1] = nogo_target
+    # during cue
+    targets[idx_go,   n_on[1]:n_off[1], -1] = 1.0
+    targets[idx_nogo, n_on[1]:n_off[1], -1] = nogo_target
+
+    # # after cue
+    # targets[idx_go,   n_off[1]:, -1] = 1.0
+    # targets[idx_nogo, n_off[1]:, -1] = nogo_target
 
     return inputs, targets
 
@@ -214,9 +218,15 @@ def generate_dual_trials(
     # targets[idx_go,   n_off[1]:n_on[2], -1] = 1.0
     # targets[idx_nogo, n_off[1]:n_on[2], -1] = -1.0
 
-    # after cue
-    targets[idx_go,   n_off[2]:n_on[3], -1] = 1.0
-    targets[idx_nogo, n_off[2]:n_on[3], -1] = nogo_target
+
+    # during cue
+    targets[idx_go,   n_on[2]:n_off[2], -1] = 1.5
+    # during cue and before test
+    targets[idx_nogo, n_on[2]:n_on[3], -1] = nogo_target
+
+    # # after cue
+    # targets[idx_go,   n_off[2]:n_on[3], -1] = 1.0
+    # targets[idx_nogo, n_off[2]:n_on[3], -1] = nogo_target
 
     condition_names = np.array([
         f"{s}_{g}_{t}" if g != "none" else f"{s}_{t}"
