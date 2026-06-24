@@ -34,8 +34,8 @@ import numpy as np
 import torch
 import torch.optim as optim
 
-from src.tasks import TaskTiming, generate_dpa_trials, generate_gng_trials, generate_dual_trials
-from src.models import LowRankModel
+from src.tasks import TaskTiming, make_timings, generate_dpa_trials, generate_gng_trials, generate_dual_trials
+from src.models import LowRankModel, EILowRankModel, EISTPModel
 from src.train  import Optimization, MaskedMultiTargetLoss, MaskedGNGLoss, MaskedMultiTargetDualLoss, ThresholdLoss, train_val_split
 from src.init   import init_dpa_internal_readout_prepost
 
@@ -52,7 +52,7 @@ class RunConfig:
     # Network architecture
     hidden_size:  int   = 512
     rank:         int   = 2
-    gain:         float = 2.0
+    gain:         float = 1.0
     input_size:   int   = 8       # 7 inputs + 1 reward channel
     target_rank:  int   = 2
 
@@ -64,10 +64,29 @@ class RunConfig:
     model_noise:  float = 0.0    # recurrent noise prefactor (same sigma formula)
 
     # Nonlinearity
-    nonlinearity: str = "tanh"   # "tanh" | "relu" | "softplus" | "erf" | "elu" | "lif"
+    nonlinearity: str = "tanh"   # "tanh" | "relu" | "softplus" | "erf" | "elu" | "lif" | "lif_sc" | "tanh_asym"
+    nl_gamma:     float = 0.0    # asymmetry strength for "tanh_asym" (φ = tanh + γ·tanh²)
+
+    # Model type
+    model_type:    str   = "lowrank"  # "lowrank" | "ei"  (EI = Dale backbone + low-rank E→E)
+    n_inh:         int   = 128   # inhibitory units (EI only; E units = hidden_size)
+    static_radius: float = 1.5   # spectral radius of frozen Dale backbone (EI only)
+    low_rank_scale: float = 0.3  # init scale of trained low-rank E→E (EI only)
+    low_rank_full: bool = False  # EI: train low-rank on whole N×N graph (E↔I) vs E→E block
+    use_stp:       bool = False  # EI: short-term plasticity (Tsodyks–Markram) on E presynapse
+    stp_U:         float = 0.2   # STP baseline utilisation
+    stp_tau_f:     float = 1.5   # STP facilitation time constant (s)
+    stp_tau_d:     float = 0.3   # STP depression time constant (s)
+    # EISTPModel (model_type="eistp") — NeuroFlame dual-EI port
+    n_neuron:      int   = 2000  # total units (E = frac·N)
+    eistp_K:       float = 250.0 # avg presynaptic inputs (balanced 1/√K)
+    j_stp:         float = 1.0   # E→E STP weight scale
+    eistp_lr_scale: str  = "N"   # low-rank divisor (n@mᵀ)/lr_scale: "N" (=N_E) or "sqrtK"
+    eistp_r_max:   float | None = None  # rate cap (anti-runaway); None = uncapped relu
+    eistp_lr_ueqv: bool  = True  # True: m init = n (critical g_mem); False: independent random init
 
     # Initialisation
-    init_style:         str   = "structured"   # "structured" | "random"
+    init_style:         str   = "random"        # "structured" | "random"
     memory_lambda:      float = 0.8
     decision_lambda:    float = 0.5
     target_mn_corr:     float = 0.8
@@ -80,8 +99,13 @@ class RunConfig:
     freeze_rank0_dual:  bool  = False  # also freeze rank-0 of m/n during the Dual stage
     project_go_on_n1:    bool  = False  # project go input column onto n₁ direction before GNG
     project_gng_orth_n0: bool  = False  # project go+nogo input columns orthogonal to n₀ before GNG
-    use_fixed_weights:   bool  = False  # add frozen random W_fixed to recurrent dynamics
-    fixed_weight_scale:  float = 0.8   # spectral radius of W_fixed (subcritical < 1/gain)
+    use_fixed_weights:          bool  = False  # add frozen random W_fixed to recurrent dynamics
+    fixed_weight_scale:         float = 0.8   # g/sqrt(N) scale of W_fixed; use g>>1 for strong backbone
+    fixed_weight_orthogonalize: bool  = True   # project W_fixed ⊥ m,n (False = backbone shapes κ-plane)
+    fixed_weight_sparsity:      float = 1.0   # keep-prob p of W_fixed entries (1.0 = dense; rescales 1/√p)
+    use_unit_bias:              bool  = False  # per-unit bias inside φ; breaks κ-field odd symmetry
+    unit_bias_trainable:        bool  = True   # train the unit bias (False = frozen random)
+    unit_bias_scale:            float = 0.2    # init scale of the random per-unit bias
     rwd_gng:             bool  = True   # teacher-forced reward during GNG stage (False = disable)
 
     # Training (shared across all stages)
@@ -102,7 +126,9 @@ class RunConfig:
     go_on_rwd_input:  bool  = False  # route go stim + cue through reward channel; sets input_size=6
     cue_scale:        float = 1.0   # amplitude of the GNG cue signal
     nogo_target:      float = 0.0   # target value for nogo response window (-1 or 0)
-    rwd:              bool  = True   # teacher-forced reward feedback
+    go_target:        float = 1.0   # target value for go response window
+    input_scale:      float = 1.0   # global multiplier on all stimulus + cue input amplitudes
+    rwd:              bool  = False  # teacher-forced reward feedback
     rwd_scale:        float = 1.0   # amplitude of the reward pulse (default +1)
     # Which stages freeze ALL input dims. Subset of ['dpa', 'gng', 'dual'].
     # GNG always freezes DPA+rwd dims regardless; 'gng' extends that to all channels.
@@ -129,6 +155,7 @@ class RunConfig:
     gng_go_weight:   float = 1.0        # relative weight on go trials within gng_loss
     gng_nogo_weight: float = 1.0        # relative weight on nogo trials within gng_loss
     go_hinge_thresh: float | None = None  # if set, go response window uses relu(thresh-pred)² instead of MSE
+    dpa_hinge_thresh: float | None = None # if set, DPA ±1 decision uses squared hinge toward ±thresh (DPA + dual stages)
     aux_weight:      float = 1.0   # weight on the memory (non-decision) channels
     bl_weight:       float = 1.0   # weight on the pre-sample baseline term
     kappa1_reg_weight: float = 0.0  # penalise gain*n1^T m1/N > 1 during Dual: weight*relu(λ₁-1)²
@@ -150,10 +177,10 @@ class RunConfig:
 # ---------------------------------------------------------------------------
 
 @torch.no_grad()
-def _dpa_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1):
+def _dpa_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1, input_scale=1.0):
     model.eval()
     X, y = generate_dpa_trials(n_trials, timing=timing, input_size=input_size,
-                                noise=noise, target_rank=target_rank)
+                                noise=noise, target_rank=target_rank, input_scale=input_scale)
     pred         = model(X.to(device), y.to(device))[..., -1].cpu()
     decision_t   = int(timing.n_stim_off[1])
     pred_final   = pred[:, decision_t:].mean(1)
@@ -162,10 +189,10 @@ def _dpa_accuracy(model, timing, input_size, noise, device, n_trials=1024, targe
 
 
 @torch.no_grad()
-def _dpa_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1):
+def _dpa_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1, input_scale=1.0):
     model.eval()
     X, y = generate_dpa_trials(n_trials, timing=timing, input_size=input_size,
-                                noise=noise, target_rank=target_rank)
+                                noise=noise, target_rank=target_rank, input_scale=input_scale)
     pred         = model(X.to(device), y.to(device))[..., -1].cpu()
     decision_t   = int(timing.n_stim_off[1])
     pred_final   = pred[:, decision_t:].mean(1)
@@ -182,12 +209,12 @@ def _dpa_accuracy_by_type(model, timing, input_size, noise, device, n_trials=102
 
 @torch.no_grad()
 def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
-                  cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False):
+                  cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0):
     model.eval()
     X, y = generate_gng_trials(n_trials, timing=timing, input_size=input_size,
                                 noise=noise, target_rank=target_rank, cue_on_go_input=cue_on_go_input,
                                 cue_scale=cue_scale, nogo_target=nogo_target,
-                                go_on_rwd_input=go_on_rwd_input)
+                                go_on_rwd_input=go_on_rwd_input, input_scale=input_scale)
     pred        = model(X.to(device), y.to(device))[..., -1].cpu()
     stim_epoch  = slice(int(timing.n_stim_on[0]), int(timing.n_stim_off[0]))
     go_ch       = input_size - 1 if go_on_rwd_input else 4
@@ -201,12 +228,12 @@ def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, targe
 
 @torch.no_grad()
 def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
-                           cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False):
+                           cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0):
     model.eval()
     X, y = generate_gng_trials(n_trials, timing=timing, input_size=input_size,
                                 noise=noise, target_rank=target_rank, cue_on_go_input=cue_on_go_input,
                                 cue_scale=cue_scale, nogo_target=nogo_target,
-                                go_on_rwd_input=go_on_rwd_input)
+                                go_on_rwd_input=go_on_rwd_input, input_scale=input_scale)
     pred        = model(X.to(device), y.to(device))[..., -1].cpu()
     stim_epoch  = slice(int(timing.n_stim_on[0]), int(timing.n_stim_off[0]))
     go_ch       = input_size - 1 if go_on_rwd_input else 4
@@ -225,12 +252,12 @@ def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=102
 
 @torch.no_grad()
 def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
-                   cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False):
+                   cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0):
     model.eval()
     X, y, _, condition_names = generate_dual_trials(
         n_trials, timing=timing, input_size=input_size, noise=noise, target_rank=target_rank,
         cue_on_go_input=cue_on_go_input, cue_scale=cue_scale, nogo_target=nogo_target,
-        go_on_rwd_input=go_on_rwd_input,
+        go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
     )
     pred  = model(X.to(device), y.to(device))[..., -1].cpu()
     names = np.asarray(condition_names).astype(str)
@@ -269,9 +296,12 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     noise            = float(config.noise       * torch.sqrt(1.0 - torch.exp(torch.tensor(-alpha)) ** 2))
     model_noise_sigma = float(config.model_noise * torch.sqrt(1.0 - torch.exp(torch.tensor(-alpha)) ** 2))
 
-    dpa_timing  = TaskTiming([2.0, 8.0],             [3.0, 9.0],             10.0, DT)
-    gng_timing  = TaskTiming([2.0, 4.0],             [3.0, 5.0],             6.0, DT)
-    dual_timing = TaskTiming([2.0, 4.0, 6.0, 8.0],  [3.0, 5.0, 7.0, 9.0],  10.0, DT)
+    # Task timings live in src/tasks.make_timings (single source shared with plot_sweep.py)
+    _timings    = make_timings(DT)
+    dpa_timing  = _timings["dpa"]
+    gng_timing  = _timings["gng"]
+    dual_timing = _timings["dual"]
+
 
     if models_dir is None:
         models_dir = os.path.join(config.out_dir, "models")
@@ -307,7 +337,12 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                   f"  corr(m,n)={corrs[r]:+.3f}", flush=True)
         eig_str = "  ".join(f"{e.real:+.4f}" + (f"{e.imag:+.4f}j" if abs(e.imag) > 1e-6 else "")
                             for e in eigvals)
-        print(f"{p}  │  κ-Jacobian eigvals (gain·n^Tm/N): {eig_str}", flush=True)
+        # For EISTPModel the low-rank modulates the STP E→E weight (1 + n mᵀ/N), so this is
+        # the low-rank overlap, NOT the full effective Jacobian (which is STP-dependent).
+        jac_label = ("low-rank overlap n^Tm/N (modulates STP E→E)"
+                     if model.__class__.__name__ == "EISTPModel"
+                     else "κ-Jacobian eigvals (gain·n^Tm/N)")
+        print(f"{p}  │  {jac_label}: {eig_str}", flush=True)
         print(f"{p}  │  Wi: ||·||_F={wi_fro:.3f}  per-channel={' '.join(f'{v:.2f}' for v in wi_col)}",
               flush=True)
         print(f"{p}  └{'─'*50}", flush=True)
@@ -331,28 +366,68 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
               f"  dpa={acc['dpa']:.3f}  gng={acc['gng']:.3f}",
               flush=True)
 
-    model = LowRankModel(
-        input_size=config.input_size, hidden_size=config.hidden_size,
-        output_size=0, rank=config.rank, gain=config.gain,
-        alpha=alpha, alpha_rec=alpha_rec, noise=0.0,
-        rwd=config.rwd, rwd_scale=config.rwd_scale,
-        use_fixed_weights=config.use_fixed_weights,
-        fixed_weight_scale=config.fixed_weight_scale,
-        nonlinearity=config.nonlinearity,
-        device=device,
-    )
+    if config.model_type == "eistp":
+        model = EISTPModel(
+            n_neuron=config.n_neuron, K=config.eistp_K, rank=config.rank, gain=config.gain,
+            dt=DT, input_size=config.input_size,
+            stp_use=config.stp_U, stp_tau_fac=config.stp_tau_f, stp_tau_rec=config.stp_tau_d,
+            j_stp=config.j_stp, lr_ini=config.low_rank_scale, lr_scale=config.eistp_lr_scale,
+            lr_ueqv=config.eistp_lr_ueqv, r_max=config.eistp_r_max,
+            train_inputs=False, nonlinearity=config.nonlinearity,
+            device=device, seed=config.seed,
+        )
+    elif config.model_type == "ei":
+        model = EILowRankModel(
+            input_size=config.input_size, output_size=0, rank=config.rank,
+            n_exc=config.hidden_size, n_inh=config.n_inh, gain=config.gain,
+            alpha=alpha, alpha_rec=alpha_rec, noise=0.0,
+            static_radius=config.static_radius, low_rank_scale=config.low_rank_scale,
+            low_rank_full=config.low_rank_full,
+            use_stp=config.use_stp, stp_U=config.stp_U, stp_tau_f=config.stp_tau_f,
+            stp_tau_d=config.stp_tau_d, stp_dt=DT,
+            rwd=config.rwd, rwd_scale=config.rwd_scale,
+            nonlinearity=config.nonlinearity, device=device, seed=config.seed,
+        )
+    else:
+        model = LowRankModel(
+            input_size=config.input_size, hidden_size=config.hidden_size,
+            output_size=0, rank=config.rank, gain=config.gain,
+            alpha=alpha, alpha_rec=alpha_rec, noise=0.0,
+            rwd=config.rwd, rwd_scale=config.rwd_scale,
+            use_fixed_weights=config.use_fixed_weights,
+            fixed_weight_scale=config.fixed_weight_scale,
+            fixed_weight_orthogonalize=config.fixed_weight_orthogonalize,
+            fixed_weight_sparsity=config.fixed_weight_sparsity,
+            nonlinearity=config.nonlinearity,
+            nl_gamma=config.nl_gamma,
+            use_unit_bias=config.use_unit_bias,
+            unit_bias_trainable=config.unit_bias_trainable,
+            unit_bias_scale=config.unit_bias_scale,
+            device=device,
+        )
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     p = f"[{rid}]"
     print(f"{p} {'═'*60}", flush=True)
     print(f"{p}  RUN START  {time.strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
     print(f"{p}  run_id={rid}  seed={config.seed}  device={device}", flush=True)
-    print(f"{p}  arch:  hidden={config.hidden_size}  rank={config.rank}  gain={config.gain}"
-          f"  input_size={config.input_size}  params={n_params:,}", flush=True)
+    if config.model_type == "eistp":
+        print(f"{p}  arch:  N={config.n_neuron} (E={model.n_exc} I={model.n_inh})"
+              f"  K={config.eistp_K:g} (prob {config.eistp_K/model.n_exc:.3f})"
+              f"  rank={config.rank}  gain={config.gain}  input_size={config.input_size}"
+              f"  params={n_params:,}", flush=True)
+    else:
+        print(f"{p}  arch:  hidden={config.hidden_size}  rank={config.rank}  gain={config.gain}"
+              f"  input_size={config.input_size}  params={n_params:,}", flush=True)
     print(f"{p}  task:  cue_on_go={config.cue_on_go_input}  rwd={config.rwd}"
           f"  rwd_scale={config.rwd_scale}  freeze_input_stages={config.freeze_input_stages}  init={config.init_style}", flush=True)
-    print(f"{p}  dynamics: alpha={alpha:.4f}  alpha_rec={alpha_rec:.4f}  dt={DT:.4f}"
-          f"  tau={config.tau}  tau_rec_frac={config.tau_rec_frac}", flush=True)
+    if config.model_type == "eistp":
+        print(f"{p}  dynamics: dt={DT:.4f}  tau={model.tau}s  tau_syn={model.tau_syn}s"
+              f"  STP(use={config.stp_U} tau_fac={model.stp_tau_fac}s tau_rec={model.stp_tau_rec}s)"
+              f"  j_stp={config.j_stp}", flush=True)
+    else:
+        print(f"{p}  dynamics: alpha={alpha:.4f}  alpha_rec={alpha_rec:.4f}  dt={DT:.4f}"
+              f"  tau={config.tau}  tau_rec_frac={config.tau_rec_frac}", flush=True)
     print(f"{p}  noise:  input_sigma={noise:.4f} (×{config.noise})"
           f"  model_sigma={model_noise_sigma:.4f} (×{config.model_noise})", flush=True)
     print(f"{p}  optim:  lr={config.learning_rate}  wd={config.weight_decay}"
@@ -362,7 +437,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     print(f"{p}  shapes: m{list(model.m.shape)}  n{list(model.n.shape)}"
           f"  Wi{list(model.wi.weight.shape)}", flush=True)
 
-    if config.init_style == "structured":
+    if config.init_style == "structured" and config.model_type not in ("ei", "eistp"):
         init_dpa_internal_readout_prepost(
             model, mem=0, out=1,
             memory_lambda=config.memory_lambda,
@@ -396,6 +471,9 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             print(f"[{rid}] W&B init failed ({e}); continuing without logging.", flush=True)
 
     criterion     = MaskedMultiTargetLoss(target_weight=1.0, zero_weight=1.0)
+    # DPA stage: squared-hinge targets (relu margin) when dpa_hinge_thresh set, else MSE
+    dpa_criterion = (ThresholdLoss(thresh=config.dpa_hinge_thresh)
+                     if config.dpa_hinge_thresh is not None else criterion)
     gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
                                    go_hinge_thresh=config.go_hinge_thresh)
                      if config.nogo_target == 0.0 else criterion)
@@ -422,11 +500,11 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     def _eval(label):
         model.noise = 0.0
         dpa = _dpa_accuracy_by_type(model, dpa_timing, config.input_size, noise=noise, device=device,
-                                    target_rank=config.target_rank)
+                                    target_rank=config.target_rank, input_scale=config.input_scale)
         gng = _gng_accuracy_by_type(model, gng_timing, config.input_size, noise=noise, device=device,
                                     target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                     cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-                                    go_on_rwd_input=config.go_on_rwd_input)
+                                    go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale)
         print(f"[{rid}]   {label}: "
               f"dpa={dpa['overall']:.3f} (pair={dpa['pair']:.3f} unpair={dpa['unpair']:.3f})  "
               f"gng={gng['overall']:.3f} (go={gng['go']:.3f} nogo={gng['nogo']:.3f})", flush=True)
@@ -438,7 +516,10 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     # ------------------------------------------------------------------
     if config.dpa_ckpt is not None:
         print(f"[{rid}]  DPA: loading checkpoint from {config.dpa_ckpt}", flush=True)
-        model.load_state_dict(torch.load(config.dpa_ckpt, map_location=device))
+        sd = torch.load(config.dpa_ckpt, map_location=device)
+        missing, unexpected = model.load_state_dict(sd, strict=False)
+        if [k for k in missing if k != "gain"] or unexpected:
+            raise RuntimeError(f"DPA ckpt mismatch: missing={missing}, unexpected={unexpected}")
         losses["dpa"] = {}
         train_l, val_l, t0 = [], [], time.time()
         torch.save(model.state_dict(), os.path.join(models_dir, f"dpa_{rid}.pth"))
@@ -449,7 +530,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             dpa_freeze_input = sorted(set(dpa_freeze_input) | set(gng_dims))
         _stage_header("DPA", config.epochs_dpa, dpa_freeze_input, [])
         t0 = time.time()
-        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank)
+        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -463,7 +544,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                 cos    = torch.dot(wi_rwd, n1) / (wi_rwd.norm() * n1.norm()).clamp_min(1e-8)
                 return _w * (1.0 - cos)
 
-        trainer    = Optimization(model, tl, vl, criterion, opt, sched,
+        trainer    = Optimization(model, tl, vl, dpa_criterion, opt, sched,
                                   config.grad_clip_norm, num_epochs=config.epochs_dpa,
                                   freeze_input_dims=dpa_freeze_input,
                                   regularizer=dpa_regularizer,
@@ -511,7 +592,10 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     # ------------------------------------------------------------------
     if config.gng_ckpt is not None:
         print(f"[{rid}]  GNG: loading checkpoint from {config.gng_ckpt}", flush=True)
-        model.load_state_dict(torch.load(config.gng_ckpt, map_location=device))
+        sd = torch.load(config.gng_ckpt, map_location=device)
+        missing, unexpected = model.load_state_dict(sd, strict=False)
+        if [k for k in missing if k != "gain"] or unexpected:
+            raise RuntimeError(f"GNG ckpt mismatch: missing={missing}, unexpected={unexpected}")
         losses["gng"] = {}
         train_l, val_l, t0 = [], [], time.time()
         torch.save(model.state_dict(), os.path.join(models_dir, f"naive_{rid}.pth"))
@@ -525,7 +609,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         t0 = time.time()
         X, y   = generate_gng_trials(config.n_batch, gng_timing, config.input_size, noise=noise, target_rank=config.target_rank,
                                       cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
-                                      nogo_target=config.nogo_target, go_on_rwd_input=config.go_on_rwd_input)
+                                      nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
+                                      input_scale=config.input_scale)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -558,7 +643,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     t0 = time.time()
     X, y, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise, target_rank=config.target_rank,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
-                                       nogo_target=config.nogo_target, go_on_rwd_input=config.go_on_rwd_input)
+                                       nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
+                                       input_scale=config.input_scale)
     print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
     tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
     opt, sched = _opt_and_sched()
@@ -571,6 +657,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             gng_go_weight=config.gng_go_weight, gng_nogo_weight=config.gng_nogo_weight,
             aux_weight=config.aux_weight, bl_weight=config.bl_weight,
             go_hinge_thresh=config.go_hinge_thresh,
+            dpa_hinge_thresh=config.dpa_hinge_thresh,
         )
         print(f"[{rid}]  loss=separated"
               f"  dpa_w={config.dpa_weight}  gng_w={config.gng_weight}"
@@ -615,7 +702,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     dual_dpa, dual_gng = _dual_accuracy(model, dual_timing, config.input_size, noise=noise, device=device,
                                          target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                          cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-                                         go_on_rwd_input=config.go_on_rwd_input)
+                                         go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale)
     _stage_summary("Dual", train_l, val_l, acc_after_dual, t0)
     _log_params("after Dual")
 
@@ -709,7 +796,8 @@ def _worker(worker_id: int, n_gpus: int, job_queue: mp.Queue, result_queue: mp.Q
 # Sweep definition  ← edit this to change what gets run
 # ---------------------------------------------------------------------------
 
-def make_configs(out_dir: str) -> list[RunConfig]:
+def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool = True,
+                 nogo_target: float | None = None) -> list[RunConfig]:
     """
     Return the list of runs to execute.  Edit freely.
 
@@ -721,35 +809,49 @@ def make_configs(out_dir: str) -> list[RunConfig]:
     """
     configs = []
 
-    base = dict(
-        init_style="random",
-        gain=3.0,
-        nonlinearity="lif",
-        noise=1.0,
-        model_noise=0.0,
-        cue_on_go_input=True,
-        go_on_rwd_input=False,
-        freeze_input_stages=["gng", "dual"],
-        freeze_gng_input_during_dpa=True,
-        freeze_rank0_dual=True,
-        nogo_target=0.0,
+    shared = dict(
+        # --- EISTPModel: NeuroFlame dual-EI port (Markram STP on E→E, low-rank rides it) ---
+        model_type="eistp",
+        nonlinearity="relu",
+        # smaller for fast test launches; K scaled with N to hold connection prob K/N=0.125
+        # (E-prob 0.167, I-prob 0.5 — same sparsity as the full N=2000/K=250 model)
+        n_neuron=1000, eistp_K=125.0, j_stp=5.0,
+        low_rank_scale=1.0,            # LR_INI = 1.0
+        eistp_lr_scale="sqrtK",        # (n@mᵀ)/√K → ~68× stronger low-rank modulation than /N
+        eistp_r_max=500.0,             # rate cap, ~6× the ~80 operating peak (anti-runaway safety)
+        eistp_lr_ueqv=False,           # random init (m,n independent) — g_mem starts ≈0, grows in training
+        stp_U=0.05, stp_tau_f=1.0, stp_tau_d=0.2,   # Markram; τ_fac = 1.0s
+        gain=1.0,
+        noise=1.0,                     # task input noise (generator)
+        model_noise=0.0,               # rely on STP/init kick, not recurrent noise
+        cue_on_go_input=cue_on_go_input,
+        freeze_input_stages=["dual"],
+        freeze_rank0_dual=False,
+        nogo_target=-1.0,
+        go_target=1.0,
+        go_hinge_thresh=1.0,           # relu EI can't hit exact ±1 → hinge targets
+        dpa_hinge_thresh=1.0,          # hinge DPA decision (DPA + dual stages)
         cue_scale=2.0,
+        input_scale=1.0,
         stop_loss=0.1,
         dual_loss="separated",
-        epochs_dpa=100,
-        epochs_gng=100,
-        epochs_dual=200,
-        use_fixed_weights=False,
-        gng_nogo_weight=2.0,
-        go_hinge_thresh=1.0,
         optimizer="adam",
+        learning_rate=0.01,
+        batch_size=32, n_batch=256,    # smaller batch (BPTT through ~440 steps)
+        grad_clip_norm=1.0,            # clipping ON (=1.0); cheap stability (5/5 vs 4/5 without)
+        epochs_dpa=100, epochs_gng=100, epochs_dual=100,
         use_scheduler=False,
         kappa1_reg_weight=0.0,
+        use_unit_bias=False,
         out_dir=out_dir,
     )
+    if nogo_target is not None:        # CLI override (e.g. nogo_target=0 for the dual variant)
+        shared["nogo_target"] = nogo_target
 
+    # EISTP DPA→GNG→Dual from scratch. 5 seeds, 100 epochs/stage (real sweep).
     for seed in range(5):
-        configs.append(RunConfig(run_id=f"s{seed}_lif", seed=seed, **base))
+        configs.append(RunConfig(run_id=f"s{seed}", seed=seed,
+                                 gng_nogo_weight=1.0, **shared))
 
     return configs
 
@@ -792,13 +894,21 @@ def main():
                         help="Launch one screen session per run instead of using multiprocessing.")
     parser.add_argument("--run_filter",      type=str,  default=None,
                         help="Only run configs whose run_id contains this substring.")
+    parser.add_argument("--nonlinearity",    type=str,  default="relu",
+                        help="Nonlinearity passed to make_configs (e.g. relu, tanh).")
+    parser.add_argument("--cue_on_go_input", type=int,  default=1, choices=[0, 1],
+                        help="1: cue rides on go channel (input_size 6); 0: cue on own channel (input_size 7).")
+    parser.add_argument("--nogo_target",     type=float, default=None,
+                        help="Override nogo_target in make_configs (e.g. 0.0 or -1.0).")
     args = parser.parse_args()
 
     n_gpus        = min(args.n_gpus, torch.cuda.device_count()) if torch.cuda.is_available() else 1
     n_workers     = args.n_workers if args.n_workers is not None else n_gpus
     out_dir       = args.out_dir
     wandb_project = args.wandb_project
-    configs       = make_configs(out_dir)
+    configs       = make_configs(out_dir, nonlinearity=args.nonlinearity,
+                                  cue_on_go_input=bool(args.cue_on_go_input),
+                                  nogo_target=args.nogo_target)
     if args.run_filter:
         configs = [c for c in configs if args.run_filter in c.run_id]
         print(f"run_filter={args.run_filter!r}: {len(configs)} matching configs")
