@@ -84,6 +84,7 @@ class RunConfig:
     eistp_lr_scale: str  = "N"   # low-rank divisor (n@mᵀ)/lr_scale: "N" (=N_E) or "sqrtK"
     eistp_r_max:   float | None = None  # rate cap (anti-runaway); None = uncapped relu
     eistp_lr_ueqv: bool  = True  # True: m init = n (critical g_mem); False: independent random init
+    eistp_init_noise: float = 1.0  # init recurrent kick rates₀=relu(ff₀+init_noise·randn); 0 = deterministic/frozen
 
     # Initialisation
     init_style:         str   = "random"        # "structured" | "random"
@@ -373,6 +374,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             stp_use=config.stp_U, stp_tau_fac=config.stp_tau_f, stp_tau_rec=config.stp_tau_d,
             j_stp=config.j_stp, lr_ini=config.low_rank_scale, lr_scale=config.eistp_lr_scale,
             lr_ueqv=config.eistp_lr_ueqv, r_max=config.eistp_r_max,
+            init_noise=config.eistp_init_noise,
             train_inputs=False, nonlinearity=config.nonlinearity,
             device=device, seed=config.seed,
         )
@@ -815,11 +817,12 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         nonlinearity="relu",
         # smaller for fast test launches; K scaled with N to hold connection prob K/N=0.125
         # (E-prob 0.167, I-prob 0.5 — same sparsity as the full N=2000/K=250 model)
-        n_neuron=1000, eistp_K=125.0, j_stp=5.0,
+        n_neuron=1000, eistp_K=125.0, j_stp=1.0,
         low_rank_scale=1.0,            # LR_INI = 1.0
-        eistp_lr_scale="sqrtK",        # (n@mᵀ)/√K → ~68× stronger low-rank modulation than /N
+        eistp_lr_scale="N",            # ABLATION: original notebook TRAIN_SCALE='all' (÷N_E)
         eistp_r_max=500.0,             # rate cap, ~6× the ~80 operating peak (anti-runaway safety)
         eistp_lr_ueqv=False,           # random init (m,n independent) — g_mem starts ≈0, grows in training
+        eistp_init_noise=0.0,          # FROZEN INPUTS: deterministic init kick → identical forward every epoch
         stp_U=0.05, stp_tau_f=1.0, stp_tau_d=0.2,   # Markram; τ_fac = 1.0s
         gain=1.0,
         noise=1.0,                     # task input noise (generator)
@@ -836,10 +839,10 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         stop_loss=0.1,
         dual_loss="separated",
         optimizer="adam",
-        learning_rate=0.01,
+        learning_rate=0.1,            # ABLATION: original notebook lr=0.1
         batch_size=32, n_batch=256,    # smaller batch (BPTT through ~440 steps)
-        grad_clip_norm=1.0,            # clipping ON (=1.0); cheap stability (5/5 vs 4/5 without)
-        epochs_dpa=100, epochs_gng=100, epochs_dual=100,
+        grad_clip_norm=None,           # ABLATION: original has NO grad clip (let ‖V‖ grow into ÷N_E)
+        epochs_dpa=200, epochs_gng=100, epochs_dual=100,  # ABLATION: 2× DPA epochs (DPA was where 'all' died)
         use_scheduler=False,
         kappa1_reg_weight=0.0,
         use_unit_bias=False,
