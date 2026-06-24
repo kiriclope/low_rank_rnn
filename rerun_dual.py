@@ -37,7 +37,7 @@ from sweep import (
     train_val_split,
 )
 from src.models import LowRankModel
-from src.tasks import TaskTiming, generate_dual_trials
+from src.tasks import TaskTiming, make_timings, generate_dual_trials
 from src.train import Optimization, MaskedMultiTargetLoss, MaskedMultiTargetDualLoss
 
 
@@ -56,15 +56,19 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
     noise             = float(config.noise       * torch.sqrt(1.0 - torch.exp(torch.tensor(-alpha)) ** 2))
     model_noise_sigma = float(config.model_noise * torch.sqrt(1.0 - torch.exp(torch.tensor(-alpha)) ** 2))
 
-    dpa_timing  = TaskTiming([2.0, 8.0],            [3.0, 9.0],            10.0, DT)
-    gng_timing  = TaskTiming([2.0, 4.0],            [3.0, 5.0],            6.0,  DT)
-    dual_timing = TaskTiming([2.0, 4.0, 6.0, 8.0], [3.0, 5.0, 7.0, 9.0], 10.0, DT)
+    _t = make_timings(DT)
+    dpa_timing, gng_timing, dual_timing = _t["dpa"], _t["gng"], _t["dual"]
 
     model = LowRankModel(
         input_size=config.input_size, hidden_size=config.hidden_size,
         output_size=0, rank=config.rank, gain=config.gain,
         alpha=alpha, alpha_rec=alpha_rec, noise=0.0,
-        rwd=config.rwd, rwd_scale=config.rwd_scale, device=device,
+        rwd=config.rwd, rwd_scale=config.rwd_scale,
+        nonlinearity=config.nonlinearity,
+        use_unit_bias=config.use_unit_bias,
+        unit_bias_trainable=config.unit_bias_trainable,
+        unit_bias_scale=config.unit_bias_scale,
+        device=device,
     )
 
     naive_path = os.path.join(naive_dir, f"{ckpt_prefix}_{rid}.pth")
@@ -93,7 +97,8 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
         config.n_batch, dual_timing, config.input_size, noise=noise,
         target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
         cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-        go_on_rwd_input=config.go_on_rwd_input,
+        go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
+        input_scale=config.input_scale,
     )
     tl, vl = train_val_split(X.to(device), y.to(device), config.batch_size)
 
@@ -136,7 +141,7 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
         model, dual_timing, config.input_size, noise=noise, device=device,
         target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
         cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-        go_on_rwd_input=config.go_on_rwd_input,
+        go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale,
     )
     elapsed = time.time() - t0
     print(f"[{rid}]  Dual done in {elapsed:.1f}s"
@@ -203,6 +208,8 @@ def main():
     parser.add_argument("--no_scheduler",    action="store_true")
     parser.add_argument("--gng_go_weight",   type=float, default=None)
     parser.add_argument("--gng_nogo_weight", type=float, default=None)
+    parser.add_argument("--nogo_target",     type=float, default=None,
+                        help="Override nogo_target for the Dual stage (e.g. 0.0 or -1.0).")
     parser.add_argument("--ckpt_prefix",     type=str,   default="naive",
                         help="Checkpoint prefix to load: 'naive' (after GNG) or 'expert' (after Dual)")
     args = parser.parse_args()
@@ -227,6 +234,8 @@ def main():
             e["config"]["gng_go_weight"] = args.gng_go_weight
         if args.gng_nogo_weight is not None:
             e["config"]["gng_nogo_weight"] = args.gng_nogo_weight
+        if args.nogo_target is not None:
+            e["config"]["nogo_target"] = args.nogo_target
 
     ep_str    = str(epochs_dual) if epochs_dual is not None else "from config"
     sched_str = "none" if no_scheduler else "ReduceLROnPlateau"

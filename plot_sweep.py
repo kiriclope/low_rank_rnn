@@ -37,6 +37,7 @@ import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.cluster import KMeans
 import seaborn as sns
 import torch
 
@@ -45,9 +46,9 @@ from src.dynamics import (
     find_all_fixed_points, classify_fixed_points, make_input,
     plot_task_flow_fields,
 )
-from src.models import LowRankModel
+from src.models import LowRankModel, EILowRankModel, EISTPModel
 from src.tasks import (
-    TaskTiming,
+    TaskTiming, make_timings,
     generate_dpa_trials, generate_gng_trials, generate_dual_trials,
 )
 
@@ -107,6 +108,28 @@ class RunMeta:
     dt_base:        float = 0.03
     tau_rec_frac:   float = 0.75
     nonlinearity:   str   = "tanh"
+    nl_gamma:       float = 0.0
+    use_unit_bias:  bool  = False
+    unit_bias_trainable: bool = True
+    model_type:     str   = "lowrank"
+    n_inh:          int   = 128
+    static_radius:  float = 1.5
+    low_rank_scale: float = 0.3
+    low_rank_full:  bool  = False
+    use_stp:        bool  = False
+    stp_U:          float = 0.2
+    stp_tau_f:      float = 1.5
+    stp_tau_d:      float = 0.3
+    stp_dt:         float = 0.0225
+    n_neuron:       int   = 2000
+    eistp_K:        float = 250.0
+    j_stp:          float = 1.0
+    eistp_lr_scale: str   = "N"
+    eistp_r_max:    float | None = None
+    use_fixed_weights: bool = False
+    fixed_weight_scale: float = 0.8
+    fixed_weight_orthogonalize: bool = True
+    fixed_weight_sparsity: float = 1.0
 
     @property
     def alpha(self) -> float:
@@ -155,6 +178,28 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             dt_base         = float(cfg.get("dt_base", 0.03)),
             tau_rec_frac    = float(cfg.get("tau_rec_frac", 0.75)),
             nonlinearity    = cfg.get("nonlinearity", "tanh"),
+            nl_gamma        = float(cfg.get("nl_gamma", 0.0)),
+            use_unit_bias   = bool(cfg.get("use_unit_bias", False)),
+            unit_bias_trainable = bool(cfg.get("unit_bias_trainable", True)),
+            model_type      = cfg.get("model_type", "lowrank"),
+            n_inh           = int(cfg.get("n_inh", 128)),
+            static_radius   = float(cfg.get("static_radius", 1.5)),
+            low_rank_scale  = float(cfg.get("low_rank_scale", 0.3)),
+            low_rank_full   = bool(cfg.get("low_rank_full", False)),
+            use_stp         = bool(cfg.get("use_stp", False)),
+            stp_U           = float(cfg.get("stp_U", 0.2)),
+            stp_tau_f       = float(cfg.get("stp_tau_f", 1.5)),
+            stp_tau_d       = float(cfg.get("stp_tau_d", 0.3)),
+            stp_dt          = float(cfg.get("dt_base", 0.03)) * float(cfg.get("tau_rec_frac", 0.75)),
+            n_neuron        = int(cfg.get("n_neuron", 2000)),
+            eistp_K         = float(cfg.get("eistp_K", 250.0)),
+            j_stp           = float(cfg.get("j_stp", 1.0)),
+            eistp_lr_scale  = str(cfg.get("eistp_lr_scale", "N")),
+            eistp_r_max     = cfg.get("eistp_r_max", None),
+            use_fixed_weights = bool(cfg.get("use_fixed_weights", False)),
+            fixed_weight_scale = float(cfg.get("fixed_weight_scale", 0.8)),
+            fixed_weight_orthogonalize = bool(cfg.get("fixed_weight_orthogonalize", True)),
+            fixed_weight_sparsity = float(cfg.get("fixed_weight_sparsity", 1.0)),
         ))
     return rows
 
@@ -163,7 +208,40 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
 # Model / checkpoint helpers
 # ---------------------------------------------------------------------------
 
-def _build_model(meta: RunMeta, device: str) -> LowRankModel:
+def _build_model(meta: RunMeta, device: str):
+    if meta.model_type == "eistp":
+        return EISTPModel(
+            n_neuron=meta.n_neuron, K=meta.eistp_K, rank=2, gain=meta.gain,
+            dt=meta.stp_dt, input_size=meta.input_size,
+            stp_use=meta.stp_U, stp_tau_fac=meta.stp_tau_f, stp_tau_rec=meta.stp_tau_d,
+            j_stp=meta.j_stp, lr_ini=meta.low_rank_scale, lr_scale=meta.eistp_lr_scale,
+            r_max=meta.eistp_r_max,
+            train_inputs=False, nonlinearity="relu", device=device,
+        )
+    if meta.model_type == "ei":
+        return EILowRankModel(
+            input_size    = meta.input_size,
+            output_size   = 0,
+            rank          = 2,
+            n_exc         = 512,
+            n_inh         = meta.n_inh,
+            gain          = meta.gain,
+            alpha         = meta.alpha,
+            alpha_rec     = meta.alpha_rec,
+            noise         = 0.0,
+            static_radius = meta.static_radius,
+            low_rank_scale= meta.low_rank_scale,
+            low_rank_full = meta.low_rank_full,
+            use_stp       = meta.use_stp,
+            stp_U         = meta.stp_U,
+            stp_tau_f     = meta.stp_tau_f,
+            stp_tau_d     = meta.stp_tau_d,
+            stp_dt        = meta.stp_dt,
+            rwd           = meta.rwd,
+            rwd_scale     = meta.rwd_scale,
+            nonlinearity  = meta.nonlinearity,
+            device        = device,
+        )
     return LowRankModel(
         input_size    = meta.input_size,
         hidden_size   = 512,
@@ -176,6 +254,13 @@ def _build_model(meta: RunMeta, device: str) -> LowRankModel:
         rwd           = meta.rwd,
         rwd_scale     = meta.rwd_scale,
         nonlinearity  = meta.nonlinearity,
+        nl_gamma      = meta.nl_gamma,
+        use_unit_bias = meta.use_unit_bias,
+        unit_bias_trainable = meta.unit_bias_trainable,
+        use_fixed_weights = meta.use_fixed_weights,
+        fixed_weight_scale = meta.fixed_weight_scale,
+        fixed_weight_orthogonalize = meta.fixed_weight_orthogonalize,
+        fixed_weight_sparsity = meta.fixed_weight_sparsity,
         device        = device,
     )
 
@@ -189,7 +274,11 @@ def _load_ckpt(model: LowRankModel, ckpt_dir: str, stage: str,
         path = os.path.join(ckpt_dir, "models", f"{stage}_{run_id}.pth")
     if not os.path.exists(path):
         return False
-    model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+    sd = torch.load(path, map_location=device, weights_only=True)
+    missing, unexpected = model.load_state_dict(sd, strict=False)
+    missing_real = [k for k in missing if k != "gain"]
+    if missing_real or unexpected:
+        raise RuntimeError(f"Checkpoint mismatch: missing={missing_real}, unexpected={unexpected}")
     model.eval()
     return True
 
@@ -198,14 +287,7 @@ def _noise_sigma(prefactor: float) -> float:
     return float(prefactor * np.sqrt(1.0 - np.exp(-_ALPHA) ** 2))
 
 
-def _make_timings() -> dict:
-    return {
-        "dpa":  TaskTiming([2.0, 8.0],            [3.0, 9.0],            10.0, DT),
-        "gng":  TaskTiming([2.0, 4.0],            [3.0, 5.0],             6.0, DT),
-        "dual": TaskTiming([2.0, 4.0, 6.0, 8.0], [3.0, 5.0, 7.0, 9.0], 10.0, DT),
-    }
-
-TIMINGS = _make_timings()
+TIMINGS = make_timings(DT)
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +462,7 @@ def _make_dual_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None 
 # ---------------------------------------------------------------------------
 
 def _fps_for_task(model, input_size: int, task: str, device: str,
-                  cue_on_go_input: bool, n_seeds: int = 21) -> list:
+                  cue_on_go_input: bool, n_seeds: int = 21, slow_tol=None) -> list:
     """[(label, color, marker, fps_array, stabs_array), ...]"""
     dtype  = next(model.parameters()).dtype
     conds  = _input_conditions(task, input_size, cue_on_go_input)
@@ -390,9 +472,48 @@ def _fps_for_task(model, input_size: int, task: str, device: str,
                               device=device, dtype=dtype)
         fps, _   = find_all_fixed_points(model, xlim=XLIM, ylim=YLIM, ff_input=ff,
                                          n_seeds=n_seeds, residual_tol=1e-8, merge_tol=5e-2)
-        stabs, _ = classify_fixed_points(model, fps, ff_input=ff)
+        stabs, _ = classify_fixed_points(model, fps, ff_input=ff, slow_tol=slow_tol)
         result.append((label, color, marker, fps, stabs))
     return result
+
+
+def _model_has_backbone(model) -> bool:
+    """True if the analytic low-rank FP reduction is invalid (static backbone / EI)."""
+    return getattr(model, "w_fixed", None) is not None or hasattr(model, "_W_rec_eff")
+
+
+def _sim_fps_for_conditions(model, input_size, conditions, device,
+                            R=3.0, gsize=18, k=4, merge_tol=0.25):
+    """True (simulation-based) attractors per input condition, via the grid-sim used by
+    the binned flow (ei_flow.run_grid) + KMeans on trajectory endpoints. For models whose
+    analytic κ-reduction is invalid (fixed-weight backbone, EI). All returned points are
+    'attractor' (the sim only reveals attractors)."""
+    import ei_flow
+    dev   = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+    out = []
+    for label, dims, color, marker in conditions:
+        cond_x = None if dims is None else make_input(input_size, dims, 1.0, device=dev, dtype=dtype)
+        traj, _ = ei_flow.run_grid(model, cond_x, R=R, gsize=gsize, set_w=40, T=1333, I0=1.0, device=dev)
+        pts, man, _ = ei_flow.fixed_points(traj)   # isolated point fps + continuous-manifold locus
+        fps   = list(pts)
+        stabs = ["attractor"] * len(pts)
+        if man is not None and len(man):           # continuous attractor → subsampled gold locus
+            sub = man[:: max(1, len(man) // 60)]
+            fps.extend(sub); stabs.extend(["marginal"] * len(sub))
+        fps = np.array(fps) if fps else np.empty((0, 2))
+        out.append((label, color, marker, fps, stabs))
+    return out
+
+
+def _fp_marker_style(stab, color):
+    """(facecolor, edgecolor, size, linewidth) for a fixed-point stability label.
+    slow_attractor → orange ring, marginal → gold ring (matches the flow plots)."""
+    if stab == "attractor":        return color,   color,   90, 1.0
+    if stab == "slow_attractor":   return color,   "orange", 95, 2.0
+    if stab == "marginal":         return "none",  "gold",   85, 2.0
+    if stab == "saddle":           return "white", color,    70, 1.4
+    return "white", color, 50, 0.8   # repeller / nonhyperbolic
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +588,8 @@ def _plot_traj_figure(kappa_dict: dict[str, np.ndarray],
                     tgt_mean = np.nanmean(targets_np[idxs, :, tgt_dim], axis=0)
                     ax.fill_between(t, k_mean - k_std, k_mean + k_std,
                                     color=color, alpha=0.25, lw=0, zorder=8)
-                    ax.plot(t, tgt_mean, color="k", lw=2.0, alpha=0.8, zorder=9)
+                    if np.any(np.isfinite(tgt_mean[int(timing.n_stim_on[0]):])):
+                        ax.plot(t, tgt_mean, color="k", lw=2.0, alpha=0.8, zorder=9)
                     ax.plot(t, k_mean,   color=color, lw=2.5, alpha=0.9, zorder=10)
 
                 if row == 0:
@@ -535,7 +657,8 @@ def _plot_gng_traj_figure(kappa_dict: dict[str, np.ndarray],
                     tgt_mean = np.nanmean(targets_np[mask, :, tgt_dim], axis=0)
                     ax.fill_between(t, k_mean - k_std, k_mean + k_std,
                                     color=color, alpha=0.25, lw=0, zorder=8)
-                    ax.plot(t, tgt_mean, color="k", lw=2.0, alpha=0.8, zorder=9)
+                    if np.any(np.isfinite(tgt_mean[int(timing.n_stim_on[0]):])):
+                        ax.plot(t, tgt_mean, color="k", lw=2.0, alpha=0.8, zorder=9)
                     ax.plot(t, k_mean,   color=color, lw=2.5, alpha=0.9, zorder=10)
 
                 if row == 0:
@@ -729,17 +852,22 @@ def _slug(label: str) -> str:
 
 
 def _draw_fp_points(ax, init_style: str, fps, stabs):
-    """Scatter one run's fixed points onto ax (color = init_style, fill = stability)."""
+    """Scatter one run's fixed points onto ax (color = init_style, fill = stability).
+    slow_attractor → orange edge, marginal → gold hollow (matches flow plots)."""
     rc = STYLE_COLORS.get(init_style, "gray")
     for fp, stab in zip(fps, stabs):
         if stab == "attractor":
-            fc, sz, lw = rc, 60, 0.8
+            fc, ec, sz, lw = rc, rc, 60, 0.8
+        elif stab == "slow_attractor":
+            fc, ec, sz, lw = rc, "orange", 64, 1.8
+        elif stab == "marginal":
+            fc, ec, sz, lw = "none", "gold", 58, 1.8
         elif stab == "saddle":
-            fc, sz, lw = "white", 45, 1.2
+            fc, ec, sz, lw = "white", rc, 45, 1.2
         else:
-            fc, sz, lw = "white", 35, 0.7
+            fc, ec, sz, lw = "white", rc, 35, 0.7
         ax.scatter(fp[0], fp[1], s=sz, marker="o",
-                   facecolors=fc, edgecolors=rc, linewidths=lw, zorder=5, alpha=0.5)
+                   facecolors=fc, edgecolors=ec, linewidths=lw, zorder=5, alpha=0.6)
 
 
 def _style_fp_ax(ax, title: str, ylabel: bool):
@@ -759,6 +887,8 @@ def _fp_legend(fig, all_metas):
                if any(m.init_style == s for m in all_metas)]
     stab_handles = [
         plt.scatter([], [], marker="o", s=60, facecolors="gray",  edgecolors="gray",  label="attractor"),
+        plt.scatter([], [], marker="o", s=60, facecolors="gray",  edgecolors="orange", linewidths=1.8, label="slow attractor"),
+        plt.scatter([], [], marker="o", s=60, facecolors="none",  edgecolors="gold",   linewidths=1.8, label="marginal"),
         plt.scatter([], [], marker="o", s=45, facecolors="white", edgecolors="gray",  linewidths=1.2, label="saddle"),
         plt.scatter([], [], marker="o", s=35, facecolors="white", edgecolors="gray",  linewidths=0.7, label="repeller"),
     ]
@@ -766,7 +896,7 @@ def _fp_legend(fig, all_metas):
                fontsize=7, frameon=False, bbox_to_anchor=(0.5, -0.06))
 
 
-def _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds):
+def _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds, slow_tol=None):
     """data[label][stage] = [(init_style, fps, stabs), ...] across all runs."""
     data = {label: {s: [] for s in STAGES} for label, *_ in conditions}
     for meta in all_metas:
@@ -774,14 +904,19 @@ def _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds):
             model = _build_model(meta, device)
             if not _load_ckpt(model, ckpt_dir, stage, meta.run_id, device):
                 del model; continue
-            dtype = next(model.parameters()).dtype
-            for label, dims, _color, _marker in conditions:
-                ff = make_input(meta.input_size, active_dims=dims, value=1.0,
-                                device=device, dtype=dtype)
-                fps, _   = find_all_fixed_points(model, xlim=XLIM, ylim=YLIM, ff_input=ff,
-                                                 n_seeds=n_seeds, residual_tol=1e-8, merge_tol=5e-2)
-                stabs, _ = classify_fixed_points(model, fps, ff_input=ff)
-                data[label][stage].append((meta.init_style, fps, stabs))
+            if _model_has_backbone(model):
+                # true (simulation-based) attractors — analytic reduction ignores the backbone
+                for label, _c, _m, fps, stabs in _sim_fps_for_conditions(model, meta.input_size, conditions, device):
+                    data[label][stage].append((meta.init_style, fps, stabs))
+            else:
+                dtype = next(model.parameters()).dtype
+                for label, dims, _color, _marker in conditions:
+                    ff = make_input(meta.input_size, active_dims=dims, value=1.0,
+                                    device=device, dtype=dtype)
+                    fps, _   = find_all_fixed_points(model, xlim=XLIM, ylim=YLIM, ff_input=ff,
+                                                     n_seeds=n_seeds, residual_tol=1e-8, merge_tol=5e-2)
+                    stabs, _ = classify_fixed_points(model, fps, ff_input=ff, slow_tol=slow_tol)
+                    data[label][stage].append((meta.init_style, fps, stabs))
             del model
         print(f"  fp_scatter collected: {meta.run_id}")
     return data
@@ -802,10 +937,10 @@ def _render_fp_by_stage(data_for_label, all_metas, title, out_path):
 
 
 def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
-                        out_dir: str, device: str, n_seeds: int = 21):
+                        out_dir: str, device: str, n_seeds: int = 21, slow_tol=None):
     ref        = all_metas[0]
     conditions = _input_conditions("dual", ref.input_size, ref.cue_on_go_input)
-    data       = _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds)
+    data       = _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds, slow_tol=slow_tol)
 
     # Autonomous → fp_scatter_by_stage.pdf
     _render_fp_by_stage(
@@ -971,7 +1106,7 @@ def individual_trajectories(meta: RunMeta, ckpt_dir: str, out_dir: str, device: 
 
 
 def individual_fp_scatter(meta: RunMeta, ckpt_dir: str, out_dir: str,
-                          device: str, n_seeds: int = 41):
+                          device: str, n_seeds: int = 41, slow_tol=None):
     scatter_dir = os.path.join(out_dir, "scatter")
     os.makedirs(scatter_dir, exist_ok=True)
     cue = meta.cue_on_go_input
@@ -985,19 +1120,18 @@ def individual_fp_scatter(meta: RunMeta, ckpt_dir: str, out_dir: str,
         if not _load_ckpt(model, ckpt_dir, stage, meta.run_id, device):
             ax.set_visible(False); del model; continue
 
-        fp_data = _fps_for_task(model, meta.input_size, task, device, cue, n_seeds)
+        if _model_has_backbone(model):
+            fp_data = _sim_fps_for_conditions(model, meta.input_size,
+                                              _input_conditions(task, meta.input_size, cue), device)
+        else:
+            fp_data = _fps_for_task(model, meta.input_size, task, device, cue, n_seeds, slow_tol=slow_tol)
         del model
 
         ax.axhline(0, color="lightgray", lw=0.7, zorder=0)
         ax.axvline(0, color="lightgray", lw=0.7, zorder=0)
         for label, color, marker, fps, stabs in fp_data:
             for fp, stab in zip(fps, stabs):
-                if stab == "attractor":
-                    fc, ec, sz, lw = color, color,  90, 1.0
-                elif stab == "saddle":
-                    fc, ec, sz, lw = "white", color, 70, 1.4
-                else:
-                    fc, ec, sz, lw = "white", color, 50, 0.8
+                fc, ec, sz, lw = _fp_marker_style(stab, color)
                 ax.scatter(fp[0], fp[1], marker=marker, s=sz,
                            facecolors=fc, edgecolors=ec, linewidths=lw, zorder=5)
         ax.set_xlim(XLIM); ax.set_ylim(YLIM)
@@ -1012,6 +1146,8 @@ def individual_fp_scatter(meta: RunMeta, ckpt_dir: str, out_dir: str,
     cond_handles = [mpatches.Patch(color=c, label=l) for l, _, c, _ in conds_legend]
     stab_handles = [
         plt.scatter([], [], marker="o", s=70, facecolors="gray",  edgecolors="gray",  label="attractor"),
+        plt.scatter([], [], marker="o", s=70, facecolors="gray",  edgecolors="orange", linewidths=2.0, label="slow attractor"),
+        plt.scatter([], [], marker="o", s=70, facecolors="none",  edgecolors="gold",   linewidths=2.0, label="marginal"),
         plt.scatter([], [], marker="o", s=70, facecolors="white", edgecolors="gray",  linewidths=1.5, label="saddle"),
         plt.scatter([], [], marker="o", s=50, facecolors="white", edgecolors="gray",  linewidths=1.0, label="repeller"),
     ]
@@ -1029,7 +1165,9 @@ def individual_fp_scatter(meta: RunMeta, ckpt_dir: str, out_dir: str,
 
 def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
                     n_batch: int = 256, n_fp_seeds: int = 21,
-                    use_sim_field: bool = False, sim_n_warmup: int = 0):
+                    use_sim_field: bool = False, sim_n_warmup: int = 0,
+                    auto_xlim: bool = False, n_grid: int = 151, slow_tol=None,
+                    show_slow_manifold: bool = False, slow_manifold_thresh: float = 0.12):
     flow_dir = os.path.join(out_dir, "flow")
     os.makedirs(flow_dir, exist_ok=True)
     cue = meta.cue_on_go_input
@@ -1066,16 +1204,25 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
         inputs_t  = torch.as_tensor(inputs,  dtype=torch.float32)
         targets_t = torch.as_tensor(targets, dtype=torch.float32)
 
+        # When auto_xlim, scale grid density to match default ±1.5/151 spacing.
+        # n_grid_per_unit = 151 / 3.0 ≈ 50.3; capped at 401 to stay fast.
+        n_grid_per_unit = (n_grid / 3.0) if auto_xlim else None
         fig, _, _ = plot_task_flow_fields(
             model, inputs_t, timing, task,
             targets         = targets_t,
             condition_names = cnames,
             n_fp_seeds      = n_fp_seeds,
             cue_on_go_input = cue,
-            xlim            = XLIM,
-            ylim            = YLIM,
+            cue_scale       = meta.cue_scale,
+            xlim            = None if auto_xlim else XLIM,
+            ylim            = None if auto_xlim else YLIM,
+            n_grid          = n_grid,
+            n_grid_per_unit = n_grid_per_unit,
             use_sim_field   = use_sim_field,
             sim_n_warmup    = sim_n_warmup,
+            slow_tol        = slow_tol,
+            show_slow_manifold   = show_slow_manifold,
+            slow_manifold_thresh = slow_manifold_thresh,
         )
         fig.suptitle(f"{meta.run_id} — {stage} ({task.upper()})", y=1.01)
         out_path = os.path.join(flow_dir, f"fp_{stage}.pdf")
@@ -1126,11 +1273,36 @@ Examples:
                         help="Use simulation-based flow field instead of analytical κ-plane")
     parser.add_argument("--sim_n_warmup", type=int, default=0,
                         help="Warmup steps for sim flow field (0=grid-aligned/streamplot, >0=scattered/quiver)")
+    parser.add_argument("--mark_slow", action="store_true",
+                        help="Annotate shallow attractors (1-max|λ| <= slow_tol) as 'slow_attractor' (orange ring).")
+    parser.add_argument("--slow_tol", type=float, default=0.06,
+                        help="Slowness threshold for --mark_slow (default 0.06).")
+    parser.add_argument("--n_batch", type=int, default=256,
+                        help="Trials used for overlaid flow-field trajectories (default 256).")
+    parser.add_argument("--show_slow_manifold", action="store_true",
+                        help="Overlay the low-velocity ridge (slow manifold / remnant ring) on each flow panel.")
+    parser.add_argument("--slow_manifold_thresh", type=float, default=0.12,
+                        help="|F| threshold for the slow-manifold overlay (default 0.12).")
     parser.add_argument("--device",       type=str, default=None)
+    parser.add_argument("--xlim",         type=float, nargs=2, default=None,
+                        metavar=("LO", "HI"),
+                        help="κ-plane axis limits for flow/scatter (default: ±1.5). "
+                             "Use -5 5 for relu/elu/softplus sweeps.")
+    parser.add_argument("--auto_xlim",    action="store_true",
+                        help="Auto-detect κ-plane limits from trajectory percentiles "
+                             "(overrides --xlim for flow fields).")
+    parser.add_argument("--n_grid",       type=int, default=151,
+                        help="Flow-field grid resolution (default: 151). "
+                             "With --auto_xlim, this is scaled proportionally to the "
+                             "detected range to maintain constant point density.")
     args = parser.parse_args()
 
     # Resolve which components to plot
     want = set(args.plots) if args.plots is not None else _ALL_PLOTS
+
+    if args.xlim is not None:
+        global XLIM, YLIM
+        XLIM = YLIM = tuple(args.xlim)
 
     device     = args.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
     sweep_name = os.path.basename(os.path.normpath(args.sweep_dir))
@@ -1165,7 +1337,8 @@ Examples:
         if "scatter" in want:
             print("\n[summary] fp_scatters (by stage + per input condition)")
             summary_fp_scatters(all_metas, args.sweep_dir, sum_dir, device,
-                                n_seeds=args.n_fp_seeds)
+                                n_seeds=args.n_fp_seeds,
+                                slow_tol=args.slow_tol if args.mark_slow else None)
 
         if "traj" in want:
             print("\n[summary] avg_trajectories")
@@ -1187,13 +1360,20 @@ Examples:
 
             if "scatter" in want:
                 individual_fp_scatter(meta, args.sweep_dir, ind_dir, device,
-                                      n_seeds=args.n_fp_seeds)
+                                      n_seeds=args.n_fp_seeds,
+                                      slow_tol=args.slow_tol if args.mark_slow else None)
 
             if "flow" in want:
                 individual_flow(meta, args.sweep_dir, ind_dir, device,
+                                n_batch=args.n_batch,
                                 n_fp_seeds=args.n_fp_seeds,
                                 use_sim_field=args.use_sim_field,
-                                sim_n_warmup=args.sim_n_warmup)
+                                sim_n_warmup=args.sim_n_warmup,
+                                auto_xlim=args.auto_xlim,
+                                n_grid=args.n_grid,
+                                slow_tol=args.slow_tol if args.mark_slow else None,
+                                show_slow_manifold=args.show_slow_manifold,
+                                slow_manifold_thresh=args.slow_manifold_thresh)
 
 
 if __name__ == "__main__":

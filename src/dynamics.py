@@ -85,14 +85,32 @@ def low_rank_numpy_params(model):
         phi_np       = lambda u: np.where(u > 0, u, np.exp(np.minimum(u, 0.0)) - 1.0)
         phi_prime_np = lambda u: np.where(u > 0, 1.0, np.exp(np.minimum(u, 0.0)))
     elif nl_str == "lif":
-        # Brunel erfc approximation: Gaussian CDF, φ ∈ [0,1], φ'(0) = 1/sqrt(2π) ≈ 0.399
+        # Brunel erfc approximation: Gaussian CDF, φ ∈ [0,1], φ'(0) = 1/√(2π) ≈ 0.399
         _sqrt2    = np.sqrt(2.0)
         _sqrt2pi  = np.sqrt(2.0 * np.pi)
         phi_np       = lambda u: 0.5 * (1.0 + scipy.special.erf(u / _sqrt2))
         phi_prime_np = lambda u: np.exp(-np.clip(u, -20.0, 20.0) ** 2 / 2.0) / _sqrt2pi
+    elif nl_str == "lif_sc":
+        # Rescaled LIF: φ(x)=(1+erf(x√π))/2, range [0,1], φ'(0)=1 (matches tanh at origin)
+        # φ'(x) = exp(-π·x²)
+        _sqrtpi = np.sqrt(np.pi)
+        phi_np       = lambda u: 0.5 * (1.0 + scipy.special.erf(np.clip(u, -20.0, 20.0) * _sqrtpi))
+        phi_prime_np = lambda u: np.exp(-np.pi * np.clip(u, -20.0, 20.0) ** 2)
+    elif nl_str == "tanh_asym":
+        # φ = tanh(u) + γ·tanh²(u);  φ' = (1-tanh²)(1 + 2γ·tanh)
+        g = float(getattr(model, "nl_gamma", 0.0))
+        phi_np       = lambda u, g=g: np.tanh(u) + g * np.tanh(u) ** 2
+        phi_prime_np = lambda u, g=g: (1.0 - np.tanh(u) ** 2) * (1.0 + 2.0 * g * np.tanh(u))
     else:  # tanh (default)
         phi_np       = np.tanh
         phi_prime_np = lambda u: 1.0 - np.tanh(u) ** 2
+
+    N = model.m.shape[0]
+    unit_bias = getattr(model, "unit_bias", None)
+    if unit_bias is None:
+        unit_bias_np = np.zeros(N, dtype=np.float64)
+    else:
+        unit_bias_np = unit_bias.detach().cpu().numpy().astype(np.float64)
 
     return {
         "M":         model.m.detach().cpu().numpy().astype(np.float64),
@@ -102,6 +120,7 @@ def low_rank_numpy_params(model):
         "Ai":        Ai,
         "gain":      gain,
         "beta":      1.0 - np.exp(-alpha),
+        "unit_bias": unit_bias_np,
         "phi":       phi_np,
         "phi_prime": phi_prime_np,
     }
@@ -132,9 +151,10 @@ def low_rank_field_np(params, kappa, ff_input=None, include_beta=False):
     )
 
     phi = params.get("phi", np.tanh)
+    ub  = params.get("unit_bias", 0.0)
     input_drive = Ai * (ff_input @ Wi.T + bi)
     h   = kappa_flat @ M.T
-    r   = phi(gain * (input_drive[None, :] + h))
+    r   = phi(gain * (input_drive[None, :] + h) + ub)
     psi = r @ Nvec / M.shape[0]
 
     field = psi - kappa_flat
@@ -156,8 +176,9 @@ def low_rank_jacobian_flow_np(params, kappa, ff_input=None):
     )
 
     phi_prime_fn = params.get("phi_prime", lambda u: 1.0 - np.tanh(u) ** 2)
+    ub          = params.get("unit_bias", 0.0)
     input_drive = Ai * (ff_input @ Wi.T + bi)
-    u           = gain * (input_drive + M @ kappa)
+    u           = gain * (input_drive + M @ kappa) + ub
     phi_prime   = phi_prime_fn(u)
 
     J  = Nvec.T @ (phi_prime[:, None] * (gain * M)) / M.shape[0]
@@ -169,6 +190,40 @@ def low_rank_jacobian_map_np(params, kappa, ff_input=None):
     """Jacobian of the discrete map κ⁺ = κ + βF(κ)."""
     J_flow = low_rank_jacobian_flow_np(params, kappa, ff_input=ff_input)
     return np.eye(J_flow.shape[0]) + params["beta"] * J_flow
+
+
+def trace_slow_manifold(model, ff_input, xlim, ylim, n_angles=180,
+                        r_min=0.2, vel_thresh=0.12, center=(0.0, 0.0)):
+    """Trace the low-velocity ridge (slow manifold / remnant ring) of the κ field.
+
+    For each angle around `center`, find the radius minimising |F(κ)|; keep the
+    point if |F| <= vel_thresh. Returns (pts [K,2], vmag [K], v_tang [K]) where
+    v_tang is the tangential (along-ring) speed — the slow drift. Empty if the
+    field has no slow ridge below the threshold within the axes.
+    """
+    from scipy.optimize import minimize_scalar
+    params   = low_rank_numpy_params(model)
+    ff_np    = torch.as_tensor(ff_input).detach().cpu().numpy().astype(np.float64)
+    c        = np.asarray(center, dtype=np.float64)
+    r_max    = float(max(abs(xlim[0]), abs(xlim[1]), abs(ylim[0]), abs(ylim[1])))
+
+    def Fmag(k):
+        return float(np.linalg.norm(low_rank_field_np(params, k, ff_input=ff_np).reshape(-1)))
+
+    pts, vmag, vtang = [], [], []
+    for th in np.linspace(0.0, 2.0 * np.pi, n_angles, endpoint=False):
+        u   = np.array([np.cos(th), np.sin(th)])
+        res = minimize_scalar(lambda r: Fmag(c + r * u), bounds=(r_min, r_max), method="bounded")
+        p   = c + res.x * u
+        if not (xlim[0] <= p[0] <= xlim[1] and ylim[0] <= p[1] <= ylim[1]):
+            continue
+        v = low_rank_field_np(params, p, ff_input=ff_np).reshape(-1)
+        if np.linalg.norm(v) <= vel_thresh:
+            tang = np.array([-np.sin(th), np.cos(th)])
+            pts.append(p); vmag.append(float(np.linalg.norm(v))); vtang.append(abs(float(v @ tang)))
+    if not pts:
+        return np.empty((0, 2)), np.empty((0,)), np.empty((0,))
+    return np.asarray(pts), np.asarray(vmag), np.asarray(vtang)
 
 
 # ---------------------------------------------------------------------------
@@ -275,18 +330,19 @@ def run_low_rank_with_effective_inputs(
 # Plotting support
 # ---------------------------------------------------------------------------
 
-def auto_limits_from_trajs(kappa_traj, qlo=1, qhi=99, pad=1.25, symmetric=True):
+def auto_limits_from_trajs(kappa_traj, qlo=1, qhi=99, pad=1.25, symmetric=True, min_lim=1.5):
     z  = kappa_traj.reshape(-1, kappa_traj.shape[-1])
     lo = np.percentile(z[:, :2], qlo, axis=0)
     hi = np.percentile(z[:, :2], qhi, axis=0)
 
     if symmetric:
         lim = float(pad * np.max(np.abs(np.concatenate([lo, hi]))))
-        lim = max(lim, 1e-6)
+        lim = max(lim, float(min_lim))
         return (-lim, lim), (-lim, lim)
 
     center = 0.5 * (lo + hi)
     half   = 0.5 * (hi - lo) * pad
+    half   = np.maximum(half, float(min_lim))
     return (
         (float(center[0] - half[0]), float(center[0] + half[0])),
         (float(center[1] - half[1]), float(center[1] + half[1])),
@@ -363,7 +419,22 @@ def find_all_fixed_points(model, xlim, ylim, ff_input, n_seeds=41,
     return merge_roots(roots, residuals, merge_tol=merge_tol)
 
 
-def classify_fixed_points(model, fixed_points, ff_input, eig_tol=1e-5):
+def classify_fixed_points(model, fixed_points, ff_input, eig_tol=1e-5,
+                          marginal_tol=1e-2, slow_tol=None):
+    """Classify roots of the κ-plane map by the discrete-map Jacobian spectrum.
+
+    A near-unit eigenvalue (|λ|-1| <= marginal_tol) means the point lies on a
+    *marginal* slow manifold — a line/ring attractor remnant — where the
+    attractor/saddle distinction is numerically meaningless. Such points are
+    labelled "marginal" (if no strictly unstable direction) rather than
+    attractor/saddle, so figures don't sprinkle fragile isolated attractor dots
+    along a continuous manifold.
+
+    If `slow_tol` is set, *stable* attractors whose slowest eigenvalue lies within
+    slow_tol of the unit circle (1 - max|λ| <= slow_tol) are re-labelled
+    "slow_attractor" — a genuine but shallow attractor on a soft slow ring,
+    distinct from a strictly marginal (|λ|≈1) degeneracy. Off by default.
+    """
     params      = low_rank_numpy_params(model)
     ff_input_np = torch.as_tensor(ff_input).detach().cpu().numpy().astype(np.float64)
 
@@ -374,13 +445,19 @@ def classify_fixed_points(model, fixed_points, ff_input, eig_tol=1e-5):
         ev = np.linalg.eigvals(J)
         rad = np.abs(ev)
 
-        n_stable   = np.sum(rad < 1.0 - eig_tol)
-        n_unstable = np.sum(rad > 1.0 + eig_tol)
+        n_marginal = np.sum(np.abs(rad - 1.0) <= marginal_tol)
+        n_stable   = np.sum(rad < 1.0 - marginal_tol)
+        n_unstable = np.sum(rad > 1.0 + marginal_tol)
 
-        if n_stable == len(rad):       label = "attractor"
-        elif n_unstable == len(rad):   label = "repeller"
-        elif n_stable > 0:             label = "saddle"
-        else:                          label = "nonhyperbolic"
+        if n_marginal > 0 and n_unstable == 0:
+            label = "marginal"            # on a (stable) line/ring attractor
+        elif n_stable == len(rad):         label = "attractor"
+        elif n_unstable == len(rad):       label = "repeller"
+        elif n_stable > 0 or n_unstable > 0: label = "saddle"
+        else:                              label = "nonhyperbolic"
+
+        if label == "attractor" and slow_tol is not None and (1.0 - rad.max()) <= slow_tol:
+            label = "slow_attractor"
 
         labels.append(label)
         eigvals.append(ev)
@@ -549,7 +626,7 @@ def condition_indices_for_task(inputs, timing, task, condition_names=None, dual_
 
 
 def flow_specs_for_task(timing, task, input_size, cond_idx, meta, dual_mode="conditions",
-                        cue_on_go_input=False):
+                        cue_on_go_input=False, cue_scale=1.0):
     task = task.lower()
 
     if task == "dpa":
@@ -569,6 +646,9 @@ def flow_specs_for_task(timing, task, input_size, cond_idx, meta, dual_mode="con
         ]
         if not cue_on_go_input:
             specs.append(dict(name="Cue", dims=[6], conds=["Go", "NoGo"]))
+        else:
+            # cue rides on the go channel (4) at cue amplitude; show both go & nogo means
+            specs.append(dict(name="Cue", dims=[4], conds=["Go", "NoGo"], value=cue_scale))
         return specs
 
     if task == "dual":
@@ -596,6 +676,8 @@ def flow_specs_for_task(timing, task, input_size, cond_idx, meta, dual_mode="con
         ]
         if not cue_on_go_input:
             specs.append(dict(name="Cue", dims=[6], conds=Go_conds + NoGo_conds))
+        else:
+            specs.append(dict(name="Cue", dims=[4], conds=Go_conds + NoGo_conds, value=cue_scale))
         specs += [
             dict(name="C", dims=[2], conds=C_conds),
             dict(name="D", dims=[3], conds=D_conds),
@@ -624,13 +706,14 @@ def _condition_colors(cond_labels):
 def plot_task_flow_fields(
     model, inputs, timing, task,
     targets=None, condition_names=None, dual_mode="conditions",
-    xlim=None, ylim=None, n_grid=151, n_fp_seeds=41,
+    xlim=None, ylim=None, n_grid=151, n_grid_per_unit=None, n_fp_seeds=41,
     include_beta_in_field=False, qlo=1, qhi=99, pad=1.25,
     symmetric_auto=True, speed_percentile=98,
     figsize_per_panel=4.2, input_threshold=0.35, inactive_atol=0.35,
     show_single_trials=False, max_single_trials=12, max_autonomous_conditions=None,
-    cue_on_go_input=False,
-    use_sim_field=False, sim_n_warmup=0,
+    cue_on_go_input=False, cue_scale=1.0,
+    use_sim_field=False, sim_n_warmup=0, slow_tol=None,
+    show_slow_manifold=False, slow_manifold_thresh=0.12,
 ):
     """Generic low-rank phase portrait for DPA, GNG, and Dual tasks."""
     task = task.lower()
@@ -650,11 +733,18 @@ def plot_task_flow_fields(
     kappa_traj = project_rec_inputs_to_kappa(model, rec_inputs).detach().cpu().numpy()
 
     if xlim is None or ylim is None:
+        # Use full range (qlo=0, qhi=100) so input-driven excursions in a small
+        # fraction of timesteps are not clipped by percentile-based limits.
         auto_xlim, auto_ylim = auto_limits_from_trajs(
-            kappa_traj[..., :2], qlo=qlo, qhi=qhi, pad=pad, symmetric=symmetric_auto
+            kappa_traj[..., :2], qlo=0, qhi=100, pad=pad, symmetric=symmetric_auto
         )
         xlim = auto_xlim if xlim is None else xlim
         ylim = auto_ylim if ylim is None else ylim
+
+    # Scale grid density to match n_grid_per_unit pts/unit if requested.
+    if n_grid_per_unit is not None:
+        axis_range = xlim[1] - xlim[0]
+        n_grid = min(int(round(n_grid_per_unit * axis_range)), 401)
 
     cond_idx, meta = condition_indices_for_task(
         inputs.detach().cpu(), timing=timing, task=task,
@@ -663,7 +753,7 @@ def plot_task_flow_fields(
     specs = flow_specs_for_task(
         timing=timing, task=task, input_size=input_size,
         cond_idx=cond_idx, meta=meta, dual_mode=dual_mode,
-        cue_on_go_input=cue_on_go_input,
+        cue_on_go_input=cue_on_go_input, cue_scale=cue_scale,
     )
 
     max_dim = max(
@@ -678,7 +768,7 @@ def plot_task_flow_fields(
 
     caches, all_speeds = [], []
     for spec in specs:
-        ff_input = make_input(input_size, active_dims=spec["dims"], value=1.0, device=device, dtype=dtype)
+        ff_input = make_input(input_size, active_dims=spec["dims"], value=spec.get("value", 1.0), device=device, dtype=dtype)
 
         if use_sim_field:
             K1, K2, U, V, speed = sim_kappa_field(
@@ -691,7 +781,7 @@ def plot_task_flow_fields(
                 residual_tol=1e-5, merge_tol=5e-2,
             )
             fp_labels, fp_eigvals = classify_sim_fixed_points(
-                model, fixed_points, ff_input, n_warmup=sim_n_warmup,
+                model, fixed_points, ff_input, n_warmup=sim_n_warmup, slow_tol=slow_tol,
             )
         else:
             K1, K2, U, V, speed, params, ff_input_np = make_vector_field_grid(
@@ -702,7 +792,7 @@ def plot_task_flow_fields(
                 model, xlim=xlim, ylim=ylim, ff_input=ff_input,
                 n_seeds=n_fp_seeds, residual_tol=1e-8, merge_tol=5e-2,
             )
-            fp_labels, fp_eigvals = classify_fixed_points(model, fixed_points, ff_input=ff_input)
+            fp_labels, fp_eigvals = classify_fixed_points(model, fixed_points, ff_input=ff_input, slow_tol=slow_tol)
 
         panel_mask = _canonical_input_mask(
             effective_x, dims=spec["dims"], threshold=input_threshold, atol_inactive=inactive_atol
@@ -750,13 +840,22 @@ def plot_task_flow_fields(
             ax.streamplot(K1[0, :], K2[:, 0], U, V, color="white", density=1.05,
                           linewidth=0.70, arrowsize=0.80, zorder=2)
 
-        for label, marker in [("attractor","o"),("saddle","x"),("repeller","^"),("nonhyperbolic","D")]:
+        for label, marker in [("attractor","o"),("slow_attractor","o"),("marginal","s"),
+                              ("saddle","x"),("repeller","^"),("nonhyperbolic","D")]:
             if len(cache["fp_labels"]) == 0: continue
             mask = cache["fp_labels"] == label
             if not np.any(mask): continue
             pts = cache["fixed_points"][mask]
             if label == "saddle":
                 ax.scatter(pts[:, 0], pts[:, 1], s=60, marker="x", color="cyan", linewidths=1.5, zorder=10, label=label)
+            elif label == "marginal":
+                # near-unit eigenvalue → point on a line/ring (marginal) manifold
+                ax.scatter(pts[:, 0], pts[:, 1], s=55, marker="s", facecolors="none",
+                           edgecolors="gold", linewidths=1.6, zorder=10, label=label)
+            elif label == "slow_attractor":
+                # genuine but shallow attractor on a soft slow ring (1-max|λ| <= slow_tol)
+                ax.scatter(pts[:, 0], pts[:, 1], s=62, marker="o", facecolors="none",
+                           edgecolors="orange", linewidths=1.8, zorder=10, label=label)
             else:
                 ax.scatter(pts[:, 0], pts[:, 1], s=60, marker=marker,
                            facecolors="cyan" if label == "attractor" else "none",
@@ -794,6 +893,15 @@ def plot_task_flow_fields(
                                 color=color, arrow_step=3, mutation_scale=13, lw=1.5, alpha=0.95, zorder=8)
                 ax.scatter(seg[0, 0],  seg[0, 1],  marker="o", s=38, color=color, edgecolors="white", linewidths=0.6, zorder=9)
                 ax.scatter(seg[-1, 0], seg[-1, 1], marker="X", s=46, color=color, edgecolors="white", linewidths=0.6, zorder=9)
+
+        if show_slow_manifold:
+            mpts, mvel, _ = trace_slow_manifold(
+                model, cache["ff_input"], xlim, ylim, vel_thresh=slow_manifold_thresh,
+            )
+            if len(mpts) > 0:
+                ax.scatter(mpts[:, 0], mpts[:, 1], c=mvel, cmap="spring", s=14,
+                           vmin=0.0, vmax=slow_manifold_thresh, zorder=11,
+                           edgecolors="none", label="slow manifold")
 
         ax.set_title(spec["name"])
         ax.set_xlim(xlim); ax.set_ylim(ylim)
@@ -957,7 +1065,7 @@ def find_sim_fixed_points(model, ff_input, xlim, ylim, n_seeds=21, n_warmup=0,
 
 
 def classify_sim_fixed_points(model, fixed_points, ff_input, n_warmup=0,
-                               eig_tol=1e-5, eps=1e-4):
+                               eig_tol=1e-5, eps=1e-4, marginal_tol=1e-2, slow_tol=None):
     """
     Classify fixed points using a numerical Jacobian of the simulation-based map.
 
@@ -977,12 +1085,18 @@ def classify_sim_fixed_points(model, fixed_points, ff_input, n_warmup=0,
         ev    = np.linalg.eigvals(J_map)
         rad   = np.abs(ev)
 
-        n_stable   = np.sum(rad < 1.0 - eig_tol)
-        n_unstable = np.sum(rad > 1.0 + eig_tol)
-        if n_stable == len(rad):      label = "attractor"
+        n_marginal = np.sum(np.abs(rad - 1.0) <= marginal_tol)
+        n_stable   = np.sum(rad < 1.0 - marginal_tol)
+        n_unstable = np.sum(rad > 1.0 + marginal_tol)
+        if n_marginal > 0 and n_unstable == 0:
+            label = "marginal"
+        elif n_stable == len(rad):    label = "attractor"
         elif n_unstable == len(rad):  label = "repeller"
-        elif n_stable > 0:            label = "saddle"
+        elif n_stable > 0 or n_unstable > 0: label = "saddle"
         else:                         label = "nonhyperbolic"
+
+        if label == "attractor" and slow_tol is not None and (1.0 - rad.max()) <= slow_tol:
+            label = "slow_attractor"
 
         labels.append(label)
         eigvals.append(ev)

@@ -169,12 +169,13 @@ class Optimization:
 
     def _run_epoch(self, loader: DataLoader, train: bool) -> float:
         self.model.train(train)
-        total_loss, total_n = 0.0, 0
+        total_loss, total_n, n_seen = 0.0, 0, 0
         context = torch.enable_grad() if train else torch.no_grad()
         use_hebb = self.hebb_lr > 0 and train
 
         with context:
             for X, y in loader:
+                n_seen += 1
                 X = X.to(self.device, non_blocking=True)
                 y = y.to(self.device, non_blocking=True)
 
@@ -188,8 +189,12 @@ class Optimization:
                     rates  = None
                 loss   = self.criterion(y_pred, y)
 
+                # Skip a non-finite batch (don't corrupt weights / abort the run) rather than
+                # returning NaN — lets training survive a transient instability.
                 if not torch.isfinite(loss):
-                    return float("nan")
+                    if train:
+                        self.optimizer.zero_grad(set_to_none=True)
+                    continue
 
                 if train:
                     if self.regularizer is not None:
@@ -200,6 +205,11 @@ class Optimization:
                         self.model.wi.weight.grad[:, -1] = 0.0
                     self._zero_low_rank_grads()
                     self._zero_input_grads()
+                    # skip the step if any gradient went non-finite (anti-runaway)
+                    if any(p.grad is not None and not torch.isfinite(p.grad).all()
+                           for p in self.model.parameters()):
+                        self.optimizer.zero_grad(set_to_none=True)
+                        continue
                     if self.grad_clip_norm is not None:
                         nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm)
                     self.optimizer.step()
@@ -210,8 +220,10 @@ class Optimization:
                 total_loss += loss.item() * X.size(0)
                 total_n    += X.size(0)
 
+        if n_seen == 0:
+            raise ValueError("Dataloader produced zero examples.")   # genuinely empty loader
         if total_n == 0:
-            raise ValueError("Dataloader produced zero examples.")
+            return float("nan")   # every batch was non-finite (diverged) → fit() stops gracefully
         return total_loss / total_n
 
     def _step_scheduler(self, val_loss: float):
@@ -423,11 +435,13 @@ class MaskedMultiTargetDualLoss(nn.Module):
         target_weight:   float = 1.0,
         zero_weight:     float = 1.0,
         go_hinge_thresh: float | None = None,
+        dpa_hinge_thresh: float | None = None,
     ):
         super().__init__()
         self.timing          = timing
         self.readout_index   = readout_index
         self.criterion       = criterion or nn.MSELoss(reduction="none")
+        self.dpa_hinge_thresh = dpa_hinge_thresh
         self.dpa_weight      = dpa_weight
         self.gng_weight      = gng_weight
         self.gng_go_weight   = gng_go_weight
@@ -489,7 +503,16 @@ class MaskedMultiTargetDualLoss(nn.Module):
                                 self.criterion(safe_p, safe_t))
         nogo_loss = self.masked_mean(nogo_raw, nogo_mask)
         gng_loss  = self.gng_go_weight * go_loss + self.gng_nogo_weight * nogo_loss
-        dpa_loss  = self.masked_mean(self.criterion(safe_p, safe_t), dpa_mask)
+        # DPA decision (±1): squared hinge toward ±thresh (let attractor sit at any
+        # magnitude past the margin) when dpa_hinge_thresh is set; else MSE toward ±1.
+        if self.dpa_hinge_thresh is not None:
+            th = self.dpa_hinge_thresh
+            dpa_raw  = torch.where(safe_t > 0,
+                                   torch.relu(th - safe_p) ** 2,
+                                   torch.relu(safe_p + th) ** 2)
+            dpa_loss = self.masked_mean(dpa_raw, dpa_mask)
+        else:
+            dpa_loss = self.masked_mean(self.criterion(safe_p, safe_t), dpa_mask)
 
         aux_loss = pred_dec.sum() * 0.0   # zero scalar carrying grad/device/dtype
         for ch in range(C):

@@ -1,0 +1,60 @@
+[s1] ════════════════════════════════════════════════════════════
+[s1]  RUN START  2026-06-22 15:02:34
+[s1]  run_id=s1  seed=1  device=cuda:1
+[s1]  arch:  N=1000 (E=750 I=250)  K=125 (prob 0.167)  rank=2  gain=1.0  input_size=6  params=3,000
+[s1]  task:  cue_on_go=True  rwd=False  rwd_scale=1.0  freeze_input_stages=['dual']  init=random
+[s1]  dynamics: dt=0.0225  tau=(0.4, 0.2)s  tau_syn=(0.2, 0.1)s  STP(use=0.05 tau_fac=1.0s tau_rec=0.2s)  j_stp=1.0
+[s1]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.0000 (×0.0)
+[s1]  optim:  lr=0.1  wd=0.01  batch=32  n_batch=256  clip=1.0
+[s1]  epochs: dpa=100  gng=100  dual=100  loss=separated
+[s1]  shapes: m[750, 2]  n[750, 2]  Wi[750, 6]
+[s1]  ┌── params: init
+[s1]  │  rank 0: ||m||=27.365  ||n||=27.365  corr(m,n)=+1.000
+[s1]  │  rank 1: ||m||=26.733  ||n||=26.733  corr(m,n)=+1.000
+[s1]  │  low-rank overlap n^Tm/N (modulates STP E→E): +1.0132  +0.9381
+[s1]  │  Wi: ||·||_F=68.513  per-channel=28.15 28.18 27.38 27.38 28.40 28.32
+[s1]  └──────────────────────────────────────────────────
+[s1] ────────────────────────────────────────────────────────────
+[s1]  STAGE: DPA   device=cuda:1   epochs=100
+[s1] ────────────────────────────────────────────────────────────
+[s1]  data: [256, 444, 6] → [256, 444, 2]
+Epoch 005/100 | lr: 0.10000 | train: 3.4225 | val: 3.3319
+Epoch 010/100 | lr: 0.10000 | train: 2.0403 | val: 1.9279
+Stopping: losses below 0.1.
+[s1]   after DPA: dpa=0.999 (pair=1.000 unpair=0.998)  gng=0.494 (go=0.002 nogo=0.998)
+[s1]  DPA done in 71.7s  final train=0.0984  val=0.0533  dpa=0.999  gng=0.494
+[s1]  ┌── params: after DPA
+[s1]  │  rank 0: ||m||=227.155  ||n||=107.917  corr(m,n)=+0.761
+[s1]  │  rank 1: ||m||=120.579  ||n||=68.213  corr(m,n)=+0.434
+[s1]  │  low-rank overlap n^Tm/N (modulates STP E→E): +24.9468  +4.6933
+[s1]  │  Wi: ||·||_F=68.513  per-channel=28.15 28.18 27.38 27.38 28.40 28.32
+[s1]  └──────────────────────────────────────────────────
+[s1] ────────────────────────────────────────────────────────────
+[s1]  STAGE: GNG   device=cuda:1   epochs=100
+[s1]  freeze recurrent cols: [0]
+[s1]  freeze input dims:     [0, 1, 2, 3]
+[s1] ────────────────────────────────────────────────────────────
+[s1]  data: [256, 266, 6] → [256, 266, 2]
+Epoch 005/100 | lr: 0.10000 | train: 0.9335 | val: 1.0847
+Epoch 010/100 | lr: 0.10000 | train: 0.7152 | val: 0.8103
+Epoch 015/100 | lr: 0.10000 | train: 0.5156 | val: 0.5906
+Epoch 020/100 | lr: 0.10000 | train: 0.3400 | val: 0.3555
+Epoch 025/100 | lr: 0.10000 | train: 0.2185 | val: 0.2299
+Epoch 030/100 | lr: 0.10000 | train: 0.1481 | val: 0.1629
+Stopping: losses below 0.1.
+[s1]   after GNG: dpa=0.504 (pair=0.000 unpair=1.000)  gng=0.508 (go=0.000 nogo=1.000)
+[s1]  GNG done in 90.4s  final train=0.0000  val=0.0000  dpa=0.504  gng=0.508
+Traceback (most recent call last):
+  File "/home/leon/rnn/_run_one.py", line 28, in <module>
+    result = run_single(config, device, models_dir=run_dir)
+  File "/home/leon/rnn/sweep.py", line 628, in run_single
+    _log_params("after GNG")
+    ~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/home/leon/rnn/sweep.py", line 325, in _log_params
+    eigvals = np.linalg.eigvals(J_kappa)
+  File "/home/leon/mambaforge/lib/python3.14/site-packages/numpy/linalg/_linalg.py", line 1242, in eigvals
+    _assert_finite(a)
+    ~~~~~~~~~~~~~~^^^
+  File "/home/leon/mambaforge/lib/python3.14/site-packages/numpy/linalg/_linalg.py", line 251, in _assert_finite
+    raise LinAlgError("Array must not contain infs or NaNs")
+numpy.linalg.LinAlgError: Array must not contain infs or NaNs

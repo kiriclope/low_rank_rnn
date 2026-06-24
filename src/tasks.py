@@ -30,6 +30,19 @@ class TaskTiming:
         return np.linspace(0, (self.n_steps - 1) * self.dt, self.n_steps)
 
 
+def make_timings(dt: float) -> dict:
+    """Canonical task timings, shared by sweep.py (training) and plot_sweep.py (plotting).
+
+    Single source of truth — edit here so training inputs and plotted stimulus
+    windows / targets never drift apart.
+    """
+    return {
+        "dpa":  TaskTiming([2.0, 8.0],             [3.0, 9.0],            10.0, dt),
+        "gng":  TaskTiming([2.0, 4.0],             [3.0, 4.5],             6.0, dt),
+        "dual": TaskTiming([2.0, 4.0, 6.0, 8.0],   [3.0, 5.0, 6.5, 9.0],  10.0, dt),
+    }
+
+
 def generate_dpa_trials(
     n_trials: int,
     timing: TaskTiming,
@@ -37,6 +50,7 @@ def generate_dpa_trials(
     target_rank: int = 1,
     noise: float = 0.1,
     baseline_value: float = 0.5,
+    input_scale: float = 1.0,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -50,13 +64,13 @@ def generate_dpa_trials(
     idx_C = torch.rand(n_trials) > 0.5
     idx_D = ~idx_C
 
-    inputs[idx_A, n_on[0]:n_off[0], 0] += 1.0
-    inputs[idx_B, n_on[0]:n_off[0], 1] += 1.0
-    inputs[idx_C, n_on[1]:n_off[1], 2] += 1.0
-    inputs[idx_D, n_on[1]:n_off[1], 3] += 1.0
+    inputs[idx_A, n_on[0]:n_off[0], 0] += input_scale
+    inputs[idx_B, n_on[0]:n_off[0], 1] += input_scale
+    inputs[idx_C, n_on[1]:n_off[1], 2] += input_scale
+    inputs[idx_D, n_on[1]:n_off[1], 3] += input_scale
 
     if input_size == 9:
-        inputs[:, n_on[0]:, -2] += 1.0
+        inputs[:, n_on[0]:, -2] += input_scale
 
     idx_pair = (idx_A & idx_C) | (idx_B & idx_D)
 
@@ -88,7 +102,9 @@ def generate_gng_trials(
     cue_on_go_input: bool = False,
     cue_scale: float = 1.0,
     nogo_target: float = 0.0,
+    go_target: float = 1.0,
     go_on_rwd_input: bool = False,
+    input_scale: float = 1.0,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -102,16 +118,16 @@ def generate_gng_trials(
 
     if go_on_rwd_input:
         go_ch, ngo_ch = input_size - 1, 4
-        inputs[idx_go,   n_on[0]:n_off[0], go_ch]  += 1.0
-        inputs[idx_nogo, n_on[0]:n_off[0], ngo_ch] += 1.0
-        inputs[:, n_on[1]:n_off[1], go_ch] += cue_scale
+        inputs[idx_go,   n_on[0]:n_off[0], go_ch]  += input_scale
+        inputs[idx_nogo, n_on[0]:n_off[0], ngo_ch] += input_scale
+        inputs[:, n_on[1]:n_off[1], go_ch] += cue_scale * input_scale
     else:
-        inputs[idx_go,   n_on[0]:n_off[0], 4] += 1.0
-        inputs[idx_nogo, n_on[0]:n_off[0], 5] += 1.0
+        inputs[idx_go,   n_on[0]:n_off[0], 4] += input_scale
+        inputs[idx_nogo, n_on[0]:n_off[0], 5] += input_scale
         if cue_on_go_input:
-            inputs[:, n_on[1]:n_off[1], 4] += cue_scale
+            inputs[:, n_on[1]:n_off[1], 4] += cue_scale * input_scale
         else:
-            inputs[:, n_on[1]:n_off[1], 6] += cue_scale
+            inputs[:, n_on[1]:n_off[1], 6] += cue_scale * input_scale
 
     if target_rank == 2:
         targets[:, :n_on[0], 0] = 0.0
@@ -122,17 +138,17 @@ def generate_gng_trials(
 
     targets[:, n_on[0]:, -1] = torch.nan
 
-    # # memory
+    # memory: hold the go/nogo decision (±1) through the sample-off → cue-on delay
     targets[idx_go,   n_off[0]:n_on[1], -1] = 1.0
     targets[idx_nogo, n_off[0]:n_on[1], -1] = -1.0
 
-    # during cue
-    targets[idx_go,   n_on[1]:n_off[1], -1] = 1.0
-    targets[idx_nogo, n_on[1]:n_off[1], -1] = nogo_target
-
+    # # during cue
+    # targets[idx_go,   n_on[1]:n_off[1], -1] = go_target
+    # targets[idx_nogo, n_on[1]:n_off[1], -1] = nogo_target
+    
     # # after cue
-    # targets[idx_go,   n_off[1]:, -1] = 1.0
-    # targets[idx_nogo, n_off[1]:, -1] = nogo_target
+    targets[idx_go,   n_off[1]:, -1] = go_target
+    targets[idx_nogo, n_off[1]:, -1] = nogo_target
 
     return inputs, targets
 
@@ -147,7 +163,9 @@ def generate_dual_trials(
     cue_on_go_input: bool = False,
     cue_scale: float = 1.0,
     nogo_target: float = 0.0,
+    go_target: float = 1.0,
     go_on_rwd_input: bool = False,
+    input_scale: float = 1.0,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -184,24 +202,24 @@ def generate_dual_trials(
     inputs  = noise * torch.randn(n_trials, n_steps, input_size)
     targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
 
-    inputs[idx_A,    n_on[0]:n_off[0], 0] += 1.0
-    inputs[idx_B,    n_on[0]:n_off[0], 1] += 1.0
+    inputs[idx_A,    n_on[0]:n_off[0], 0] += input_scale
+    inputs[idx_B,    n_on[0]:n_off[0], 1] += input_scale
 
     if go_on_rwd_input:
         go_ch, ngo_ch = input_size - 1, 4
-        inputs[idx_go,   n_on[1]:n_off[1], go_ch]  += 1.0
-        inputs[idx_nogo, n_on[1]:n_off[1], ngo_ch] += 1.0
-        inputs[idx_gng,  n_on[2]:n_off[2], go_ch]  += cue_scale
+        inputs[idx_go,   n_on[1]:n_off[1], go_ch]  += input_scale
+        inputs[idx_nogo, n_on[1]:n_off[1], ngo_ch] += input_scale
+        inputs[idx_gng,  n_on[2]:n_off[2], go_ch]  += cue_scale * input_scale
     else:
-        inputs[idx_go,   n_on[1]:n_off[1], 4] += 1.0
-        inputs[idx_nogo, n_on[1]:n_off[1], 5] += 1.0
+        inputs[idx_go,   n_on[1]:n_off[1], 4] += input_scale
+        inputs[idx_nogo, n_on[1]:n_off[1], 5] += input_scale
         if cue_on_go_input:
-            inputs[idx_gng, n_on[2]:n_off[2], 4] += cue_scale
+            inputs[idx_gng, n_on[2]:n_off[2], 4] += cue_scale * input_scale
         else:
-            inputs[idx_gng, n_on[2]:n_off[2], 6] += cue_scale
+            inputs[idx_gng, n_on[2]:n_off[2], 6] += cue_scale * input_scale
 
-    inputs[idx_C,    n_on[3]:n_off[3], 2] += 1.0
-    inputs[idx_D,    n_on[3]:n_off[3], 3] += 1.0
+    inputs[idx_C,    n_on[3]:n_off[3], 2] += input_scale
+    inputs[idx_D,    n_on[3]:n_off[3], 3] += input_scale
 
     if target_rank > 1:
         targets[:, :n_on[0]] = 0.0
@@ -218,15 +236,16 @@ def generate_dual_trials(
     # targets[idx_go,   n_off[1]:n_on[2], -1] = 1.0
     # targets[idx_nogo, n_off[1]:n_on[2], -1] = -1.0
 
-
     # during cue
-    targets[idx_go,   n_on[2]:n_off[2], -1] = 1.5
+    # targets[idx_go,   n_on[2]:n_off[2], -1] = go_target
     # during cue and before test
-    targets[idx_nogo, n_on[2]:n_on[3], -1] = nogo_target
+    # targets[idx_nogo, n_on[2]:n_on[3], -1] = nogo_target
 
-    # # after cue
-    # targets[idx_go,   n_off[2]:n_on[3], -1] = 1.0
-    # targets[idx_nogo, n_off[2]:n_on[3], -1] = nogo_target
+    # # 500 ms after cue
+    dt = int(n_off[2] + (n_off[-1] - n_on[-1]) / 2)
+
+    targets[idx_go,   n_off[2]:dt, -1] = go_target
+    targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
 
     condition_names = np.array([
         f"{s}_{g}_{t}" if g != "none" else f"{s}_{t}"

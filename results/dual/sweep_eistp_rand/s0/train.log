@@ -1,0 +1,110 @@
+[s0] ════════════════════════════════════════════════════════════
+[s0]  RUN START  2026-06-22 16:31:44
+[s0]  run_id=s0  seed=0  device=cuda:0
+[s0]  arch:  N=1000 (E=750 I=250)  K=125 (prob 0.167)  rank=2  gain=1.0  input_size=6  params=3,000
+[s0]  task:  cue_on_go=True  rwd=False  rwd_scale=1.0  freeze_input_stages=['dual']  init=random
+[s0]  dynamics: dt=0.0225  tau=(0.4, 0.2)s  tau_syn=(0.2, 0.1)s  STP(use=0.05 tau_fac=1.0s tau_rec=0.2s)  j_stp=1.0
+[s0]  noise:  input_sigma=0.3732 (×1.0)  model_sigma=0.0000 (×0.0)
+[s0]  optim:  lr=0.05  wd=0.01  batch=32  n_batch=256  clip=None
+[s0]  epochs: dpa=100  gng=100  dual=100  loss=separated
+[s0]  shapes: m[750, 2]  n[750, 2]  Wi[750, 6]
+[s0]  ┌── params: init
+[s0]  │  rank 0: ||m||=26.722  ||n||=27.499  corr(m,n)=+0.023
+[s0]  │  rank 1: ||m||=26.734  ||n||=26.387  corr(m,n)=+0.006
+[s0]  │  low-rank overlap n^Tm/N (modulates STP E→E): +0.0143+0.0286j  +0.0143-0.0286j
+[s0]  │  Wi: ||·||_F=67.208  per-channel=26.38 27.24 28.06 27.18 27.36 28.35
+[s0]  └──────────────────────────────────────────────────
+[s0] ────────────────────────────────────────────────────────────
+[s0]  STAGE: DPA   device=cuda:0   epochs=100
+[s0] ────────────────────────────────────────────────────────────
+[s0]  data: [256, 444, 6] → [256, 444, 2]
+Epoch 005/100 | lr: 0.05000 | train: 3.6959 | val: 3.6896
+Epoch 010/100 | lr: 0.05000 | train: 3.3467 | val: 3.3574
+Epoch 015/100 | lr: 0.05000 | train: 2.6634 | val: 2.6456
+Epoch 020/100 | lr: 0.05000 | train: 1.8509 | val: 1.8273
+Epoch 025/100 | lr: 0.05000 | train: 0.1059 | val: 0.0368
+Stopping: losses below 0.1.
+[s0]   after DPA: dpa=1.000 (pair=1.000 unpair=1.000)  gng=0.465 (go=1.000 nogo=0.000)
+[s0]  DPA done in 144.0s  final train=0.0494  val=0.0245  dpa=1.000  gng=0.465
+[s0]  ┌── params: after DPA
+[s0]  │  rank 0: ||m||=218.163  ||n||=110.101  corr(m,n)=+0.783
+[s0]  │  rank 1: ||m||=130.010  ||n||=71.006  corr(m,n)=+0.398
+[s0]  │  low-rank overlap n^Tm/N (modulates STP E→E): +25.0429  +4.9428
+[s0]  │  Wi: ||·||_F=67.208  per-channel=26.38 27.24 28.06 27.18 27.36 28.35
+[s0]  └──────────────────────────────────────────────────
+[s0] ────────────────────────────────────────────────────────────
+[s0]  STAGE: GNG   device=cuda:0   epochs=100
+[s0]  freeze recurrent cols: [0]
+[s0]  freeze input dims:     [0, 1, 2, 3]
+[s0] ────────────────────────────────────────────────────────────
+[s0]  data: [256, 266, 6] → [256, 266, 2]
+Epoch 005/100 | lr: 0.05000 | train: 0.9233 | val: 0.8347
+Epoch 010/100 | lr: 0.05000 | train: 0.7401 | val: 0.6557
+Epoch 015/100 | lr: 0.05000 | train: 0.6284 | val: 0.5553
+Epoch 020/100 | lr: 0.05000 | train: 0.5372 | val: 0.4839
+Epoch 025/100 | lr: 0.05000 | train: 0.4507 | val: 0.4083
+Epoch 030/100 | lr: 0.05000 | train: 0.3703 | val: 0.3282
+Epoch 035/100 | lr: 0.05000 | train: 0.3057 | val: 0.2925
+Epoch 040/100 | lr: 0.05000 | train: 0.2661 | val: 0.2366
+Epoch 045/100 | lr: 0.05000 | train: 0.2337 | val: 0.2107
+Epoch 050/100 | lr: 0.05000 | train: 0.2067 | val: 0.1908
+Epoch 055/100 | lr: 0.05000 | train: 0.1859 | val: 0.1720
+Epoch 060/100 | lr: 0.05000 | train: 0.1758 | val: 0.1447
+Epoch 065/100 | lr: 0.05000 | train: 0.1478 | val: 0.1395
+Epoch 070/100 | lr: 0.05000 | train: 0.1363 | val: 0.1323
+Epoch 075/100 | lr: 0.05000 | train: 0.1197 | val: 0.1184
+Epoch 080/100 | lr: 0.05000 | train: 0.1138 | val: 0.1157
+Epoch 085/100 | lr: 0.05000 | train: 0.1071 | val: 0.1190
+Epoch 090/100 | lr: 0.05000 | train: 0.1038 | val: 0.1145
+Epoch 095/100 | lr: 0.05000 | train: 0.1007 | val: 0.1091
+Epoch 100/100 | lr: 0.05000 | train: 0.0953 | val: 0.1103
+[s0]   after GNG: dpa=0.722 (pair=0.481 unpair=0.974)  gng=1.000 (go=1.000 nogo=1.000)
+[s0]  GNG done in 309.0s  final train=0.0953  val=0.1103  dpa=0.722  gng=1.000
+[s0]  ┌── params: after GNG
+[s0]  │  rank 0: ||m||=218.163  ||n||=110.101  corr(m,n)=+0.783
+[s0]  │  rank 1: ||m||=231.778  ||n||=130.460  corr(m,n)=+0.147
+[s0]  │  low-rank overlap n^Tm/N (modulates STP E→E): +20.3396  +10.6726
+[s0]  │  Wi: ||·||_F=67.208  per-channel=26.38 27.24 28.06 27.18 27.36 28.35
+[s0]  └──────────────────────────────────────────────────
+[s0] ────────────────────────────────────────────────────────────
+[s0]  STAGE: Dual   device=cuda:0   epochs=100
+[s0]  freeze input dims:     [0, 1, 2, 3, 4, 5]
+[s0] ────────────────────────────────────────────────────────────
+[s0]  data: [256, 444, 6] → [256, 444, 2]
+[s0]  loss=separated  dpa_w=1.0  gng_w=1.0  go_w=1.0  nogo_w=1.0  aux_w=1.0  bl_w=1.0  go_hinge=1.0
+Epoch 005/100 | lr: 0.05000 | train: 0.5953 | val: 0.6513
+Epoch 010/100 | lr: 0.05000 | train: 0.3000 | val: 0.3574
+Epoch 015/100 | lr: 0.05000 | train: 0.2399 | val: 0.2893
+Epoch 020/100 | lr: 0.05000 | train: 0.2020 | val: 0.2612
+Epoch 025/100 | lr: 0.05000 | train: 0.1897 | val: 0.2566
+Epoch 030/100 | lr: 0.05000 | train: 0.1618 | val: 0.2298
+Epoch 035/100 | lr: 0.05000 | train: 0.1501 | val: 0.2128
+Epoch 040/100 | lr: 0.05000 | train: 0.1325 | val: 0.1885
+Epoch 045/100 | lr: 0.05000 | train: 0.1133 | val: 0.1700
+Epoch 050/100 | lr: 0.05000 | train: 0.1123 | val: 0.1550
+Epoch 055/100 | lr: 0.05000 | train: 0.1033 | val: 0.1571
+Epoch 060/100 | lr: 0.05000 | train: 0.0940 | val: 0.1521
+Epoch 065/100 | lr: 0.05000 | train: 0.0829 | val: 0.1505
+Epoch 070/100 | lr: 0.05000 | train: 0.0800 | val: 0.1306
+Epoch 075/100 | lr: 0.05000 | train: 0.0730 | val: 0.1255
+Epoch 080/100 | lr: 0.05000 | train: 0.0704 | val: 0.1255
+Epoch 085/100 | lr: 0.05000 | train: 0.0705 | val: 0.1227
+Epoch 090/100 | lr: 0.05000 | train: 0.0613 | val: 0.1103
+Epoch 095/100 | lr: 0.05000 | train: 0.0606 | val: 0.1260
+Epoch 100/100 | lr: 0.05000 | train: 0.0575 | val: 0.1090
+[s0]  loss components: {'dpa': 0.002, 'gng': 0.0967, 'gng_go': 0.0092, 'gng_nogo': 0.0875, 'baseline': 0.0164, 'aux': 0.0215}
+[s0]   after Dual: dpa=1.000 (pair=1.000 unpair=1.000)  gng=1.000 (go=1.000 nogo=1.000)
+[s0]  Dual done in 514.7s  final train=0.0575  val=0.1090  dpa=1.000  gng=1.000
+[s0]  ┌── params: after Dual
+[s0]  │  rank 0: ||m||=212.823  ||n||=112.158  corr(m,n)=+0.821
+[s0]  │  rank 1: ||m||=207.125  ||n||=124.883  corr(m,n)=+0.141
+[s0]  │  low-rank overlap n^Tm/N (modulates STP E→E): +21.7412  +9.2254
+[s0]  │  Wi: ||·||_F=67.208  per-channel=26.38 27.24 28.06 27.18 27.36 28.35
+[s0]  └──────────────────────────────────────────────────
+[s0] ════════════════════════════════════════════════════════════
+[s0]  RUN COMPLETE  2026-06-22 16:47:51  total=968.9s
+[s0]  ACCURACY SUMMARY
+[s0]    after DPA : dpa=1.000  gng=0.465
+[s0]    after GNG : dpa=0.722  gng=1.000
+[s0]    after Dual: dpa=1.000  gng=1.000  dual_dpa=1.000  dual_gng=1.000
+[s0] ════════════════════════════════════════════════════════════
