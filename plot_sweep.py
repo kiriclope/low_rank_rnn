@@ -478,8 +478,17 @@ def _fps_for_task(model, input_size: int, task: str, device: str,
 
 
 def _model_has_backbone(model) -> bool:
-    """True if the analytic low-rank FP reduction is invalid (static backbone / EI)."""
-    return getattr(model, "w_fixed", None) is not None or hasattr(model, "_W_rec_eff")
+    """True if the analytic low-rank FP reduction is invalid (static backbone / EI / EI+STP).
+    Such models route to the simulation-based fixed-point finder (_sim_fps_for_conditions)
+    instead of the analytic find_all_fixed_points (which assumes a single-timescale LowRankModel)."""
+    return (getattr(model, "w_fixed", None) is not None
+            or hasattr(model, "_W_rec_eff")
+            or model.__class__.__name__ == "EISTPModel")
+
+
+def _scatter_lim(meta) -> tuple:
+    """Axis limits for FP scatters: eistp κ runs ~±10 → use ±15, else the global XLIM."""
+    return (-15.0, 15.0) if getattr(meta, "model_type", None) == "eistp" else XLIM
 
 
 def _sim_fps_for_conditions(model, input_size, conditions, device,
@@ -491,11 +500,17 @@ def _sim_fps_for_conditions(model, input_size, conditions, device,
     import ei_flow
     dev   = next(model.parameters()).device
     dtype = next(model.parameters()).dtype
+    # EISTPModel lives on a much wider κ range (~±10) with two-timescale + STP dynamics →
+    # wider grid, shorter T and FP tolerances scaled to that κ scale (mirrors ei_flow.make_stage_figure).
+    T = 1333; fp_kw = {}
+    if model.__class__.__name__ == "EISTPModel":
+        R, gsize, T = 15.0, 28, 600
+        fp_kw = dict(vel_tol=0.03, recent=12, link_tol=2.0, point_tol=4.0, min_pts=10)
     out = []
     for label, dims, color, marker in conditions:
         cond_x = None if dims is None else make_input(input_size, dims, 1.0, device=dev, dtype=dtype)
-        traj, _ = ei_flow.run_grid(model, cond_x, R=R, gsize=gsize, set_w=40, T=1333, I0=1.0, device=dev)
-        pts, man, _ = ei_flow.fixed_points(traj)   # isolated point fps + continuous-manifold locus
+        traj, _ = ei_flow.run_grid(model, cond_x, R=R, gsize=gsize, set_w=40, T=T, I0=1.0, device=dev)
+        pts, man, _ = ei_flow.fixed_points(traj, **fp_kw)   # isolated point fps + continuous-manifold locus
         fps   = list(pts)
         stabs = ["attractor"] * len(pts)
         if man is not None and len(man):           # continuous attractor → subsampled gold locus
@@ -870,10 +885,11 @@ def _draw_fp_points(ax, init_style: str, fps, stabs):
                    facecolors=fc, edgecolors=ec, linewidths=lw, zorder=5, alpha=0.6)
 
 
-def _style_fp_ax(ax, title: str, ylabel: bool):
+def _style_fp_ax(ax, title: str, ylabel: bool, lim: tuple = None):
+    lim = lim if lim is not None else XLIM
     ax.axhline(0, color="lightgray", lw=0.7, zorder=0)
     ax.axvline(0, color="lightgray", lw=0.7, zorder=0)
-    ax.set_xlim(XLIM); ax.set_ylim(YLIM)
+    ax.set_xlim(lim); ax.set_ylim(lim)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlabel(r"$\kappa_1$", fontsize=9)
     ax.set_title(title, fontsize=9)
@@ -922,13 +938,13 @@ def _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds, slow_t
     return data
 
 
-def _render_fp_by_stage(data_for_label, all_metas, title, out_path):
+def _render_fp_by_stage(data_for_label, all_metas, title, out_path, lim=None):
     """3-panel (stage) figure for a single input condition."""
     fig, axes = plt.subplots(1, len(STAGES), figsize=(13, 4.5), constrained_layout=True)
     for ax, stage in zip(axes, STAGES):
         for init_style, fps, stabs in data_for_label[stage]:
             _draw_fp_points(ax, init_style, fps, stabs)
-        _style_fp_ax(ax, f"{stage} ({STAGE_TASK[stage].upper()})", ylabel=(ax is axes[0]))
+        _style_fp_ax(ax, f"{stage} ({STAGE_TASK[stage].upper()})", ylabel=(ax is axes[0]), lim=lim)
     _fp_legend(fig, all_metas)
     fig.suptitle(title, fontsize=10)
     fig.savefig(out_path, bbox_inches="tight")
@@ -939,6 +955,7 @@ def _render_fp_by_stage(data_for_label, all_metas, title, out_path):
 def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
                         out_dir: str, device: str, n_seeds: int = 21, slow_tol=None):
     ref        = all_metas[0]
+    lim        = _scatter_lim(ref)
     conditions = _input_conditions("dual", ref.input_size, ref.cue_on_go_input)
     data       = _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds, slow_tol=slow_tol)
 
@@ -946,7 +963,7 @@ def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
     _render_fp_by_stage(
         data["Autonomous"], all_metas,
         "Autonomous fixed points across stages — all runs",
-        os.path.join(out_dir, "fp_scatter_by_stage.pdf"),
+        os.path.join(out_dir, "fp_scatter_by_stage.pdf"), lim=lim,
     )
 
     # Each input-driven condition → one by-stage figure
@@ -956,7 +973,7 @@ def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
         _render_fp_by_stage(
             data[label], all_metas,
             f"Input-driven fixed points across stages — {label} (all runs)",
-            os.path.join(out_dir, f"fp_scatter_by_input_{_slug(label)}.pdf"),
+            os.path.join(out_dir, f"fp_scatter_by_input_{_slug(label)}.pdf"), lim=lim,
         )
 
 
@@ -1134,7 +1151,8 @@ def individual_fp_scatter(meta: RunMeta, ckpt_dir: str, out_dir: str,
                 fc, ec, sz, lw = _fp_marker_style(stab, color)
                 ax.scatter(fp[0], fp[1], marker=marker, s=sz,
                            facecolors=fc, edgecolors=ec, linewidths=lw, zorder=5)
-        ax.set_xlim(XLIM); ax.set_ylim(YLIM)
+        _lim = _scatter_lim(meta)
+        ax.set_xlim(_lim); ax.set_ylim(_lim)
         ax.set_aspect("equal", adjustable="box")
         ax.set_xlabel(r"$\kappa_1$", fontsize=8)
         ax.set_title(f"{stage} ({task.upper()})", fontsize=8)
@@ -1173,6 +1191,27 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
     cue = meta.cue_on_go_input
 
     stage_task = {"dpa": "dpa", "naive": "gng", "expert": "dual"}
+
+    # EI+STP models have no analytic κ-reduction → the analytic flow (plot_task_flow_fields)
+    # is invalid. Delegate to the simulation-based binned flow (ei_flow), exactly as the
+    # standalone ei_flow.py entrypoint does, writing the same flow/fp_{stage}.pdf paths.
+    if meta.model_type == "eistp":
+        import ei_flow
+        for stage, task in stage_task.items():
+            ckpt = os.path.join(ckpt_dir, meta.run_id, f"{stage}_{meta.run_id}.pth")
+            if not os.path.exists(ckpt):
+                ckpt = os.path.join(ckpt_dir, "models", f"{stage}_{meta.run_id}.pth")
+            if not os.path.exists(ckpt):
+                continue
+            model = _build_model(meta, device)
+            model.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True), strict=False)
+            model.eval()
+            ei_flow.make_stage_figure(model, task, meta.run_id, stage, flow_dir, device,
+                                      cue_scale=meta.cue_scale, cue_on_go=cue, style="magma")
+            del model
+        print(f"  flow fields (ei_flow/eistp sim) saved: {flow_dir}")
+        return
+
     for stage, task in stage_task.items():
         ckpt = os.path.join(ckpt_dir, meta.run_id, f"{stage}_{meta.run_id}.pth")
         if not os.path.exists(ckpt):
