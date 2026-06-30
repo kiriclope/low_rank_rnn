@@ -125,10 +125,14 @@ LD_PRELOAD=… python ei_flow.py --sweep_dir results/dual/<sweep> --out_root res
 | `--style` | `magma` (default) = vanilla look (magma speed map + white streamlines); `binned` = coolwarm z-scored speed + black streamlines |
 | `--run_ids` | restrict to specific runs |
 
-- **Use `ei_flow.py`, NOT `plot_sweep --plots flow`**, for backbone/EI/EISTP sweeps (the analytic
-  flow ignores `W_fixed` / the EI structure). Running full `plot_sweep` re-emits analytic flows that
-  **overwrite** `ei_flow`'s at `individual/<rid>/flow/fp_<stage>.pdf` — regenerate with `ei_flow`
-  afterward, or pass `--plots acc traj scatter`.
+- **EISTP: `plot_sweep` now auto-routes** (2026-06-24) the FP scatter + flow to the simulation
+  path (`_model_has_backbone()` returns True for `EISTPModel` → sim scatter; `individual_flow`
+  delegates to `ei_flow.make_stage_figure`; scatter axes widen to ±15). So a plain full `plot_sweep`
+  run is safe and complete for eistp — no crash, no overwrite. `ei_flow.py` remains for flow-only /
+  `--style binned`.
+- For **static-backbone / EILowRankModel** sweeps the older caveat still holds: prefer `ei_flow.py`
+  or `--plots acc traj scatter` (their analytic flow ignores `W_fixed` / the EI structure and would
+  overwrite `ei_flow`'s `individual/<rid>/flow/fp_<stage>.pdf`).
 - **EISTP** has a dedicated path (`_run_grid_eistp`): exact two-timescale + Markram STP dynamics,
   auto-calibrated grid injection (the κ range is ~±10, not ±1.5), R=15, T=600. No tuning needed.
 - Default sim length elsewhere: T=1333 steps ≈ 30 s (so genuine wells settle; a slow ring shows as a

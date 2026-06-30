@@ -99,9 +99,13 @@ Ring-capable (odd + saturating): **tanh** and **erf** only.
 
 **★ EISTPModel (`model_type="eistp"`)** — the model that achieves the project goal (persistent
 memory + lower-plane wells). NeuroFlame EI+STP port: sparse EI, relu, two timescales, Markram STP
-on E→E, low-rank `m,n` riding the STP synapses `W_EE=gain·j_stp·(C/√K)·(1+n@mᵀ/lr_scale)`. **MUST
-use `eistp_lr_scale="sqrtK"`** (`"N"`→dead memory). Flows via `ei_flow.py` (not `plot_sweep --plots
-flow`). Full how-to: `docs/running.md` (EISTP section); science: `docs/ring_lowerplane_log.md` §11.
+on E→E, low-rank `m,n` riding the STP synapses `W_EE=gain·j_stp·(C/√K)·(1+n@mᵀ/lr_scale)`.
+**Two scalings work** (g_mem = √K·⟨mn⟩/lr_scale): `eistp_lr_scale="sqrtK"` (÷√K → g_mem≈1 at
+init, our conservative regime lr≤0.05+clip) **or** `"N"` (÷N_E, = NeuroFlame `'all'` — only
+ignites in the original regime: lr=0.1, no grad clip; lower lr+clip throttle the ‖m,n‖ growth and
+it stays dead). `plot_sweep.py` now auto-routes eistp to simulated FP scatters/flows (no crash;
+`ei_flow.py` still available standalone). Full how-to: `docs/running.md` (EISTP section); science:
+`docs/ring_lowerplane_log.md` §11.
 
 Three training stages with selective freezing:
 1. **DPA** — all params free.

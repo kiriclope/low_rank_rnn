@@ -178,6 +178,20 @@ key sweeps:
   `plot_sweep` per-run trajectory/scatter crash on eistp (`EISTPModel` has no `alpha` — analytic
   κ-reduction path unsupported; summaries + `ei_flow` flows are fine).
 
+### sweep_eistp_ablate_all — ÷N_E ('all') works in the original regime (2026-06-30)
+- The original notebook uses `TRAIN_SCALE='all'` (÷N_E) = our `lr_scale="N"` (the "dead" setting).
+  Reproduced it **working** by matching the notebook regime: `lr_scale="N"`, **lr=0.1**, **no grad
+  clip**, `j_stp=1`, 200 DPA epochs. Clean **5/5**: DPA 1.0, after_gng/dpa 0.91, dual_dpa 0.999.
+- ⇒ "÷N is dead" was a **regime artifact** (lr≤0.05 + clip throttle the ‖m,n‖ growth), not a scaling
+  barrier. `'all'`(÷N_E) and `'sqrtK'`(÷√K) are two routes to the same fixed point. See
+  `ring_lowerplane_log.md` §11e.
+
+### sweep_eistp_frozen — frozen-input ablation (eistp_init_noise=0)
+- Same regime as `_ablate_all` + `eistp_init_noise=0` → fully deterministic frozen forward (no
+  resampled noise across epochs). **5/5**, DPA 1.0, dual_dpa 0.999, after_gng/dpa 0.87.
+- **No convergence speedup** (~150 DPA epochs, same as resampled) and no generalization loss (fresh
+  eval still 1.0) ⇒ a frozen dataset is NOT why the notebook converges in ~10 epochs.
+
 **Stabilisation knobs (all in EISTPModel / Optimization, on by default in make_configs):**
 `eistp_r_max` (rate cap), `grad_clip_norm` (keep ≥0.5), NaN-skip + graceful-epoch-divergence in
 `Optimization`. `eistp_lr_ueqv=False` (random) ≈ as good as matched init.

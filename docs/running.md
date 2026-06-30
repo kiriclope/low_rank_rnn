@@ -148,16 +148,34 @@ In `make_configs` (`sweep.py`), the EISTP `shared` dict:
 ```python
 model_type="eistp", nonlinearity="relu",
 n_neuron=1000, eistp_K=125.0,        # K scaled with N to hold prob K/N=0.125
-eistp_lr_scale="sqrtK",              # ★ REQUIRED — "/N" gives g_mem≈0.015 (dead, DPA chance)
+eistp_lr_scale="sqrtK",              # ÷√K → g_mem≈1 at init (conservative regime; see note below)
 low_rank_scale=1.0,                  # lr_ini (=1 → memory mode starts critical)
 eistp_lr_ueqv=False,                 # random init (m,n independent) — works; True = m init n
 eistp_r_max=500.0,                   # rate cap, ~6× the ~80 operating peak (anti-runaway)
+eistp_init_noise=1.0,                # init kick rates₀=relu(ff₀+init_noise·randn); 0 = deterministic/frozen
 stp_U=0.05, stp_tau_f=1.0, stp_tau_d=0.2,   # Markram STP
 j_stp=1.0,
 go_hinge_thresh=1.0, dpa_hinge_thresh=1.0,  # hinge targets (relu can't hit exact ±1)
 learning_rate=0.05, grad_clip_norm=1.0,     # clipping ON — needed; without it ~1-2 seeds diverge in Dual
 batch_size=32, n_batch=256, epochs_dpa/gng/dual=100,
 ```
+
+**`eistp_lr_scale` — two working scalings (2026-06-24):** g_mem = √K·⟨mn⟩/lr_scale.
+- `"sqrtK"` (÷√K, NeuroFlame `'sparse'`): g_mem≈1 *at init* → works in our **conservative** regime
+  (lr≤0.05 + `grad_clip_norm=1.0`). This is the default.
+- `"N"` (÷N_E, NeuroFlame `'all'` — what the original notebook uses): g_mem≈0.015 at init, so it
+  **only ignites in the original regime** — `lr=0.1`, **no grad clip**, j_stp=1 (the optimizer grows
+  ‖m,n‖ ~10× to compensate). Reproduced clean 5/5 in `sweep_eistp_ablate_all` (DPA 1.0, dual_dpa
+  0.999). With lr≤0.05+clip, `"N"` stays dead — that earlier "÷N is dead" claim was a **regime
+  artifact**, not a scaling barrier.
+
+**Best DPA-through-GNG retention:** `j_stp=5` + `lr=0.01` (`sweep_eistp_jstp5_lr01`, after_gng/dpa
+0.93 — project best; the 5× recurrent gain is held by the rate cap + clip).
+
+**Frozen inputs:** `eistp_init_noise=0` makes the forward fully deterministic (the feedforward
+signal+noise is already fixed once per stage). Tested (`sweep_eistp_frozen`): ~identical accuracy,
+**no convergence speedup** (still ~150 DPA epochs, not the notebook's 10), no generalization loss.
+So a frozen dataset is *not* the lever behind the notebook's fast training.
 
 ### Launch (same workflow as vanilla)
 ```bash
@@ -174,14 +192,18 @@ screen -dmS sweep_eistp bash -c "python sweep.py \
   `--per_run_screen`. **Don't run two eistp sweeps concurrently** (6 on GPU0 → OOM); run sequentially.
 
 ### Plotting
+As of 2026-06-24 `plot_sweep.py` **auto-detects eistp** and routes the FP scatter + flow to the
+simulation-based path (sim attractors, eistp-calibrated grid R=15/T=600, κ-axes widened to ±15) —
+so a plain run produces the full set (acc + traj + scatter + flow) with **no crash, no `--plots`
+workaround**:
 ```bash
-# acc + traj  (use plot_sweep, but NOT --plots flow for eistp — its analytic flow is invalid)
-LD_PRELOAD=… python plot_sweep.py --sweep_dir results/dual/sweep_eistp_myrun \
-    --out_root results/figures --plots acc traj --no_individual --device cuda:0
-# binned flow fields (eistp-aware: two-timescale + STP, auto-calibrated grid, magma default)
+LD_PRELOAD=… python plot_sweep.py --sweep_dir results/dual/sweep_eistp_myrun --out_root results/figures
+# ei_flow.py is still available standalone for flow-only / --style binned:
 LD_PRELOAD=… python ei_flow.py --sweep_dir results/dual/sweep_eistp_myrun \
     --out_root results/figures --device cuda:1 [--style magma|binned]
 ```
+(The analytic FP scatter does not apply to eistp — its sim substitute is the attractors drawn in
+the flow/scatter figures.)
 
 ### Stability / divergence
 The `/√K` coupling + STP is near-critical and can run away (rates → ∞). Three guards (all on):

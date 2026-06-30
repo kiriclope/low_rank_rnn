@@ -493,3 +493,34 @@ The K/N density of C cancels the N of the overlap, leaving **√K**:
 **STATUS: the project goal (persistent memory + lower-plane wells) is achieved and robust.** Open
 follow-ups: confirm at faithful N=2000/K=250; reduce the residual Dual-stage instability further if
 desired (lower lr / lr_ini<1).
+
+### 11e. Notebook re-read + scaling/regime reconciliation (2026-06-30)
+Went back to the original NeuroFlame notebook (`org/train/dual/train_dual.org`) and compared the
+optimization + inputs against our port.
+
+- **`j_stp=5 + lr=0.01` is the best DPA-through-GNG retention yet** (`sweep_eistp_jstp5_lr01`):
+  clean 5/5, after_dpa/dpa 0.997, **after_gng/dpa 0.93** (vs 0.81/0.84 refs), dual_dpa 1.0. The 5×
+  recurrent gain doesn't destabilise (rate cap + clip + gentler lr hold it).
+- **★ The "÷N is dead" finding was a *regime* artifact, not a scaling barrier.** The notebook uses
+  `TRAIN_SCALE='all'` (÷N_E, = our `lr_scale="N"`) — the setting we'd called dead. Reproduced it
+  *working* in our port by matching the notebook regime — `lr=0.1`, **no grad clip**, `j_stp=1` —
+  in `sweep_eistp_ablate_all`: DPA **1.0**, after_gng/dpa 0.91, dual_dpa 0.999, 5/5. Mechanism:
+  g_mem = √K·⟨mn⟩/lr_scale; with ÷N_E g_mem≈0.015 at init, but with lr=0.1 + no clip the optimizer
+  grows ‖m,n‖ ~10× to compensate. Our earlier lr≤0.05 + grad-clip throttled that growth → stayed
+  dead. **`'all'` (÷N_E) and `'sqrtK'` (÷√K) are two routes to the same fixed point.**
+- **Notebook optimization (for the record):** `Adam(lr=0.1)` rebuilt per stage, `ExponentialLR
+  gamma=0.9`, **no grad clip**, **only ~10/10/5 epochs** (DPA/GNG/Dual), `zero_grad` freezing
+  (GNG freezes rank-0 of U&V), early stop at loss<0.15, NaN→stop. Loss = `DualLoss` (sigmoid+BCE
+  with squared-prob variants), per-stage `read_idx`/`class_bal`. Very different from our hinge/MSE.
+- **Notebook inputs are a *frozen* dataset:** fixed random `odors=randn(10,N_E)` patterns, `ff_input`
+  built **once** over 4 signal conditions (sample±×test±) with VAR_FF noise baked in, reused every
+  epoch; only the init recurrent kick is resampled. Our feedforward (generator noise in `X`) is
+  already frozen per stage; only our init kick was resampled.
+- **Frozen-input ablation** (`eistp_init_noise=0` → fully deterministic forward; `sweep_eistp_frozen`):
+  ~identical accuracy (DPA 1.0, dual_dpa 0.999, after_gng/dpa 0.87), **no convergence speedup**
+  (~150 DPA epochs, not 10), no generalization loss (eval on fresh trials still 1.0). **Conclusion:
+  a frozen dataset is NOT the lever behind the notebook's 10-epoch convergence** — the remaining
+  suspects are the loss (DualLoss/BCE) and the ring/cosine task, not the data-freezing.
+- **Tooling:** `plot_sweep.py` now auto-routes eistp away from the analytic FP scatter/flow (which
+  crash on `EISTPModel` — no `.alpha`) to the simulation path, so a plain run yields the full figure
+  set. New `eistp_init_noise` RunConfig field.
