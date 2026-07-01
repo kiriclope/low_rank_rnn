@@ -839,7 +839,7 @@ class EISTPModel(nn.Module):
                  Jab=(1.0, -1.5, 1.0, -1.0), gain=1.0,
                  tau=(0.4, 0.2), tau_syn=(0.2, 0.1), dt=0.02,
                  stp_use=0.05, stp_tau_fac=0.5, stp_tau_rec=0.2, j_stp=1.0,
-                 lr_ini=1.0, lr_ueqv=True, lr_scale="N", lr_additive=False, clamp=True, noise=0.0, init_noise=1.0,
+                 lr_ini=1.0, lr_ueqv=True, lr_scale="N", lr_additive=False, dense_cee=False, clamp=True, noise=0.0, init_noise=1.0,
                  r_max=None, input_size=8, Ja0=(2.0, 1.0), M0=1.0, var_ff=(0.0, 0.0),
                  train_inputs=False, nonlinearity="relu", device="cpu", seed=None):
         super().__init__()
@@ -884,8 +884,14 @@ class EISTPModel(nn.Module):
                     continue
                 W[sl[i], sl[j]] = float(gain) * Jab[i, j] / (self.K ** 0.5) * C[i][j]
         self.register_buffer("W_static", W.to(self.device))
-        # base (unsigned) E→E connectivity for the STP path, balanced 1/√K
-        self.register_buffer("C_EE", (C[0][0] / (self.K ** 0.5)).to(self.device))
+        # base (unsigned) E→E connectivity for the STP path:
+        #   sparse (default): binary C balanced 1/√K;  dense_cee: all-to-all ones/N_E.
+        self.dense_cee = bool(dense_cee)
+        if self.dense_cee:
+            C_ee = torch.ones(ne, ne) / float(ne)
+        else:
+            C_ee = C[0][0] / (self.K ** 0.5)
+        self.register_buffer("C_EE", C_ee.to(self.device))
 
         # --- trained rank-R low-rank on E (aligned with LowRankModel m,n) ---
         # n = recurrent OUTPUT + readout direction; m = presynaptic selection direction

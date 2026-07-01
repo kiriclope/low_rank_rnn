@@ -85,6 +85,7 @@ class RunConfig:
     eistp_r_max:   float | None = None  # rate cap (anti-runaway); None = uncapped relu
     eistp_lr_ueqv: bool  = True  # True: m init = n (critical g_mem); False: independent random init
     eistp_lr_additive: bool = False  # E→E low-rank: False=C·(1+lr) multiplicative; True=C+lr additive/dense
+    eistp_dense_cee: bool = False  # E→E backbone C_EE: False=sparse binary/√K; True=dense ones/N_E
     eistp_init_noise: float = 1.0  # init recurrent kick rates₀=relu(ff₀+init_noise·randn); 0 = deterministic/frozen
 
     # Initialisation
@@ -376,7 +377,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             stp_use=config.stp_U, stp_tau_fac=config.stp_tau_f, stp_tau_rec=config.stp_tau_d,
             j_stp=config.j_stp, lr_ini=config.low_rank_scale, lr_scale=config.eistp_lr_scale,
             lr_ueqv=config.eistp_lr_ueqv, lr_additive=config.eistp_lr_additive,
-            r_max=config.eistp_r_max,
+            dense_cee=config.eistp_dense_cee, r_max=config.eistp_r_max,
             init_noise=config.eistp_init_noise,
             train_inputs=False, nonlinearity=config.nonlinearity,
             device=device, seed=config.seed,
@@ -803,7 +804,7 @@ def _worker(worker_id: int, n_gpus: int, job_queue: mp.Queue, result_queue: mp.Q
 
 def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool = True,
                  nogo_target: float | None = None, hinge_squared: bool | None = None,
-                 lr_additive: bool | None = None) -> list[RunConfig]:
+                 lr_additive: bool | None = None, dense_cee: bool | None = None) -> list[RunConfig]:
     """
     Return the list of runs to execute.  Edit freely.
 
@@ -858,6 +859,8 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         shared["hinge_squared"] = hinge_squared
     if lr_additive is not None:        # CLI override: True = additive (dense) E→E low-rank
         shared["eistp_lr_additive"] = lr_additive
+    if dense_cee is not None:          # CLI override: True = dense ones/N_E E→E backbone
+        shared["eistp_dense_cee"] = dense_cee
 
     # EISTP DPA→GNG→Dual from scratch. 5 seeds, 100 epochs/stage (real sweep).
     for seed in range(5):
@@ -915,6 +918,8 @@ def main():
                         help="Override DPA hinge shape: 1=squared (default), 0=linear margin.")
     parser.add_argument("--lr_additive",     type=int,  default=None, choices=[0, 1],
                         help="Override E→E low-rank: 0=multiplicative C·(1+lr) (default), 1=additive C+lr.")
+    parser.add_argument("--dense_cee",       type=int,  default=None, choices=[0, 1],
+                        help="Override E→E backbone: 0=sparse binary/√K (default), 1=dense ones/N_E.")
     args = parser.parse_args()
 
     n_gpus        = min(args.n_gpus, torch.cuda.device_count()) if torch.cuda.is_available() else 1
@@ -925,7 +930,8 @@ def main():
                                   cue_on_go_input=bool(args.cue_on_go_input),
                                   nogo_target=args.nogo_target,
                                   hinge_squared=None if args.hinge_squared is None else bool(args.hinge_squared),
-                                  lr_additive=None if args.lr_additive is None else bool(args.lr_additive))
+                                  lr_additive=None if args.lr_additive is None else bool(args.lr_additive),
+                                  dense_cee=None if args.dense_cee is None else bool(args.dense_cee))
     if args.run_filter:
         configs = [c for c in configs if args.run_filter in c.run_id]
         print(f"run_filter={args.run_filter!r}: {len(configs)} matching configs")
