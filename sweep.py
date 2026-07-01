@@ -157,6 +157,7 @@ class RunConfig:
     gng_nogo_weight: float = 1.0        # relative weight on nogo trials within gng_loss
     go_hinge_thresh: float | None = None  # if set, go response window uses relu(thresh-pred)² instead of MSE
     dpa_hinge_thresh: float | None = None # if set, DPA ±1 decision uses squared hinge toward ±thresh (DPA + dual stages)
+    hinge_squared:   bool = True   # DPA ThresholdLoss: True=relu(...)² (default), False=linear margin relu(...)
     aux_weight:      float = 1.0   # weight on the memory (non-decision) channels
     bl_weight:       float = 1.0   # weight on the pre-sample baseline term
     kappa1_reg_weight: float = 0.0  # penalise gain*n1^T m1/N > 1 during Dual: weight*relu(λ₁-1)²
@@ -474,7 +475,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
 
     criterion     = MaskedMultiTargetLoss(target_weight=1.0, zero_weight=1.0)
     # DPA stage: squared-hinge targets (relu margin) when dpa_hinge_thresh set, else MSE
-    dpa_criterion = (ThresholdLoss(thresh=config.dpa_hinge_thresh)
+    dpa_criterion = (ThresholdLoss(thresh=config.dpa_hinge_thresh, squared=config.hinge_squared)
                      if config.dpa_hinge_thresh is not None else criterion)
     gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
                                    go_hinge_thresh=config.go_hinge_thresh)
@@ -799,7 +800,7 @@ def _worker(worker_id: int, n_gpus: int, job_queue: mp.Queue, result_queue: mp.Q
 # ---------------------------------------------------------------------------
 
 def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool = True,
-                 nogo_target: float | None = None) -> list[RunConfig]:
+                 nogo_target: float | None = None, hinge_squared: bool | None = None) -> list[RunConfig]:
     """
     Return the list of runs to execute.  Edit freely.
 
@@ -821,7 +822,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         low_rank_scale=1.0,            # LR_INI = 1.0
         eistp_lr_scale="N",            # ABLATION: original notebook TRAIN_SCALE='all' (÷N_E)
         eistp_r_max=500.0,             # rate cap, ~6× the ~80 operating peak (anti-runaway safety)
-        eistp_lr_ueqv=False,           # random init (m,n independent) — g_mem starts ≈0, grows in training
+        eistp_lr_ueqv=True,            # NeuroFlame init: m = n at init (LR_UeqV=1) — g_mem starts nonzero
         eistp_init_noise=0.0,          # FROZEN INPUTS: deterministic init kick → identical forward every epoch
         stp_U=0.05, stp_tau_f=1.0, stp_tau_d=0.2,   # Markram; τ_fac = 1.0s
         gain=1.0,
@@ -850,6 +851,8 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     )
     if nogo_target is not None:        # CLI override (e.g. nogo_target=0 for the dual variant)
         shared["nogo_target"] = nogo_target
+    if hinge_squared is not None:      # CLI override: False = linear-hinge DPA variant
+        shared["hinge_squared"] = hinge_squared
 
     # EISTP DPA→GNG→Dual from scratch. 5 seeds, 100 epochs/stage (real sweep).
     for seed in range(5):
@@ -903,6 +906,8 @@ def main():
                         help="1: cue rides on go channel (input_size 6); 0: cue on own channel (input_size 7).")
     parser.add_argument("--nogo_target",     type=float, default=None,
                         help="Override nogo_target in make_configs (e.g. 0.0 or -1.0).")
+    parser.add_argument("--hinge_squared",   type=int,  default=None, choices=[0, 1],
+                        help="Override DPA hinge shape: 1=squared (default), 0=linear margin.")
     args = parser.parse_args()
 
     n_gpus        = min(args.n_gpus, torch.cuda.device_count()) if torch.cuda.is_available() else 1
@@ -911,7 +916,8 @@ def main():
     wandb_project = args.wandb_project
     configs       = make_configs(out_dir, nonlinearity=args.nonlinearity,
                                   cue_on_go_input=bool(args.cue_on_go_input),
-                                  nogo_target=args.nogo_target)
+                                  nogo_target=args.nogo_target,
+                                  hinge_squared=None if args.hinge_squared is None else bool(args.hinge_squared))
     if args.run_filter:
         configs = [c for c in configs if args.run_filter in c.run_id]
         print(f"run_filter={args.run_filter!r}: {len(configs)} matching configs")

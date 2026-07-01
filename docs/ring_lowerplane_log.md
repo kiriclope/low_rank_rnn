@@ -510,8 +510,12 @@ optimization + inputs against our port.
   dead. **`'all'` (÷N_E) and `'sqrtK'` (÷√K) are two routes to the same fixed point.**
 - **Notebook optimization (for the record):** `Adam(lr=0.1)` rebuilt per stage, `ExponentialLR
   gamma=0.9`, **no grad clip**, **only ~10/10/5 epochs** (DPA/GNG/Dual), `zero_grad` freezing
-  (GNG freezes rank-0 of U&V), early stop at loss<0.15, NaN→stop. Loss = `DualLoss` (sigmoid+BCE
-  with squared-prob variants), per-stage `read_idx`/`class_bal`. Very different from our hinge/MSE.
+  (GNG freezes rank-0 of U&V), early stop at loss<0.15, NaN→stop. Loss = `DualLoss`: with the
+  shipped `bce_alpha=1.0` the BCE/sigmoid branch of `SignBCELoss` is fully zeroed, leaving a **pure
+  hinge** `relu(thresh − sign(2t−1)·readout)` (thresh=1.0, same family as ours) + a `0.1·|overlap|`
+  suppression on class-0 + a `SmoothL1` term pinning the memory readout to 0 before the sample.
+  (Earlier notes said "sigmoid+BCE" — that branch is dead code at α=1.) The one loss ingredient we
+  lack is that explicit pre-stim zero-memory `SmoothL1`.
 - **Notebook inputs are a *frozen* dataset:** fixed random `odors=randn(10,N_E)` patterns, `ff_input`
   built **once** over 4 signal conditions (sample±×test±) with VAR_FF noise baked in, reused every
   epoch; only the init recurrent kick is resampled. Our feedforward (generator noise in `X`) is
@@ -520,7 +524,8 @@ optimization + inputs against our port.
   ~identical accuracy (DPA 1.0, dual_dpa 0.999, after_gng/dpa 0.87), **no convergence speedup**
   (~150 DPA epochs, not 10), no generalization loss (eval on fresh trials still 1.0). **Conclusion:
   a frozen dataset is NOT the lever behind the notebook's 10-epoch convergence** — the remaining
-  suspects are the loss (DualLoss/BCE) and the ring/cosine task, not the data-freezing.
+  suspects are the loss's pre-stim zero-memory `SmoothL1` term, the optimizer recipe (Adam wd=0,
+  lr=0.1, ExpLR), and the ring/cosine task — not the data-freezing.
 - **Tooling:** `plot_sweep.py` now auto-routes eistp away from the analytic FP scatter/flow (which
   crash on `EISTPModel` — no `.alpha`) to the simulation path, so a plain run yields the full figure
   set. New `eistp_init_noise` RunConfig field.

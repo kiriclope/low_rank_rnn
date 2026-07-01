@@ -192,6 +192,29 @@ key sweeps:
 - **No convergence speedup** (~150 DPA epochs, same as resampled) and no generalization loss (fresh
   eval still 1.0) ⇒ a frozen dataset is NOT why the notebook converges in ~10 epochs.
 
+### sweep_eistp_ueqv_adam — faithful notebook init (m=n) + plain Adam (2026-07-01)
+- Full notebook recipe: `eistp_lr_ueqv=True` (**m = n at init**, NeuroFlame `LR_UeqV=1`; init overlap
+  `n^Tm/N ≈ +1.0`, so a nonzero memory mode from step 0), `low_rank_scale=1.0` (LR_INI), `lr_scale="N"`
+  (÷N_E = `'all'`), **plain `Adam`** (no weight decay), lr=0.1, no grad clip, 200/100/100 epochs,
+  squared-hinge DPA (`ThresholdLoss`). N=1000/K=125, nogo=−1. Clean **5/5**.
+- DPA 1.0, **after_gng/dpa 0.843 ± 0.072**, after_dual/dual_dpa 0.998, dual_gng 0.991.
+- Note the DPA loss *starts* at ~3.6 (not 1.0): the squared hinge is summed over 2 channels × the
+  pos/neg/zero target windows, each ≈1 near `pred≈0` — it's the multi-component sum, not squaring
+  amplification (confirmed by the linear variant starting at ~the same value).
+- Figures: `results/figures/sweep_eistp_ueqv_adam/` (full set via auto-routed eistp sim FP + flow).
+
+### sweep_eistp_ueqv_adam_linhinge — linear-hinge A/B vs the above (2026-07-01)
+- Identical to `sweep_eistp_ueqv_adam` except the DPA `ThresholdLoss` uses a **linear margin**
+  `relu(thresh−·)` instead of squared (new `hinge_squared=False` config / `--hinge_squared 0`). 5/5.
+- DPA 1.0, **after_gng/dpa 0.886 ± 0.076**, after_dual/dual_dpa 0.999, dual_gng 0.984.
+- **No meaningful difference from squared** — every metric within one SEM; near-identical κ-plane
+  fp_scatter. Both hinges share the same zero-loss margin region → same fixed point; the shape only
+  changes the transient + loss scale. Squared ⇒ bigger early gradients; linear ⇒ notebook-matching
+  start (~1.9 at a wrong-side pred), gentler grads.
+- Ops note: 2 seeds (s2,s4) OOM'd when both sweeps ran concurrently on 2 GPUs (10 BPTT jobs); re-ran
+  solo → clean 5/5. Plotting requires `MPLBACKEND=Agg` on this box (DISPLAY set → matplotlib hangs
+  on a dead X server at TCP :6013).
+
 **Stabilisation knobs (all in EISTPModel / Optimization, on by default in make_configs):**
 `eistp_r_max` (rate cap), `grad_clip_norm` (keep ≥0.5), NaN-skip + graceful-epoch-divergence in
 `Optimization`. `eistp_lr_ueqv=False` (random) ≈ as good as matched init.

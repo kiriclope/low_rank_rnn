@@ -558,11 +558,13 @@ class ThresholdLoss(nn.Module):
         thresh: float = 0.5,
         target_weight: float = 1.0,
         zero_weight: float = 1.0,
+        squared: bool = True,
     ):
         super().__init__()
         self.thresh        = thresh
         self.target_weight = target_weight
         self.zero_weight   = zero_weight
+        self.squared       = squared   # True: relu(...)² (default); False: linear margin relu(...)
 
     @staticmethod
     def masked_mean(loss: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -578,12 +580,13 @@ class ThresholdLoss(nn.Module):
         neg_mask  = finite & (safe_tgt < 0)   # target = -1
         zero_mask = finite & (safe_tgt == 0)  # target =  0
 
+        p    = 2 if self.squared else 1
         pos_loss  = self.masked_mean(
-            torch.relu(self.thresh - safe_pred) ** 2, pos_mask)
+            torch.relu(self.thresh - safe_pred) ** p, pos_mask)
         neg_loss  = self.masked_mean(
-            torch.relu(self.thresh + safe_pred) ** 2, neg_mask)
+            torch.relu(self.thresh + safe_pred) ** p, neg_mask)
         zero_loss = self.masked_mean(
-            torch.relu(safe_pred.abs() - self.thresh) ** 2, zero_mask)
+            torch.relu(safe_pred.abs() - self.thresh) ** p, zero_mask)
 
         return self.target_weight * (pos_loss + neg_loss) + self.zero_weight * zero_loss
 
