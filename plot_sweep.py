@@ -125,6 +125,7 @@ class RunMeta:
     eistp_K:        float = 250.0
     j_stp:          float = 1.0
     eistp_lr_scale: str   = "N"
+    eistp_lr_additive: bool = False
     eistp_r_max:    float | None = None
     use_fixed_weights: bool = False
     fixed_weight_scale: float = 0.8
@@ -195,6 +196,7 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             eistp_K         = float(cfg.get("eistp_K", 250.0)),
             j_stp           = float(cfg.get("j_stp", 1.0)),
             eistp_lr_scale  = str(cfg.get("eistp_lr_scale", "N")),
+            eistp_lr_additive = bool(cfg.get("eistp_lr_additive", False)),
             eistp_r_max     = cfg.get("eistp_r_max", None),
             use_fixed_weights = bool(cfg.get("use_fixed_weights", False)),
             fixed_weight_scale = float(cfg.get("fixed_weight_scale", 0.8)),
@@ -215,6 +217,7 @@ def _build_model(meta: RunMeta, device: str):
             dt=meta.stp_dt, input_size=meta.input_size,
             stp_use=meta.stp_U, stp_tau_fac=meta.stp_tau_f, stp_tau_rec=meta.stp_tau_d,
             j_stp=meta.j_stp, lr_ini=meta.low_rank_scale, lr_scale=meta.eistp_lr_scale,
+            lr_additive=meta.eistp_lr_additive,
             r_max=meta.eistp_r_max,
             train_inputs=False, nonlinearity="relu", device=device,
         )

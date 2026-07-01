@@ -54,6 +54,7 @@ def build_model(cfg, device):
             stp_use=cfg.get("stp_U", 0.05), stp_tau_fac=cfg.get("stp_tau_f", 1.0),
             stp_tau_rec=cfg.get("stp_tau_d", 0.2), j_stp=cfg.get("j_stp", 1.0),
             lr_ini=cfg["low_rank_scale"], lr_scale=cfg.get("eistp_lr_scale", "N"),
+            lr_additive=cfg.get("eistp_lr_additive", False),
             r_max=cfg.get("eistp_r_max", None),
             train_inputs=False, nonlinearity=cfg["nonlinearity"], device=device,
         )

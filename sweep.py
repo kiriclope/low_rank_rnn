@@ -84,6 +84,7 @@ class RunConfig:
     eistp_lr_scale: str  = "N"   # low-rank divisor (n@mᵀ)/lr_scale: "N" (=N_E) or "sqrtK"
     eistp_r_max:   float | None = None  # rate cap (anti-runaway); None = uncapped relu
     eistp_lr_ueqv: bool  = True  # True: m init = n (critical g_mem); False: independent random init
+    eistp_lr_additive: bool = False  # E→E low-rank: False=C·(1+lr) multiplicative; True=C+lr additive/dense
     eistp_init_noise: float = 1.0  # init recurrent kick rates₀=relu(ff₀+init_noise·randn); 0 = deterministic/frozen
 
     # Initialisation
@@ -374,7 +375,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             dt=DT, input_size=config.input_size,
             stp_use=config.stp_U, stp_tau_fac=config.stp_tau_f, stp_tau_rec=config.stp_tau_d,
             j_stp=config.j_stp, lr_ini=config.low_rank_scale, lr_scale=config.eistp_lr_scale,
-            lr_ueqv=config.eistp_lr_ueqv, r_max=config.eistp_r_max,
+            lr_ueqv=config.eistp_lr_ueqv, lr_additive=config.eistp_lr_additive,
+            r_max=config.eistp_r_max,
             init_noise=config.eistp_init_noise,
             train_inputs=False, nonlinearity=config.nonlinearity,
             device=device, seed=config.seed,
@@ -800,7 +802,8 @@ def _worker(worker_id: int, n_gpus: int, job_queue: mp.Queue, result_queue: mp.Q
 # ---------------------------------------------------------------------------
 
 def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool = True,
-                 nogo_target: float | None = None, hinge_squared: bool | None = None) -> list[RunConfig]:
+                 nogo_target: float | None = None, hinge_squared: bool | None = None,
+                 lr_additive: bool | None = None) -> list[RunConfig]:
     """
     Return the list of runs to execute.  Edit freely.
 
@@ -853,6 +856,8 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         shared["nogo_target"] = nogo_target
     if hinge_squared is not None:      # CLI override: False = linear-hinge DPA variant
         shared["hinge_squared"] = hinge_squared
+    if lr_additive is not None:        # CLI override: True = additive (dense) E→E low-rank
+        shared["eistp_lr_additive"] = lr_additive
 
     # EISTP DPA→GNG→Dual from scratch. 5 seeds, 100 epochs/stage (real sweep).
     for seed in range(5):
@@ -908,6 +913,8 @@ def main():
                         help="Override nogo_target in make_configs (e.g. 0.0 or -1.0).")
     parser.add_argument("--hinge_squared",   type=int,  default=None, choices=[0, 1],
                         help="Override DPA hinge shape: 1=squared (default), 0=linear margin.")
+    parser.add_argument("--lr_additive",     type=int,  default=None, choices=[0, 1],
+                        help="Override E→E low-rank: 0=multiplicative C·(1+lr) (default), 1=additive C+lr.")
     args = parser.parse_args()
 
     n_gpus        = min(args.n_gpus, torch.cuda.device_count()) if torch.cuda.is_available() else 1
@@ -917,7 +924,8 @@ def main():
     configs       = make_configs(out_dir, nonlinearity=args.nonlinearity,
                                   cue_on_go_input=bool(args.cue_on_go_input),
                                   nogo_target=args.nogo_target,
-                                  hinge_squared=None if args.hinge_squared is None else bool(args.hinge_squared))
+                                  hinge_squared=None if args.hinge_squared is None else bool(args.hinge_squared),
+                                  lr_additive=None if args.lr_additive is None else bool(args.lr_additive))
     if args.run_filter:
         configs = [c for c in configs if args.run_filter in c.run_id]
         print(f"run_filter={args.run_filter!r}: {len(configs)} matching configs")

@@ -839,7 +839,7 @@ class EISTPModel(nn.Module):
                  Jab=(1.0, -1.5, 1.0, -1.0), gain=1.0,
                  tau=(0.4, 0.2), tau_syn=(0.2, 0.1), dt=0.02,
                  stp_use=0.05, stp_tau_fac=0.5, stp_tau_rec=0.2, j_stp=1.0,
-                 lr_ini=1.0, lr_ueqv=True, lr_scale="N", clamp=True, noise=0.0, init_noise=1.0,
+                 lr_ini=1.0, lr_ueqv=True, lr_scale="N", lr_additive=False, clamp=True, noise=0.0, init_noise=1.0,
                  r_max=None, input_size=8, Ja0=(2.0, 1.0), M0=1.0, var_ff=(0.0, 0.0),
                  train_inputs=False, nonlinearity="relu", device="cpu", seed=None):
         super().__init__()
@@ -857,6 +857,7 @@ class EISTPModel(nn.Module):
         self.K = float(K)
         self.dt = float(dt)
         self.clamp = bool(clamp)
+        self.lr_additive = bool(lr_additive)   # True: C_EE + lowrank (dense); False: C_EE·(1+lowrank)
         self.noise = float(noise)
         self.init_noise = float(init_noise)
         self.r_max = None if r_max is None else float(r_max)   # rate cap (anti-runaway)
@@ -952,11 +953,19 @@ class EISTPModel(nn.Module):
     def W_EE_eff(self):
         """STP E→E weight modulated by the trained low-rank, Dale-clamped (≥0).
 
-        In [post, pre] convention the weight is C·(1 + n[post]·m[pre]/N_E) =
-        C·(1 + (n@mᵀ)/N_E): n is the output (=readout) direction, m the presynaptic
-        selection direction.
+        In [post, pre] convention, with lr = (n@mᵀ)/lr_scale (n = output/readout
+        direction, m = presynaptic selection direction):
+          - multiplicative (default): C·(1 + lr) — the low-rank RIDES on the sparse
+            connectivity, so the memory mode lives only where C is nonzero.
+          - additive (`lr_additive`):  C + lr    — the low-rank is a DENSE, independent
+            term added to the balanced backbone (does not inherit C's 1/√K sparse
+            scaling, so effective g_mem differs; tune via lr_scale).
         """
-        W = self.gain * self.j_stp * self.C_EE * (1.0 + (self.n @ self.m.T) / self.lr_scale)
+        lr = (self.n @ self.m.T) / self.lr_scale
+        if self.lr_additive:
+            W = self.gain * self.j_stp * (self.C_EE + lr)
+        else:
+            W = self.gain * self.j_stp * self.C_EE * (1.0 + lr)
         if self.clamp:
             W = W.clamp_min(0.0)
         return W
