@@ -215,6 +215,30 @@ key sweeps:
   solo → clean 5/5. Plotting requires `MPLBACKEND=Agg` on this box (DISPLAY set → matplotlib hangs
   on a dead X server at TCP :6013).
 
+### E→E connectivity × nogo_target grid — what protects the DPA memory (2026-07-02)
+Two new E→E flags (`eistp_lr_additive`, `eistp_dense_cee` — CLI `--lr_additive`, `--dense_cee`),
+each swept at nogo=−1 and nogo=0, all else at the `sweep_eistp_ueqv_adam` recipe (m=n init, plain
+Adam lr=0.1, ÷N_E, squared hinge, N=1000/K=125). 5/5 each. after_gng/dpa (DPA retention through GNG):
+
+| E→E form | W_EE | nogo=−1 | nogo=0 | sweep dirs |
+|---|---|---|---|---|
+| **multiplicative** (faithful) | `C·(1+lr)` | **0.843 ± 0.072** | **0.925 ± 0.046** ★ | `sweep_eistp_ueqv_adam` / `_ng0` |
+| additive (sparse) | `C + lr` | 0.534 ± 0.062 | 0.636 ± 0.067 | `_additive` / `_additive_ng0` |
+| dense + additive | `1/N_E + lr` | 0.586 ± 0.113 | 0.679 ± 0.073 | `_dense_add` / `_dense_add_ng0` |
+
+- **Multiplicative coupling is the load-bearing mechanism.** Only `C·(1+lr)` (low-rank *riding on* the
+  sparse STP synapses) holds DPA through GNG (0.84–0.93); both **additive** forms — adding the low-rank
+  as a separate term, sparse `C+lr` or dense `1/N_E+lr` — collapse retention to ~chance (0.53–0.68),
+  because GNG training freely rewrites the un-gated low-rank. Confirms the old `EILowRankModel`
+  intuition ("low-rank added to a balanced backbone loses persistence") now A/B'd cleanly.
+- **nogo=0 helps retention in every connectivity** (+0.05…+0.10 vs nogo=−1); best overall is
+  **multiplicative + nogo=0 = 0.925**, the strongest DPA-through-GNG retention in the project.
+- DPA 1.0 and after_dual/dual_dpa ≈1.0 in all six (Dual always recovers DPA); the differentiator is
+  purely GNG-stage retention. Dense+additive early-stops fast (high-gain regime hits stop_loss quickly).
+- Flows/scatters built with the matching `W_EE` (verified: additive model → 234k dense off-C weights;
+  `_build_model`/`ei_flow.build_model`/`plot_sweep` all thread `lr_additive`+`dense_cee`). Figures:
+  `results/figures/sweep_eistp_ueqv_adam_{additive,dense_add,ng0,additive_ng0,dense_add_ng0}/` (111 each).
+
 **Stabilisation knobs (all in EISTPModel / Optimization, on by default in make_configs):**
 `eistp_r_max` (rate cap), `grad_clip_norm` (keep ≥0.5), NaN-skip + graceful-epoch-divergence in
 `Optimization`. `eistp_lr_ueqv=False` (random) ≈ as good as matched init.

@@ -1,0 +1,4 @@
+Sweep: 5 runs | 2 GPU(s) | 5 workers
+Results → results/dual/sweep_eistp_ueqv_adam_ng0/results.jsonl
+
+Done: 5 succeeded, 0 failed.  Results in results/dual/sweep_eistp_ueqv_adam_ng0/results.jsonl
