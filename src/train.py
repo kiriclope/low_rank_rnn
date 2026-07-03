@@ -340,6 +340,7 @@ class MaskedGNGLoss(nn.Module):
         target_weight: float = 1.0,
         zero_weight: float = 1.0,
         go_hinge_thresh: float | None = None,
+        nolick_weight: float = 0.0,
     ):
         super().__init__()
         self.timing          = timing
@@ -348,6 +349,7 @@ class MaskedGNGLoss(nn.Module):
         self.target_weight   = target_weight
         self.zero_weight     = zero_weight
         self.go_hinge_thresh = go_hinge_thresh
+        self.nolick_weight   = nolick_weight
 
     @staticmethod
     def masked_mean(loss, mask):
@@ -388,6 +390,13 @@ class MaskedGNGLoss(nn.Module):
                                          self.criterion(safe_pred, safe_tgt))
                 other_loss = self.masked_mean(other_raw, other_mask)
                 loss = loss + self.zero_weight * nogo_hinge + self.target_weight * go_loss + self.zero_weight * other_loss
+
+                # One-sided "no-lick" penalty over the free (NaN-target) decision windows:
+                # penalise lick (κ₁>0) only, leave κ₁<0 free. Opt-in via nolick_weight.
+                if self.nolick_weight:
+                    nolick_mask = torch.isfinite(pred) & ~torch.isfinite(target)
+                    nolick = self.masked_mean(torch.relu(pred) ** 2, nolick_mask)
+                    loss = loss + self.nolick_weight * nolick
             else:
                 zero_mask = finite & (safe_tgt == 0)
                 tgt_mask  = finite & (safe_tgt.abs() == 1)
@@ -436,12 +445,14 @@ class MaskedMultiTargetDualLoss(nn.Module):
         zero_weight:     float = 1.0,
         go_hinge_thresh: float | None = None,
         dpa_hinge_thresh: float | None = None,
+        nolick_weight: float = 0.0,
     ):
         super().__init__()
         self.timing          = timing
         self.readout_index   = readout_index
         self.criterion       = criterion or nn.MSELoss(reduction="none")
         self.dpa_hinge_thresh = dpa_hinge_thresh
+        self.nolick_weight   = nolick_weight
         self.dpa_weight      = dpa_weight
         self.gng_weight      = gng_weight
         self.gng_go_weight   = gng_go_weight
@@ -522,6 +533,14 @@ class MaskedMultiTargetDualLoss(nn.Module):
                 y_pred[..., ch].clone(), y[..., ch].clone()
             )
 
+        # One-sided "no-lick" penalty over the free (NaN-target) decision windows
+        # (sample, memory delay, gng-stim, cue, and the gng-response→DPA gap): penalise
+        # lick (κ₁>0) only, leave κ₁<0 free. Directional pressure with no painted κ₁ value.
+        nolick_loss = pred_dec.sum() * 0.0
+        if self.nolick_weight:
+            nolick_mask = torch.isfinite(pred_dec) & ~torch.isfinite(tgt_dec)
+            nolick_loss = self.masked_mean(torch.relu(pred_dec) ** 2, nolick_mask)
+
         self.last_components = {
             "dpa":      float(dpa_loss.detach()),
             "gng":      float(gng_loss.detach()),
@@ -529,6 +548,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
             "gng_nogo": float(nogo_loss.detach()),
             "baseline": float(bl_loss.detach()),
             "aux":      float(aux_loss.detach()),
+            "nolick":   float(nolick_loss.detach()),
         }
 
         return (
@@ -536,6 +556,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
             + self.gng_weight * gng_loss
             + self.bl_weight  * bl_loss
             + self.aux_weight * aux_loss
+            + self.nolick_weight * nolick_loss
         )
 
 

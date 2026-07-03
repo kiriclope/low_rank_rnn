@@ -529,3 +529,91 @@ optimization + inputs against our port.
 - **Tooling:** `plot_sweep.py` now auto-routes eistp away from the analytic FP scatter/flow (which
   crash on `EISTPModel` — no `.alpha`) to the simulation path, so a plain run yields the full figure
   set. New `eistp_init_noise` RunConfig field.
+
+---
+
+## 12. Session 2026-07-03 — vanilla push-down: the U/half-ring, and the two-ingredient isolation fix
+
+Back to the **vanilla rank-2** thread with a sharpened goal: get the two **A/B sample-memory wells**
+(on the memory axis) into the **no-lick region** (κ₂ < 0), which even the EISTP model doesn't do
+(it lowers only the *decision* wells, not the memory). Axis convention in the flow figures:
+**κ₁ = horizontal = memory, κ₂ = vertical = decision/lick** (top = go/lick, bottom = nogo/no-lick).
+
+### 12a. The "no-lick" mechanism (directional pressure × realizing symmetry-breaker)
+theory_landscape.md §8 proves the deadlock: with an *odd* φ and `unit_bias=0` the autonomous field
+`F(κ)=(1/N)nᵀφ(gain·Mκ+ub)−κ` is **odd regardless of the loss** ⇒ wells are ± pairs centred at the
+origin; both-into-κ₂<0 is symmetry-forbidden. Past failures split into two halves that each fail
+alone: symmetry-breakers (unit_bias, tanh_asym) tried with **no directional pressure** → de-centre
+randomly (⊥n₁); a κ₂ target tried with **no symmetry-breaker** → odd φ has no DOF to satisfy it.
+**The untried combination:** a *behavioural, one-sided* **no-lick hinge** `relu(κ₂)²` on the decision
+channel over the currently-**free** delay/memory windows (penalise lick only, leave κ₂<0 free — not a
+painted κ₂ value) **×** an enabled symmetry-breaker (`tanh_asym`/`unit_bias`) to realise it downward.
+- **Code (`nolick_weight`, default 0.0 ⇒ byte-identical):** one-sided term added to `MaskedGNGLoss`
+  and `MaskedMultiTargetDualLoss` (`src/train.py`). The free windows are **exactly**
+  `~torch.isfinite(target_dec)` (the loss zeroes preds on NaN targets), so `nolick_mask = ~finite`
+  — no timing math, no task-generator edits. Uses **raw** `pred` (not `safe_pred`, which is 0 there).
+  Threaded through both loss call sites + `RunConfig.nolick_weight` (`sweep.py`).
+- **Weight-decay caveat:** AdamW decays `unit_bias`→0 (guts the asymmetry) → use `optimizer="adam"`.
+
+### 12b. Sweep 1 `sweep_nolick_lower` — and why it was a mis-read
+Vanilla tanh, structured init, gain 2, nogo=0, adam, 100/100/100; arms control / pressure(nw=0.5) /
+unitbias / tanhasym, 3 seeds. **Retention unharmed** (every arm after_dual dpa 0.997–1.000; transient
+after_gng dips 0.75–0.82 all heal). Measured DPA-delay held-κ₂ appeared to lower modestly
+(control −0.15 → tanhasym −0.31). **This differential was NOISE on a shared transformation** —
+see 12c.
+
+### 12c. ★ THE ACTUAL STRUCTURE (Leon's correction): 4-well ring → 270° U/half-ring
+All arms produce the **same** solution. **DPA:** four attractors on the cardinals — memory poles at
+(±1.15, ≈0) and decision poles at (0, ±1.3) — joined by saddles/slow lines that mimic a **ring**.
+**Dual:** the **top (go) well opens up**, leaving a **U / half-ring** (~270°) running
+left → bottom → right — i.e. the memory poles are now connected *underneath*, through the deep nogo
+pole. This is **invariant** to `nolick_weight` and the symmetry-breaker. Mechanistic reason: the go
+response must *drive* κ₂ up out of the top, so Dual destabilises the top into an input-driven state
+while nogo/rest stays at the bottom → the autonomous manifold keeps the lower ¾ and opens the top.
+The plain go/nogo dual task already does this; the no-lick pressure was redundant for producing it.
+**Lesson: don't read point-well κ₂ differences; read the manifold topology.**
+
+### 12d. Refined target (Leon): TWO ISOLATED wells at κ₂<0 — *not* a U
+The 270° U is undesirable because it is "full no-go": one continuous slow manifold fusing both
+memory poles with the deep nogo pole. Target = **two disconnected A/B memory wells, both at κ₂<0,
+with no connecting arc** (the bottom must not be part of the memory manifold).
+
+### 12e. ★ Validated fix: the U survives because the DECISION mode is autonomously bistable
+The ring exists because **both** axes are autonomously bistable — memory (g·λ₀) *and* decision
+(g·λ₁) — and near-criticality links all four wells. Trained nets grow **g·λ₁ ≈ 3.3–3.8** (way
+supercritical) → strong autonomous go/nogo wells → ring. **Validated analytically**
+(`scratchpad/test_subcritical.py`: scale the decision columns m₁,n₁ down on a trained model and
+recompute autonomous fixed points):
+
+| dec_scale (g·λ₁) | autonomous attractors |
+|---|---|
+| 1.0 (3.3) | 2–3 wells incl. off-axis/lower — the ring/U |
+| 0.4 (1.3) | **2 clean memory wells at (±1.15, ≈0)** |
+| 0.0 (0.0) | 2 wells on the κ₁ axis |
+
+So the fix is **two orthogonal ingredients**: **(1) ISOLATE** — hold g·λ₁ ≈ 1 (no autonomous
+decision bistability) → ring collapses to two discrete memory wells; **(2) LOWER** — the directional
+break (`tanh_asym` γ=0.3 + `nolick`) pushes those two wells to κ₂<0. Sweep 1 had only (2), which is
+why the ring always survived (decision left supercritical in every arm). **Isolation alone lands the
+wells at κ₂≈0 (boundary) — both ingredients are needed for κ₂<0.**
+- **Levers:** `decision_lambda` (structured-init decision self-gain; ↓0.5→0.25 = subcritical start)
+  + `kappa1_reg_weight` (Dual penalty `w·relu(gain·n₁ᵀm₁/N − 1)²`, `sweep.py:686`). `memory_lambda=0.8`
+  stays supercritical (deep A/B). The decision mode regrows in DPA/GNG (no reg there) → reduced init
+  and Dual reg may both be needed; the k0 arm tests whether reduced-init alone holds.
+
+### 12f. Sweep 2 `sweep_isolate_low` — RUNNING (results pending)
+tanh_asym γ=0.3, `decision_lambda=0.25`, `memory_lambda=0.8`, gain 2, nolick=0.5, nogo=0, adam,
+100/100/100; arms **`kappa1_reg_weight ∈ {0(k0), 0.3(k03), 1(k1), 3(k3)}`**, 3 seeds.
+**Read-out when done:** per-run **g·λ₁** (=gain·n₁ᵀm₁/N, want ≈1), autonomous **fixed-point count**
+(want exactly 2, no bottom arc) + their **κ₂** (want <0), and retention. Tools: `sim_ab_wells.py`,
+`test_subcritical.py`, `kappa1_extract.py` (all in the session scratchpad).
+
+### 12g. Process gotchas (cost real time this session)
+- **The `plotting` subagents STALL:** they background `plot_sweep.py` then idle forever waiting for a
+  notification that never fires (one even relaunched the process as it was killed). **Run
+  `plot_sweep.py` yourself** as a single background job. Also: multi-line `run_in_background` bash
+  gets its newlines flattened → keep the command on one logical line (`&&`-joined, inline env vars).
+- **`find_all_fixed_points` returns a `(fps, residuals)` TUPLE** — unpack it. And its finder set is
+  incomplete/asymmetric → don't average its κ₂; measure the held state by simulation
+  (`sim_ab_wells.py`) instead.
+- All Session-12 code + docs are **UNCOMMITTED**.

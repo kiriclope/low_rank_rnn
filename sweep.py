@@ -163,6 +163,7 @@ class RunConfig:
     aux_weight:      float = 1.0   # weight on the memory (non-decision) channels
     bl_weight:       float = 1.0   # weight on the pre-sample baseline term
     kappa1_reg_weight: float = 0.0  # penalise gain*n1^T m1/N > 1 during Dual: weight*relu(λ₁-1)²
+    nolick_weight:   float = 0.0   # one-sided no-lick penalty relu(κ₁)² over free decision windows (GNG+Dual)
 
     # Output
     out_dir: str = "../results/dual/vanilla"
@@ -481,7 +482,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     dpa_criterion = (ThresholdLoss(thresh=config.dpa_hinge_thresh, squared=config.hinge_squared)
                      if config.dpa_hinge_thresh is not None else criterion)
     gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
-                                   go_hinge_thresh=config.go_hinge_thresh)
+                                   go_hinge_thresh=config.go_hinge_thresh,
+                                   nolick_weight=config.nolick_weight)
                      if config.nogo_target == 0.0 else criterion)
     losses    = {}
     _global_step = [0]   # mutable so the nested helper can increment it
@@ -664,12 +666,13 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             aux_weight=config.aux_weight, bl_weight=config.bl_weight,
             go_hinge_thresh=config.go_hinge_thresh,
             dpa_hinge_thresh=config.dpa_hinge_thresh,
+            nolick_weight=config.nolick_weight,
         )
         print(f"[{rid}]  loss=separated"
               f"  dpa_w={config.dpa_weight}  gng_w={config.gng_weight}"
               f"  go_w={config.gng_go_weight}  nogo_w={config.gng_nogo_weight}"
               f"  aux_w={config.aux_weight}  bl_w={config.bl_weight}"
-              f"  go_hinge={config.go_hinge_thresh}", flush=True)
+              f"  go_hinge={config.go_hinge_thresh}  nolick_w={config.nolick_weight}", flush=True)
     elif config.dual_loss == "threshold":
         dual_criterion = ThresholdLoss(thresh=config.loss_thresh)
         print(f"[{rid}]  loss=threshold  thresh={config.loss_thresh}", flush=True)
@@ -816,56 +819,57 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     """
     configs = []
 
+    # --- Vanilla rank-2: TWO isolated LOW memory wells (kill ring + lower) ----
+    # Target = two disconnected A/B memory wells, both at κ₂<0 (no-lick), no 270° arc.
+    # Two orthogonal ingredients:
+    #   (1) ISOLATE — hold the decision self-gain g·λ₁ near critical so there is NO
+    #       autonomous decision bistability → the 4-well/270°-U ring collapses to the
+    #       two memory wells.  Lever: reduced decision_lambda at init (starts subcritical)
+    #       + kappa1_reg_weight penalising g·λ₁>1 during Dual (SWEPT here).
+    #   (2) LOWER — directional break pushes those two wells to κ₂<0.  Fixed lever:
+    #       tanh_asym (γ=0.3, saturating→spiral-free) + one-sided no-lick hinge (nolick).
+    # See docs/ring_lowerplane_log.md, theory_landscape.md §4/§8, scratchpad test_subcritical.py.
     shared = dict(
-        # --- EISTPModel: NeuroFlame dual-EI port (Markram STP on E→E, low-rank rides it) ---
-        model_type="eistp",
-        nonlinearity="relu",
-        # smaller for fast test launches; K scaled with N to hold connection prob K/N=0.125
-        # (E-prob 0.167, I-prob 0.5 — same sparsity as the full N=2000/K=250 model)
-        n_neuron=1000, eistp_K=125.0, j_stp=1.0,
-        low_rank_scale=1.0,            # LR_INI = 1.0
-        eistp_lr_scale="N",            # ABLATION: original notebook TRAIN_SCALE='all' (÷N_E)
-        eistp_r_max=500.0,             # rate cap, ~6× the ~80 operating peak (anti-runaway safety)
-        eistp_lr_ueqv=True,            # NeuroFlame init: m = n at init (LR_UeqV=1) — g_mem starts nonzero
-        eistp_init_noise=0.0,          # FROZEN INPUTS: deterministic init kick → identical forward every epoch
-        stp_U=0.05, stp_tau_f=1.0, stp_tau_d=0.2,   # Markram; τ_fac = 1.0s
-        gain=1.0,
-        noise=1.0,                     # task input noise (generator)
-        model_noise=0.0,               # rely on STP/init kick, not recurrent noise
-        cue_on_go_input=cue_on_go_input,
-        freeze_input_stages=["dual"],
-        freeze_rank0_dual=False,
-        nogo_target=-1.0,
-        go_target=1.0,
-        go_hinge_thresh=1.0,           # relu EI can't hit exact ±1 → hinge targets
-        dpa_hinge_thresh=1.0,          # hinge DPA decision (DPA + dual stages)
+        model_type="lowrank",
+        hidden_size=512, rank=2, target_rank=2,
+        gain=2.0,                      # g·λ₀(mem)=1.6 at init (bistable); tanh_asym saturates → no spiral
+        init_style="structured",
+        memory_lambda=0.8,             # memory mode stays supercritical (deep A/B wells)
+        decision_lambda=0.25,          # ↓ from 0.5 → g·λ₁=0.5 at init (decision starts SUBCRITICAL)
+        nonlinearity="tanh_asym",      # symmetry-breaker (even γ·tanh² term) — the lowering lever
+        nl_gamma=0.3,
+        nolick_weight=0.5,             # one-sided no-lick pressure over the free delay windows
+        cue_on_go_input=True,          # cue rides on go channel → input_size=6
         cue_scale=2.0,
         input_scale=1.0,
-        stop_loss=0.1,
+        noise=0.5, model_noise=0.0,
+        nogo_target=0.0,               # one-sided nogo (consistent no-lick philosophy)
+        go_target=1.0,
+        go_hinge_thresh=1.0,
+        dpa_hinge_thresh=1.0,
         dual_loss="separated",
-        optimizer="adam",
-        learning_rate=0.1,            # ABLATION: original notebook lr=0.1
-        batch_size=32, n_batch=256,    # smaller batch (BPTT through ~440 steps)
-        grad_clip_norm=None,           # ABLATION: original has NO grad clip (let ‖V‖ grow into ÷N_E)
-        epochs_dpa=200, epochs_gng=100, epochs_dual=100,  # ABLATION: 2× DPA epochs (DPA was where 'all' died)
-        use_scheduler=False,
-        kappa1_reg_weight=0.0,
-        use_unit_bias=False,
+        freeze_input_stages=["dual"],
+        freeze_rank0_dual=False,
+        optimizer="adam",              # no weight decay
+        learning_rate=0.01,
+        use_scheduler=True,
+        stop_loss=0.1,
+        batch_size=64, n_batch=516,
+        grad_clip_norm=None,
+        epochs_dpa=100, epochs_gng=100, epochs_dual=100,
         out_dir=out_dir,
     )
-    if nogo_target is not None:        # CLI override (e.g. nogo_target=0 for the dual variant)
+    if nogo_target is not None:        # CLI override if desired
         shared["nogo_target"] = nogo_target
-    if hinge_squared is not None:      # CLI override: False = linear-hinge DPA variant
-        shared["hinge_squared"] = hinge_squared
-    if lr_additive is not None:        # CLI override: True = additive (dense) E→E low-rank
-        shared["eistp_lr_additive"] = lr_additive
-    if dense_cee is not None:          # CLI override: True = dense ones/N_E E→E backbone
-        shared["eistp_dense_cee"] = dense_cee
 
-    # EISTP DPA→GNG→Dual from scratch. 5 seeds, 100 epochs/stage (real sweep).
-    for seed in range(5):
-        configs.append(RunConfig(run_id=f"s{seed}", seed=seed,
-                                 gng_nogo_weight=1.0, **shared))
+    # Sweep the isolation strength: how hard to hold g·λ₁≈1 during Dual.
+    #   k0 = reduced-init only (does DPA/GNG regrow the decision mode?)
+    #   k03/k1/k3 = increasing Dual penalty on g·λ₁>1.
+    reg_arms = [("k0", 0.0), ("k03", 0.3), ("k1", 1.0), ("k3", 3.0)]
+    for tag, kreg in reg_arms:
+        for seed in range(3):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     kappa1_reg_weight=kreg, **shared))
 
     return configs
 
