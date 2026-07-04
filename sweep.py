@@ -177,9 +177,12 @@ class RunConfig:
         else:
             self.input_size = 8 - int(self.cue_on_go_input) - int(not self.rwd)
         if self.attention_input:
-            # tonic attention occupies an appended LAST channel (=1 from first stim onset)
+            # tonic attention occupies an appended LAST channel (=1 from first stim onset).
+            # The reward feedback (models.py rwd_channel=-1) also writes the LAST channel,
+            # so it must be OFF or it corrupts the attention signal (during GNG, rwd_gng).
             if self.rwd or self.go_on_rwd_input:
                 raise ValueError("attention_input needs the last channel; set rwd=False, go_on_rwd_input=False.")
+            self.rwd_gng = False   # prevent GNG reward-feedback writing onto the attention channel
             self.input_size += 1
         if self.dual_loss not in ("multi", "separated", "threshold"):
             raise ValueError(f"dual_loss must be 'multi', 'separated', or 'threshold', got {self.dual_loss!r}")
