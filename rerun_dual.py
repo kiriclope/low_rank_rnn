@@ -98,7 +98,7 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
         target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
         cue_scale=config.cue_scale, nogo_target=config.nogo_target,
         go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
-        input_scale=config.input_scale,
+        input_scale=config.input_scale, attention_input=config.attention_input,
     )
     tl, vl = train_val_split(X.to(device), y.to(device), config.batch_size)
 

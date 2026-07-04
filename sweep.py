@@ -131,6 +131,7 @@ class RunConfig:
     nogo_target:      float = 0.0   # target value for nogo response window (-1 or 0)
     go_target:        float = 1.0   # target value for go response window
     input_scale:      float = 1.0   # global multiplier on all stimulus + cue input amplitudes
+    attention_input:  bool  = False # tonic attention/context input (last channel, =1 from first stim onset); input_size += 1
     rwd:              bool  = False  # teacher-forced reward feedback
     rwd_scale:        float = 1.0   # amplitude of the reward pulse (default +1)
     # Which stages freeze ALL input dims. Subset of ['dpa', 'gng', 'dual'].
@@ -174,6 +175,11 @@ class RunConfig:
             self.input_size = 8 - 2 - int(not self.rwd)   # go+cue merged into rwd channel
         else:
             self.input_size = 8 - int(self.cue_on_go_input) - int(not self.rwd)
+        if self.attention_input:
+            # tonic attention occupies an appended LAST channel (=1 from first stim onset)
+            if self.rwd or self.go_on_rwd_input:
+                raise ValueError("attention_input needs the last channel; set rwd=False, go_on_rwd_input=False.")
+            self.input_size += 1
         if self.dual_loss not in ("multi", "separated", "threshold"):
             raise ValueError(f"dual_loss must be 'multi', 'separated', or 'threshold', got {self.dual_loss!r}")
 
@@ -183,10 +189,11 @@ class RunConfig:
 # ---------------------------------------------------------------------------
 
 @torch.no_grad()
-def _dpa_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1, input_scale=1.0):
+def _dpa_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1, input_scale=1.0, attention_input=False):
     model.eval()
     X, y = generate_dpa_trials(n_trials, timing=timing, input_size=input_size,
-                                noise=noise, target_rank=target_rank, input_scale=input_scale)
+                                noise=noise, target_rank=target_rank, input_scale=input_scale,
+                                attention_input=attention_input)
     pred         = model(X.to(device), y.to(device))[..., -1].cpu()
     decision_t   = int(timing.n_stim_off[1])
     pred_final   = pred[:, decision_t:].mean(1)
@@ -195,10 +202,11 @@ def _dpa_accuracy(model, timing, input_size, noise, device, n_trials=1024, targe
 
 
 @torch.no_grad()
-def _dpa_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1, input_scale=1.0):
+def _dpa_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1, input_scale=1.0, attention_input=False):
     model.eval()
     X, y = generate_dpa_trials(n_trials, timing=timing, input_size=input_size,
-                                noise=noise, target_rank=target_rank, input_scale=input_scale)
+                                noise=noise, target_rank=target_rank, input_scale=input_scale,
+                                attention_input=attention_input)
     pred         = model(X.to(device), y.to(device))[..., -1].cpu()
     decision_t   = int(timing.n_stim_off[1])
     pred_final   = pred[:, decision_t:].mean(1)
@@ -215,12 +223,13 @@ def _dpa_accuracy_by_type(model, timing, input_size, noise, device, n_trials=102
 
 @torch.no_grad()
 def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
-                  cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0):
+                  cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False):
     model.eval()
     X, y = generate_gng_trials(n_trials, timing=timing, input_size=input_size,
                                 noise=noise, target_rank=target_rank, cue_on_go_input=cue_on_go_input,
                                 cue_scale=cue_scale, nogo_target=nogo_target,
-                                go_on_rwd_input=go_on_rwd_input, input_scale=input_scale)
+                                go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
+                                attention_input=attention_input)
     pred        = model(X.to(device), y.to(device))[..., -1].cpu()
     stim_epoch  = slice(int(timing.n_stim_on[0]), int(timing.n_stim_off[0]))
     go_ch       = input_size - 1 if go_on_rwd_input else 4
@@ -234,12 +243,13 @@ def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, targe
 
 @torch.no_grad()
 def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
-                           cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0):
+                           cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False):
     model.eval()
     X, y = generate_gng_trials(n_trials, timing=timing, input_size=input_size,
                                 noise=noise, target_rank=target_rank, cue_on_go_input=cue_on_go_input,
                                 cue_scale=cue_scale, nogo_target=nogo_target,
-                                go_on_rwd_input=go_on_rwd_input, input_scale=input_scale)
+                                go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
+                                attention_input=attention_input)
     pred        = model(X.to(device), y.to(device))[..., -1].cpu()
     stim_epoch  = slice(int(timing.n_stim_on[0]), int(timing.n_stim_off[0]))
     go_ch       = input_size - 1 if go_on_rwd_input else 4
@@ -258,12 +268,13 @@ def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=102
 
 @torch.no_grad()
 def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
-                   cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0):
+                   cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False):
     model.eval()
     X, y, _, condition_names = generate_dual_trials(
         n_trials, timing=timing, input_size=input_size, noise=noise, target_rank=target_rank,
         cue_on_go_input=cue_on_go_input, cue_scale=cue_scale, nogo_target=nogo_target,
         go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
+        attention_input=attention_input,
     )
     pred  = model(X.to(device), y.to(device))[..., -1].cpu()
     names = np.asarray(condition_names).astype(str)
@@ -509,11 +520,11 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     def _eval(label):
         model.noise = 0.0
         dpa = _dpa_accuracy_by_type(model, dpa_timing, config.input_size, noise=noise, device=device,
-                                    target_rank=config.target_rank, input_scale=config.input_scale)
+                                    target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input)
         gng = _gng_accuracy_by_type(model, gng_timing, config.input_size, noise=noise, device=device,
                                     target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                     cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-                                    go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale)
+                                    go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale, attention_input=config.attention_input)
         print(f"[{rid}]   {label}: "
               f"dpa={dpa['overall']:.3f} (pair={dpa['pair']:.3f} unpair={dpa['unpair']:.3f})  "
               f"gng={gng['overall']:.3f} (go={gng['go']:.3f} nogo={gng['nogo']:.3f})", flush=True)
@@ -539,7 +550,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             dpa_freeze_input = sorted(set(dpa_freeze_input) | set(gng_dims))
         _stage_header("DPA", config.epochs_dpa, dpa_freeze_input, [])
         t0 = time.time()
-        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale)
+        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -619,7 +630,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         X, y   = generate_gng_trials(config.n_batch, gng_timing, config.input_size, noise=noise, target_rank=config.target_rank,
                                       cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                       nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
-                                      input_scale=config.input_scale)
+                                      input_scale=config.input_scale, attention_input=config.attention_input)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -653,7 +664,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     X, y, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise, target_rank=config.target_rank,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                        nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
-                                       input_scale=config.input_scale)
+                                       input_scale=config.input_scale, attention_input=config.attention_input)
     print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
     tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
     opt, sched = _opt_and_sched()
@@ -715,7 +726,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     dual_dpa, dual_gng = _dual_accuracy(model, dual_timing, config.input_size, noise=noise, device=device,
                                          target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                          cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-                                         go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale)
+                                         go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale, attention_input=config.attention_input)
     _stage_summary("Dual", train_l, val_l, acc_after_dual, t0)
     _log_params("after Dual")
 

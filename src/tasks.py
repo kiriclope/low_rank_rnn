@@ -51,6 +51,7 @@ def generate_dpa_trials(
     noise: float = 0.1,
     baseline_value: float = 0.5,
     input_scale: float = 1.0,
+    attention_input: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -58,6 +59,9 @@ def generate_dpa_trials(
 
     inputs = noise * torch.randn(n_trials, n_steps, input_size)
     targets = torch.zeros(n_trials, n_steps, target_rank)
+
+    if attention_input:   # tonic attentional/context input on the LAST channel,
+        inputs[:, n_on[0]:, -1] += 1.0   # =1 for ALL trials from first stimulus onset
 
     idx_A = torch.rand(n_trials) > 0.5
     idx_B = ~idx_A
@@ -105,6 +109,7 @@ def generate_gng_trials(
     go_target: float = 1.0,
     go_on_rwd_input: bool = False,
     input_scale: float = 1.0,
+    attention_input: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -112,6 +117,9 @@ def generate_gng_trials(
 
     inputs = noise * torch.randn(n_trials, n_steps, input_size)
     targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
+
+    if attention_input:   # tonic attention on the LAST channel, =1 from first stim onset
+        inputs[:, n_on[0]:, -1] += 1.0
 
     idx_go   = torch.rand(n_trials) > 0.5
     idx_nogo = ~idx_go
@@ -166,6 +174,7 @@ def generate_dual_trials(
     go_target: float = 1.0,
     go_on_rwd_input: bool = False,
     input_scale: float = 1.0,
+    attention_input: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -201,6 +210,9 @@ def generate_dual_trials(
 
     inputs  = noise * torch.randn(n_trials, n_steps, input_size)
     targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
+
+    if attention_input:   # tonic attention on the LAST channel, =1 from first stim onset
+        inputs[:, n_on[0]:, -1] += 1.0
 
     inputs[idx_A,    n_on[0]:n_off[0], 0] += input_scale
     inputs[idx_B,    n_on[0]:n_off[0], 1] += input_scale

@@ -104,6 +104,7 @@ class RunMeta:
     rwd_scale:      float = 1.0
     cue_scale:      float = 1.0
     nogo_target:    float = 0.0
+    attention_input: bool = False
     tau:            float = 0.3
     dt_base:        float = 0.03
     tau_rec_frac:   float = 0.75
@@ -176,6 +177,7 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             rwd_scale       = float(cfg.get("rwd_scale", 1.0)),
             cue_scale       = float(cfg.get("cue_scale", 1.0)),
             nogo_target     = float(cfg.get("nogo_target", 0.0)),
+            attention_input = bool(cfg.get("attention_input", False)),
             tau             = float(cfg.get("tau", 0.3)),
             dt_base         = float(cfg.get("dt_base", 0.03)),
             tau_rec_frac    = float(cfg.get("tau_rec_frac", 0.75)),
@@ -339,7 +341,7 @@ def _eval_dual_by_trialtype(model, meta: RunMeta, device: str,
         n_trials, timing=timing, input_size=meta.input_size,
         noise=meta.noise_sigma(), target_rank=2,
         cue_on_go_input=meta.cue_on_go_input, cue_scale=meta.cue_scale,
-        nogo_target=meta.nogo_target,
+        nogo_target=meta.nogo_target, attention_input=meta.attention_input,
     )
     X, y = X.to(device), y.to(device)
     pred  = model(X, y)[..., -1].cpu()
@@ -382,7 +384,7 @@ def _eval_gng_by_trialtype(model, meta: RunMeta, device: str,
         n_trials, timing=timing, input_size=meta.input_size,
         noise=meta.noise_sigma(), target_rank=2,
         cue_on_go_input=meta.cue_on_go_input, cue_scale=meta.cue_scale,
-        nogo_target=meta.nogo_target,
+        nogo_target=meta.nogo_target, attention_input=meta.attention_input,
     )
     X, y = X.to(device), y.to(device)
     pred  = model(X, y)[..., -1].cpu()
@@ -427,6 +429,7 @@ def _make_gng_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None =
         n_batch, timing=timing, input_size=ref_meta.input_size,
         noise=n_sigma, target_rank=2, cue_on_go_input=ref_meta.cue_on_go_input,
         cue_scale=ref_meta.cue_scale, nogo_target=ref_meta.nogo_target,
+        attention_input=ref_meta.attention_input,
     )
     np.random.set_state(rng_state)
     torch.set_rng_state(torch_state)
@@ -452,6 +455,7 @@ def _make_dual_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None 
         n_batch, timing=timing, input_size=ref_meta.input_size,
         noise=n_sigma, target_rank=2, cue_on_go_input=ref_meta.cue_on_go_input,
         cue_scale=ref_meta.cue_scale, nogo_target=ref_meta.nogo_target,
+        attention_input=ref_meta.attention_input,
     )
     np.random.set_state(rng_state)
     torch.set_rng_state(torch_state)
@@ -1282,19 +1286,21 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
         if task == "dpa":
             inputs, targets = generate_dpa_trials(
                 n_batch, timing, input_size=meta.input_size,
-                noise=meta.noise_sigma())
+                noise=meta.noise_sigma(), attention_input=meta.attention_input)
             cnames = None
         elif task == "gng":
             inputs, targets = generate_gng_trials(
                 n_batch, timing, input_size=meta.input_size,
                 noise=meta.noise_sigma(), cue_on_go_input=cue,
-                cue_scale=meta.cue_scale, nogo_target=meta.nogo_target)
+                cue_scale=meta.cue_scale, nogo_target=meta.nogo_target,
+                attention_input=meta.attention_input)
             cnames = None
         else:
             inputs, targets, _, cnames = generate_dual_trials(
                 n_batch, timing, input_size=meta.input_size,
                 noise=meta.noise_sigma(), cue_on_go_input=cue,
-                cue_scale=meta.cue_scale, nogo_target=meta.nogo_target)
+                cue_scale=meta.cue_scale, nogo_target=meta.nogo_target,
+                attention_input=meta.attention_input)
 
         inputs_t  = torch.as_tensor(inputs,  dtype=torch.float32)
         targets_t = torch.as_tensor(targets, dtype=torch.float32)
@@ -1309,6 +1315,7 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
             n_fp_seeds      = n_fp_seeds,
             cue_on_go_input = cue,
             cue_scale       = meta.cue_scale,
+            attention_input = meta.attention_input,
             xlim            = None if auto_xlim else XLIM,
             ylim            = None if auto_xlim else YLIM,
             n_grid          = n_grid,

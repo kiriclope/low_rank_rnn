@@ -714,6 +714,7 @@ def plot_task_flow_fields(
     cue_on_go_input=False, cue_scale=1.0,
     use_sim_field=False, sim_n_warmup=0, slow_tol=None,
     show_slow_manifold=False, slow_manifold_thresh=0.12,
+    attention_input=False,
 ):
     """Generic low-rank phase portrait for DPA, GNG, and Dual tasks."""
     task = task.lower()
@@ -769,6 +770,8 @@ def plot_task_flow_fields(
     caches, all_speeds = [], []
     for spec in specs:
         ff_input = make_input(input_size, active_dims=spec["dims"], value=spec.get("value", 1.0), device=device, dtype=dtype)
+        if attention_input:   # tonic attention (last channel) is ON during the whole task,
+            ff_input[-1] = 1.0   # incl. the "Autonomous" (attention-on baseline) panel → makes origin a fixed point
 
         if use_sim_field:
             K1, K2, U, V, speed = sim_kappa_field(
