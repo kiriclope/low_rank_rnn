@@ -163,6 +163,7 @@ class RunConfig:
     aux_weight:      float = 1.0   # weight on the memory (non-decision) channels
     bl_weight:       float = 1.0   # weight on the pre-sample baseline term
     kappa1_reg_weight: float = 0.0  # penalise gain*n1^T m1/N > 1 during Dual: weight*relu(λ₁-1)²
+    kappa1_clamp:    float | None = None  # HARD constraint: rescale m1,n1 so g·λ₁ ≤ this after each Dual step (vs. soft reg)
     nolick_weight:   float = 0.0   # one-sided no-lick penalty relu(κ₁)² over free decision windows (GNG+Dual)
 
     # Output
@@ -698,7 +699,10 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                               freeze_input_dims=dual_freeze_input,
                               stop_loss=config.stop_loss,
                               regularizer=dual_regularizer,
+                              kappa1_clamp=config.kappa1_clamp,
                               verbose=True)
+    if config.kappa1_clamp is not None:
+        print(f"[{rid}]  κ₁ hard clamp: g·λ₁ ≤ {config.kappa1_clamp} after each Dual step", flush=True)
 
     train_l, val_l, _ = trainer.fit()
     dual_loss_components = (dict(dual_criterion.last_components) if config.dual_loss == "separated" else None)
@@ -862,14 +866,16 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if nogo_target is not None:        # CLI override if desired
         shared["nogo_target"] = nogo_target
 
-    # Sweep the isolation strength: how hard to hold g·λ₁≈1 during Dual.
-    #   k0 = reduced-init only (does DPA/GNG regrow the decision mode?)
-    #   k03/k1/k3 = increasing Dual penalty on g·λ₁>1.
-    reg_arms = [("k0", 0.0), ("k03", 0.3), ("k1", 1.0), ("k3", 3.0)]
-    for tag, kreg in reg_arms:
+    # ISOLATION via HARD CONSTRAINT (vs. the soft kappa1_reg penalty in sweep_isolate_low
+    # k1/k3). After each Dual step, rescale m1,n1 so g·λ₁ ≤ target — pins the decision
+    # self-gain magnitude, leaves its direction free. Compare to k1 (soft reg=1.0):
+    #   c10 = clamp g·λ₁ ≤ 1.0 (direct analog of critical)
+    #   c15 = clamp g·λ₁ ≤ 1.5 (allow a little decision gain)
+    clamp_arms = [("c10", 1.0), ("c15", 1.5)]
+    for tag, clamp in clamp_arms:
         for seed in range(3):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
-                                     kappa1_reg_weight=kreg, **shared))
+                                     kappa1_clamp=clamp, **shared))
 
     return configs
 
