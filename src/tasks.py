@@ -61,7 +61,7 @@ def generate_dpa_trials(
     targets = torch.zeros(n_trials, n_steps, target_rank)
 
     if attention_input:   # tonic attentional/context input on the LAST channel,
-        inputs[:, n_on[0]:, -1] += 1.0   # =1 for ALL trials from first stimulus onset
+        inputs[:, n_on[0]:, -1] += input_scale
 
     idx_A = torch.rand(n_trials) > 0.5
     idx_B = ~idx_A
@@ -119,7 +119,7 @@ def generate_gng_trials(
     targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
 
     if attention_input:   # tonic attention on the LAST channel, =1 from first stim onset
-        inputs[:, n_on[0]:, -1] += 1.0
+        inputs[:, n_on[0]:, -1] += input_scale
 
     idx_go   = torch.rand(n_trials) > 0.5
     idx_nogo = ~idx_go
@@ -153,7 +153,7 @@ def generate_gng_trials(
     # # during cue
     # targets[idx_go,   n_on[1]:n_off[1], -1] = go_target
     # targets[idx_nogo, n_on[1]:n_off[1], -1] = nogo_target
-    
+
     # # after cue
     targets[idx_go,   n_off[1]:, -1] = go_target
     targets[idx_nogo, n_off[1]:, -1] = nogo_target
@@ -175,6 +175,7 @@ def generate_dual_trials(
     go_on_rwd_input: bool = False,
     input_scale: float = 1.0,
     attention_input: bool = False,
+    paired_only: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -186,6 +187,8 @@ def generate_dual_trials(
         for gng in ["none", "go", "nogo"]
         for test in ["C", "D"]
     ]
+    if paired_only:   # curriculum bridge: MATCH trials only (A→C, B→D) — DPA decision always +1
+        specs = [(s, g, t) for (s, g, t) in specs if (s == "A" and t == "C") or (s == "B" and t == "D")]
 
     n_types = len(specs)
     reps = int(np.ceil(n_trials / n_types))
@@ -212,7 +215,7 @@ def generate_dual_trials(
     targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
 
     if attention_input:   # tonic attention on the LAST channel, =1 from first stim onset
-        inputs[:, n_on[0]:, -1] += 1.0
+        inputs[:, n_on[0]:, -1] += input_scale
 
     inputs[idx_A,    n_on[0]:n_off[0], 0] += input_scale
     inputs[idx_B,    n_on[0]:n_off[0], 1] += input_scale

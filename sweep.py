@@ -123,6 +123,10 @@ class RunConfig:
     epochs_dpa:    int = 100
     epochs_gng:    int = 100
     epochs_dual:   int = 100
+    # Curriculum: insert a Dual-paired (MATCH-only) stage between GNG and full Dual,
+    # saved as the "naive" checkpoint (replacing GNG's).
+    dual_paired_stage:  bool = False
+    epochs_dual_paired: int  = 100
 
     # Task variant
     cue_on_go_input:  bool  = False
@@ -662,6 +666,46 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                     "after_gng/acc_gng": acc_after_gng["gng"]})
 
     # ------------------------------------------------------------------
+    # Stage 2.5 — Dual-paired (MATCH trials only) → overwrites "naive" (curriculum bridge)
+    # ------------------------------------------------------------------
+    if config.dual_paired_stage:
+        paired_freeze_input = list(range(config.input_size)) if "dual" in config.freeze_input_stages else []
+        _stage_header("Dual-paired", config.epochs_dual_paired, paired_freeze_input,
+                      [0] if config.freeze_rank0_dual else [])
+        t0 = time.time()
+        Xp, yp, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise,
+                                            target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
+                                            cue_scale=config.cue_scale, nogo_target=config.nogo_target,
+                                            go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
+                                            input_scale=config.input_scale, attention_input=config.attention_input,
+                                            paired_only=True)
+        print(f"[{rid}]  data(paired): {list(Xp.shape)} → {list(yp.shape)}", flush=True)
+        tlp, vlp     = train_val_split(Xp.to(device), yp.to(device), config.batch_size)
+        optp, schedp = _opt_and_sched()
+        model.noise  = model_noise_sigma
+        paired_criterion = (MaskedMultiTargetDualLoss(
+                timing=dual_timing, dpa_weight=config.dpa_weight, gng_weight=config.gng_weight,
+                gng_go_weight=config.gng_go_weight, gng_nogo_weight=config.gng_nogo_weight,
+                aux_weight=config.aux_weight, bl_weight=config.bl_weight,
+                go_hinge_thresh=config.go_hinge_thresh, dpa_hinge_thresh=config.dpa_hinge_thresh,
+                nolick_weight=config.nolick_weight)
+            if config.dual_loss == "separated" else criterion)
+        trainer = Optimization(model, tlp, vlp, paired_criterion, optp, schedp,
+                               config.grad_clip_norm, num_epochs=config.epochs_dual_paired,
+                               freeze_low_rank_cols=[0] if config.freeze_rank0_dual else None,
+                               freeze_input_dims=paired_freeze_input,
+                               stop_loss=config.stop_loss,
+                               kappa1_clamp=config.kappa1_clamp,
+                               kappa_gain_target=config.kappa_gain_target,
+                               verbose=True)
+        tl, vl, _ = trainer.fit()
+        losses["dual_paired"] = {"train": tl, "val": vl}
+        torch.save(model.state_dict(), os.path.join(models_dir, f"naive_{rid}.pth"))  # naive = Dual-paired
+        acc_after_gng = _eval("after Dual-paired")
+        _stage_summary("Dual-paired", tl, vl, acc_after_gng, t0)
+        _log_params("after Dual-paired")
+
+    # ------------------------------------------------------------------
     # Stage 3 — Dual  (freeze all input dims)
     # ------------------------------------------------------------------
     dual_freeze_input = list(range(config.input_size)) if "dual" in config.freeze_input_stages else []
@@ -858,11 +902,10 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         init_style="structured",
         memory_lambda=0.8,             # memory mode stays supercritical (deep A/B wells)
         decision_lambda=0.25,          # ↓ from 0.5 → g·λ₁=0.5 at init (decision starts SUBCRITICAL)
-        nonlinearity="tanh_asym",      # symmetry-breaker (even γ·tanh² term) — the lowering lever
-        nl_gamma=0.3,
+        nonlinearity="tanh_asym", nl_gamma=0.3,   # spiral-free symmetry-breaker
         nolick_weight=0.5,             # one-sided no-lick pressure over the free delay windows
-        attention_input=True,          # tonic attention (last channel) → origin can be a fixed point
-        cue_on_go_input=True,          # cue rides on go channel; +attention → input_size=7
+        rwd_gng=False,                 # no reward-feedback onto the last channel (clean; avoids the rwd/attention collision)
+        cue_on_go_input=True,          # cue rides on go channel (attention arm → input_size=7, else 6)
         cue_scale=2.0,
         input_scale=1.0,
         noise=0.5, model_noise=0.0,
@@ -885,15 +928,15 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if nogo_target is not None:        # CLI override if desired
         shared["nogo_target"] = nogo_target
 
-    # CRITICALITY: pin BOTH modes' self-gain g·λ to a single value (two-sided, ALL stages)
-    # + tonic attention (origin a fixed point) + tanh_asym/nolick lowering. At g·λ=1 both
-    # memory and decision sit at the marginal/line-attractor (integrator) point — consistent
-    # across modes, neuro-meaningful (edge of stability). crit12 allows a small barrier.
-    crit_arms = [("crit10", 1.0), ("crit12", 1.2)]
-    for tag, tgt in crit_arms:
+    # CURRICULUM: DPA → GNG → Dual-paired (MATCH only, = new "naive") → Dual-full ("expert").
+    # Does the gentler bridge shape the memory into isolated lower wells (break the U) WITHOUT
+    # clamping the decision? curric = paired stage on; control = straight to full Dual.
+    # No clamp, no attention (isolate the curriculum effect).
+    curric_arms = [("curric", True), ("control", False)]
+    for tag, paired in curric_arms:
         for seed in range(3):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
-                                     kappa_gain_target=tgt, **shared))
+                                     dual_paired_stage=paired, **shared))
 
     return configs
 
