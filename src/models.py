@@ -38,6 +38,7 @@ class LowRankModel(nn.Module):
         use_unit_bias=False,
         unit_bias_trainable=True,
         unit_bias_scale=0.2,
+        use_rec_scale=False,
         device="cpu",
     ):
         super().__init__()
@@ -70,6 +71,15 @@ class LowRankModel(nn.Module):
         self.n = nn.Parameter(torch.randn(hidden_size, rank, device=self.device))
         nn.init.normal_(self.m, mean=0.0, std=1.0)
         nn.init.normal_(self.n, mean=0.0, std=1.0)
+
+        # Per-mode recurrent scale: W_rec = Σ_a rec_scale[a]·m_a n_aᵀ / N.  Scales each mode's
+        # RECURRENCE (self-gain g·λ_a → g·rec_scale[a]·λ_a) but NOT its readout (κ = rates·n/N),
+        # so the net can learn a weak decision recurrence (no autonomous well / ring) with an
+        # intact decision readout. Ones ⇒ identical to the plain model when disabled.
+        if use_rec_scale:
+            self.rec_scale = nn.Parameter(torch.ones(rank, device=self.device))
+        else:
+            self.register_buffer('rec_scale', torch.ones(rank, device=self.device))
 
         self.wo = None
         if output_size > 0:
@@ -156,7 +166,7 @@ class LowRankModel(nn.Module):
 
     def update_dynamics(self, ff_inputs, rec_inputs, rates):
         input_drive = self.Ai * self.wi(ff_inputs) if self.wi is not None else 0.0
-        hidden      = (rates @ self.n) @ self.m.T / self.hidden_size
+        hidden      = (rates @ self.n) @ (self.rec_scale * self.m).T / self.hidden_size
         if self.w_fixed is not None:
             hidden = hidden + rates @ self.w_fixed.T
         rec_inputs  = self.exp_alpha_rec * rec_inputs + (1.0 - self.exp_alpha_rec) * hidden

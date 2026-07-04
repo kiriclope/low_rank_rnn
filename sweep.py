@@ -109,6 +109,7 @@ class RunConfig:
     use_unit_bias:              bool  = False  # per-unit bias inside φ; breaks κ-field odd symmetry
     unit_bias_trainable:        bool  = True   # train the unit bias (False = frozen random)
     unit_bias_scale:            float = 0.2    # init scale of the random per-unit bias
+    use_rec_scale:              bool  = False  # trainable per-mode recurrent scale (decouples recurrence from readout)
     rwd_gng:             bool  = True   # teacher-forced reward during GNG stage (False = disable)
 
     # Training (shared across all stages)
@@ -430,6 +431,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             use_unit_bias=config.use_unit_bias,
             unit_bias_trainable=config.unit_bias_trainable,
             unit_bias_scale=config.unit_bias_scale,
+            use_rec_scale=config.use_rec_scale,
             device=device,
         )
 
@@ -928,15 +930,15 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if nogo_target is not None:        # CLI override if desired
         shared["nogo_target"] = nogo_target
 
-    # CURRICULUM: DPA → GNG → Dual-paired (MATCH only, = new "naive") → Dual-full ("expert").
-    # Does the gentler bridge shape the memory into isolated lower wells (break the U) WITHOUT
-    # clamping the decision? curric = paired stage on; control = straight to full Dual.
-    # No clamp, no attention (isolate the curriculum effect).
-    curric_arms = [("curric", True), ("control", False)]
-    for tag, paired in curric_arms:
+    # TRAINABLE per-mode recurrent scale (rec_scale): W_rec = Σ_a s_a·m_a n_aᵀ/N. Decouples
+    # each mode's RECURRENCE (self-gain g·λ_a → g·s_a·λ_a) from its READOUT (κ=rates·n/N), so the
+    # net can LEARN a weak decision recurrence (s₁ small → no autonomous decision well → no ring)
+    # while keeping a strong decision readout. No clamp/curriculum/attention (isolate rec_scale).
+    rec_arms = [("recscale", True), ("control", False)]
+    for tag, rs in rec_arms:
         for seed in range(3):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
-                                     dual_paired_stage=paired, **shared))
+                                     use_rec_scale=rs, **shared))
 
     return configs
 

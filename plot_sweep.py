@@ -112,6 +112,7 @@ class RunMeta:
     nl_gamma:       float = 0.0
     use_unit_bias:  bool  = False
     unit_bias_trainable: bool = True
+    use_rec_scale:  bool  = False
     model_type:     str   = "lowrank"
     n_inh:          int   = 128
     static_radius:  float = 1.5
@@ -185,6 +186,7 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             nl_gamma        = float(cfg.get("nl_gamma", 0.0)),
             use_unit_bias   = bool(cfg.get("use_unit_bias", False)),
             unit_bias_trainable = bool(cfg.get("unit_bias_trainable", True)),
+            use_rec_scale   = bool(cfg.get("use_rec_scale", False)),
             model_type      = cfg.get("model_type", "lowrank"),
             n_inh           = int(cfg.get("n_inh", 128)),
             static_radius   = float(cfg.get("static_radius", 1.5)),
@@ -264,6 +266,7 @@ def _build_model(meta: RunMeta, device: str):
         nl_gamma      = meta.nl_gamma,
         use_unit_bias = meta.use_unit_bias,
         unit_bias_trainable = meta.unit_bias_trainable,
+        use_rec_scale = meta.use_rec_scale,
         use_fixed_weights = meta.use_fixed_weights,
         fixed_weight_scale = meta.fixed_weight_scale,
         fixed_weight_orthogonalize = meta.fixed_weight_orthogonalize,

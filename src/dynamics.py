@@ -112,8 +112,13 @@ def low_rank_numpy_params(model):
     else:
         unit_bias_np = unit_bias.detach().cpu().numpy().astype(np.float64)
 
+    # Effective loading includes the per-mode recurrent scale: M_eff = rec_scale · m
+    # (readout Nvec = n is unscaled). Ones when rec_scale is disabled → unchanged.
+    rec_scale = getattr(model, "rec_scale", None)
+    m_eff = model.m if rec_scale is None else (rec_scale * model.m)
+
     return {
-        "M":         model.m.detach().cpu().numpy().astype(np.float64),
+        "M":         m_eff.detach().cpu().numpy().astype(np.float64),
         "Nvec":      n_eff.detach().cpu().numpy().astype(np.float64),
         "Wi":        model.wi.weight.detach().cpu().numpy().astype(np.float64),
         "bi":        model.wi.bias.detach().cpu().numpy().astype(np.float64),
