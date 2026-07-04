@@ -51,6 +51,7 @@ class Optimization:
         regularizer: Any | None = None,
         hebb_lr: float = 0.0,
         kappa1_clamp: float | None = None,
+        kappa_gain_target: float | None = None,
     ):
         self.model         = model
         self.train_loader  = train_loader
@@ -60,6 +61,7 @@ class Optimization:
         self.regularizer   = regularizer   # callable(model) -> scalar tensor, added to train loss
         self.hebb_lr       = hebb_lr       # three-factor Hebbian lr for reward input (0 = disabled)
         self.kappa1_clamp  = kappa1_clamp  # hard cap on decision self-gain g·λ₁ after each step (None=off)
+        self.kappa_gain_target = kappa_gain_target  # pin ALL modes' g·λ to this value each step (None=off)
         self.num_epochs    = num_epochs
         self.warmup_epochs = warmup_epochs
         self.stop_loss     = stop_loss
@@ -172,6 +174,25 @@ class Optimization:
                 m[:, 1].mul_(s)
                 n[:, 1].mul_(s)
 
+    def _pin_kappa_gains(self):
+        """Criticality constraint: pin EVERY mode's self-gain g·λ_a = gain·n_aᵀm_a/N to a
+        single target (two-sided rescale of m_a,n_a, up or down). With target=1 both the
+        memory and decision modes sit at the pitchfork/marginal point → line-attractor
+        (integrator) dynamics, consistent across modes. Off-diagonals stay free."""
+        if self.kappa_gain_target is None:
+            return
+        m, n = self.model.m, self.model.n
+        gain = float(self.model.gain) if torch.is_tensor(self.model.gain) else float(self.model.gain)
+        N = m.shape[0]
+        t = self.kappa_gain_target
+        with torch.no_grad():
+            for a in range(m.shape[1]):
+                c = gain * torch.dot(n[:, a], m[:, a]) / N
+                if c.item() > 1e-6:                              # same-sign as (positive) target
+                    s = (t / c).sqrt()
+                    m[:, a].mul_(s)
+                    n[:, a].mul_(s)
+
     # ------------------------------------------------------------------
 
     def _hebb_update(self, y_pred: torch.Tensor, y: torch.Tensor, rates: torch.Tensor):
@@ -238,6 +259,7 @@ class Optimization:
                     self.optimizer.step()
                     self._restore_frozen_weights()
                     self._clamp_kappa1_gain()
+                    self._pin_kappa_gains()
                     if use_hebb:
                         self._hebb_update(y_pred, y, rates)
 

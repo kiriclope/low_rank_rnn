@@ -165,6 +165,7 @@ class RunConfig:
     bl_weight:       float = 1.0   # weight on the pre-sample baseline term
     kappa1_reg_weight: float = 0.0  # penalise gain*n1^T m1/N > 1 during Dual: weight*relu(λ₁-1)²
     kappa1_clamp:    float | None = None  # HARD constraint: rescale m1,n1 so g·λ₁ ≤ this after each Dual step (vs. soft reg)
+    kappa_gain_target: float | None = None  # CRITICALITY: pin ALL modes' g·λ to this value (two-sided) after each step, ALL stages
     nolick_weight:   float = 0.0   # one-sided no-lick penalty relu(κ₁)² over free decision windows (GNG+Dual)
 
     # Output
@@ -569,6 +570,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                   freeze_input_dims=dpa_freeze_input,
                                   regularizer=dpa_regularizer,
                                   stop_loss=config.stop_loss,
+                                  kappa_gain_target=config.kappa_gain_target,
                                   verbose=True)
         train_l, val_l, _ = trainer.fit()
         losses["dpa"] = {"train": train_l, "val": val_l}
@@ -641,6 +643,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                   freeze_low_rank_cols=[0],
                                   freeze_input_dims=gng_freeze_input,
                                   stop_loss=config.stop_loss,
+                                  kappa_gain_target=config.kappa_gain_target,
                                   verbose=True)
         train_l, val_l, _ = trainer.fit()
         model.rwd = config.rwd         # restore reward for eval and subsequent stages
@@ -711,6 +714,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                               stop_loss=config.stop_loss,
                               regularizer=dual_regularizer,
                               kappa1_clamp=config.kappa1_clamp,
+                              kappa_gain_target=config.kappa_gain_target,
                               verbose=True)
     if config.kappa1_clamp is not None:
         print(f"[{rid}]  κ₁ hard clamp: g·λ₁ ≤ {config.kappa1_clamp} after each Dual step", flush=True)
@@ -854,7 +858,8 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         nonlinearity="tanh_asym",      # symmetry-breaker (even γ·tanh² term) — the lowering lever
         nl_gamma=0.3,
         nolick_weight=0.5,             # one-sided no-lick pressure over the free delay windows
-        cue_on_go_input=True,          # cue rides on go channel → input_size=6
+        attention_input=True,          # tonic attention (last channel) → origin can be a fixed point
+        cue_on_go_input=True,          # cue rides on go channel; +attention → input_size=7
         cue_scale=2.0,
         input_scale=1.0,
         noise=0.5, model_noise=0.0,
@@ -877,16 +882,15 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if nogo_target is not None:        # CLI override if desired
         shared["nogo_target"] = nogo_target
 
-    # ISOLATION via HARD CONSTRAINT (vs. the soft kappa1_reg penalty in sweep_isolate_low
-    # k1/k3). After each Dual step, rescale m1,n1 so g·λ₁ ≤ target — pins the decision
-    # self-gain magnitude, leaves its direction free. Compare to k1 (soft reg=1.0):
-    #   c10 = clamp g·λ₁ ≤ 1.0 (direct analog of critical)
-    #   c15 = clamp g·λ₁ ≤ 1.5 (allow a little decision gain)
-    clamp_arms = [("c10", 1.0), ("c15", 1.5)]
-    for tag, clamp in clamp_arms:
+    # CRITICALITY: pin BOTH modes' self-gain g·λ to a single value (two-sided, ALL stages)
+    # + tonic attention (origin a fixed point) + tanh_asym/nolick lowering. At g·λ=1 both
+    # memory and decision sit at the marginal/line-attractor (integrator) point — consistent
+    # across modes, neuro-meaningful (edge of stability). crit12 allows a small barrier.
+    crit_arms = [("crit10", 1.0), ("crit12", 1.2)]
+    for tag, tgt in crit_arms:
         for seed in range(3):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
-                                     kappa1_clamp=clamp, **shared))
+                                     kappa_gain_target=tgt, **shared))
 
     return configs
 
