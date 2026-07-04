@@ -471,7 +471,8 @@ def _make_dual_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None 
 # ---------------------------------------------------------------------------
 
 def _fps_for_task(model, input_size: int, task: str, device: str,
-                  cue_on_go_input: bool, n_seeds: int = 21, slow_tol=None) -> list:
+                  cue_on_go_input: bool, n_seeds: int = 21, slow_tol=None,
+                  attention_input: bool = False) -> list:
     """[(label, color, marker, fps_array, stabs_array), ...]"""
     dtype  = next(model.parameters()).dtype
     conds  = _input_conditions(task, input_size, cue_on_go_input)
@@ -479,6 +480,8 @@ def _fps_for_task(model, input_size: int, task: str, device: str,
     for label, dims, color, marker in conds:
         ff       = make_input(input_size, active_dims=dims, value=1.0,
                               device=device, dtype=dtype)
+        if attention_input:   # tonic attention ON in every condition incl. autonomous (matches the flow)
+            ff[-1] = 1.0
         fps, _   = find_all_fixed_points(model, xlim=XLIM, ylim=YLIM, ff_input=ff,
                                          n_seeds=n_seeds, residual_tol=1e-8, merge_tol=5e-2)
         stabs, _ = classify_fixed_points(model, fps, ff_input=ff, slow_tol=slow_tol)
@@ -989,6 +992,8 @@ def _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds, slow_t
                 for label, dims, _color, _marker in conditions:
                     ff = make_input(meta.input_size, active_dims=dims, value=1.0,
                                     device=device, dtype=dtype)
+                    if meta.attention_input:   # attention ON incl. autonomous (matches the flow)
+                        ff[-1] = 1.0
                     fps, _   = find_all_fixed_points(model, xlim=XLIM, ylim=YLIM, ff_input=ff,
                                                      n_seeds=n_seeds, residual_tol=1e-8, merge_tol=5e-2)
                     stabs, _ = classify_fixed_points(model, fps, ff_input=ff, slow_tol=slow_tol)
@@ -1041,13 +1046,15 @@ def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
 
 def summary_avg_trajectories(all_metas: list[RunMeta], ckpt_dir: str,
                               out_dir: str, device: str, n_batch: int = 512):
-    ref = all_metas[0]
-    X_dual, y_dual, cnames = _make_dual_batch(ref, n_batch=n_batch, seed=0)
-    X_gng,  y_gng,  is_go  = _make_gng_batch(ref,  n_batch=n_batch, seed=0)
-
+    # Group so each group has a consistent input_size (attention adds a channel) — else a
+    # 6-channel batch would hit a 7-channel model. y/cnames are identical across groups
+    # (attention only adds an input channel, not conditions), so use the first for plot axes.
     groups: dict[str, list[RunMeta]] = {}
     for m in all_metas:
-        groups.setdefault(m.init_style, []).append(m)
+        groups.setdefault(m.init_style + ("+attn" if m.attention_input else ""), []).append(m)
+
+    _, y_dual, cnames = _make_dual_batch(all_metas[0], n_batch=n_batch, seed=0)
+    _, y_gng,  is_go  = _make_gng_batch(all_metas[0],  n_batch=n_batch, seed=0)
 
     stages       = ["dpa", "naive", "expert"]
     stage_labels = {"dpa": "DPA stage", "naive": "After GNG", "expert": "After Dual"}
@@ -1056,6 +1063,8 @@ def summary_avg_trajectories(all_metas: list[RunMeta], ckpt_dir: str,
         group_kappas_dual: dict[str, np.ndarray | None] = {}
         group_kappas_gng:  dict[str, np.ndarray | None] = {}
         for group_name, metas in groups.items():
+            X_dual, _, _ = _make_dual_batch(metas[0], n_batch=n_batch, seed=0)  # per-group input_size
+            X_gng,  _, _ = _make_gng_batch(metas[0],  n_batch=n_batch, seed=0)
             sum_dual = sum_gng = None
             count = 0
             for meta in metas:
@@ -1201,7 +1210,8 @@ def individual_fp_scatter(meta: RunMeta, ckpt_dir: str, out_dir: str,
             fp_data = _sim_fps_for_conditions(model, meta.input_size,
                                               _input_conditions(task, meta.input_size, cue), device)
         else:
-            fp_data = _fps_for_task(model, meta.input_size, task, device, cue, n_seeds, slow_tol=slow_tol)
+            fp_data = _fps_for_task(model, meta.input_size, task, device, cue, n_seeds, slow_tol=slow_tol,
+                                    attention_input=meta.attention_input)
         del model
 
         ax.axhline(0, color="lightgray", lw=0.7, zorder=0)
