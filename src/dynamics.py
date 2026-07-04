@@ -906,9 +906,9 @@ def plot_task_flow_fields(
         ax.set_title(spec["name"])
         ax.set_xlim(xlim); ax.set_ylim(ylim)
         ax.set_aspect("equal", adjustable="box")
-        ax.set_xlabel(r"$\kappa_1$")
+        ax.set_xlabel(r"$\kappa_0$")
 
-    axes[0].set_ylabel(r"$\kappa_2$")
+    axes[0].set_ylabel(r"$\kappa_1$")
 
     handles, labels_list = [], []
     for ax in axes:
@@ -1281,8 +1281,8 @@ def plot_kappa_heatmap_flow_panel(ax, K1, K2, U, V, heatmap=None, title=None,
     hm = ax.pcolormesh(K1.T, K2.T, heatmap.T, shading="auto", cmap=cmap, vmin=vmin, vmax=vmax)
     ax.streamplot(K1.T, K2.T, U_plot.T, V_plot.T, color=flow_color,
                   density=density, linewidth=linewidth, arrowsize=arrowsize)
-    ax.set_xlabel(r"$\kappa_1$")
-    ax.set_ylabel(r"$\kappa_2$")
+    ax.set_xlabel(r"$\kappa_0$")
+    ax.set_ylabel(r"$\kappa_1$")
     ax.set_aspect("equal", adjustable="box")
     if title is not None:
         ax.set_title(title)
@@ -1392,8 +1392,8 @@ def plot_autonomous_vs_input_heatmap_flow(
     K1i, K2i, Ui, Vi, Si = rank2_kappa_flow(model, x_t=x_input,      kappa1_lim=kappa1_lim, kappa2_lim=kappa2_lim, grid_size=grid_size, q_slice=q_slice)
 
     if   heatmap_kind == "speed": Ha, Hi, cbar_label = Sa, Si, r"$\|\Delta \kappa\|$"
-    elif heatmap_kind == "dK1":   Ha, Hi, cbar_label = Ua, Ui, r"$\Delta \kappa_1$"
-    elif heatmap_kind == "dK2":   Ha, Hi, cbar_label = Va, Vi, r"$\Delta \kappa_2$"
+    elif heatmap_kind == "dK1":   Ha, Hi, cbar_label = Ua, Ui, r"$\Delta \kappa_0$"
+    elif heatmap_kind == "dK2":   Ha, Hi, cbar_label = Va, Vi, r"$\Delta \kappa_1$"
     else: raise ValueError("heatmap_kind must be 'speed', 'dK1', or 'dK2'.")
 
     vmin = min(np.nanmin(Ha), np.nanmin(Hi)) if shared_color_scale else None

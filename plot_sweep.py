@@ -613,11 +613,11 @@ def _plot_traj_figure(kappa_dict: dict[str, np.ndarray],
                     ax.plot(t, k_mean,   color=color, lw=2.5, alpha=0.9, zorder=10)
 
                 if row == 0:
-                    ax.set_title(f"{group_name} — κ{col+1}", fontsize=10)
+                    ax.set_title(f"{group_name} — κ{col}", fontsize=10)
                 if row == 1:
                     ax.set_xlabel("Time (s)")
                 if gi == 0 and col == 0:
-                    ax.set_ylabel(f"κ{col+1}\n{row_lbl}", fontsize=9)
+                    ax.set_ylabel(f"κ{col}\n{row_lbl}", fontsize=9)
                 elif col == 0:
                     ax.set_ylabel(row_lbl, fontsize=9)
 
@@ -682,11 +682,11 @@ def _plot_gng_traj_figure(kappa_dict: dict[str, np.ndarray],
                     ax.plot(t, k_mean,   color=color, lw=2.5, alpha=0.9, zorder=10)
 
                 if row == 0:
-                    ax.set_title(f"{group_name} — κ{col+1}", fontsize=10)
+                    ax.set_title(f"{group_name} — κ{col}", fontsize=10)
                 if row == 1:
                     ax.set_xlabel("Time (s)")
                 if gi == 0 and col == 0:
-                    ax.set_ylabel(f"κ{col+1}\n{row_lbl}", fontsize=9)
+                    ax.set_ylabel(f"κ{col}\n{row_lbl}", fontsize=9)
                 elif col == 0:
                     ax.set_ylabel(row_lbl, fontsize=9)
 
@@ -896,10 +896,10 @@ def _style_fp_ax(ax, title: str, ylabel: bool, lim: tuple = None):
     ax.axvline(0, color="lightgray", lw=0.7, zorder=0)
     ax.set_xlim(lim); ax.set_ylim(lim)
     ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel(r"$\kappa_1$", fontsize=9)
+    ax.set_xlabel(r"$\kappa_0$", fontsize=9)
     ax.set_title(title, fontsize=9)
     if ylabel:
-        ax.set_ylabel(r"$\kappa_2$", fontsize=9)
+        ax.set_ylabel(r"$\kappa_1$", fontsize=9)
 
 
 def _fp_legend(fig, all_metas):
@@ -1159,10 +1159,10 @@ def individual_fp_scatter(meta: RunMeta, ckpt_dir: str, out_dir: str,
         _lim = _scatter_lim(meta)
         ax.set_xlim(_lim); ax.set_ylim(_lim)
         ax.set_aspect("equal", adjustable="box")
-        ax.set_xlabel(r"$\kappa_1$", fontsize=8)
+        ax.set_xlabel(r"$\kappa_0$", fontsize=8)
         ax.set_title(f"{stage} ({task.upper()})", fontsize=8)
         if ax is axes[0]:
-            ax.set_ylabel(r"$\kappa_2$", fontsize=8)
+            ax.set_ylabel(r"$\kappa_1$", fontsize=8)
 
     # legend: one patch per input condition (union of dual conditions)
     conds_legend = _input_conditions("dual", meta.input_size, cue)
