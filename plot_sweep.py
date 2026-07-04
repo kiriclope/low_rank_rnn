@@ -705,11 +705,60 @@ def _plot_gng_traj_figure(kappa_dict: dict[str, np.ndarray],
 
 # --- 1. Accuracy stages ---
 
-def summary_accuracy_stages(df, out_dir: str):
-    from plots.plot import plot_accuracy_stages
-    plot_accuracy_stages(df, group_by="init_style",
-                         out_path=os.path.join(out_dir, "accuracy_stages.pdf"))
-    plt.close("all")
+def summary_accuracy_stages(all_metas, ckpt_dir: str, out_dir: str, device: str,
+                            data: dict | None = None, title: str | None = None):
+    """Overall DPA & GNG accuracy across stages, evaluated on DUAL trials.
+
+    This is the aggregate (mean over trial types) of accuracy_by_trialtype, so the
+    two figures are consistent at *every* stage. (Replaces the old results.jsonl
+    view, whose after_dual/gng was the standalone-GNG score — a dual-specialised
+    net scored on the isolated GNG task ≈ chance — which mismatched by-trialtype.)
+    """
+    if data is None:
+        data = _collect_trialtype_accuracy(all_metas, ckpt_dir, device)
+    stages = ["dpa", "naive", "expert"]
+
+    def _overall(panel, types):
+        rows = {}
+        for st in stages:
+            arrs = [np.asarray(panel[t][st]["means"], dtype=float) for t in types]
+            rows[st] = np.nanmean(np.vstack(arrs), axis=0)   # per-run overall accuracy
+        return rows
+
+    dpa_o = _overall(data["dpa_acc"], ["dpa_only", "go", "nogo"])
+    gng_o = _overall(data["gng_acc"], ["go", "nogo"])
+
+    rng = np.random.default_rng(0)
+    fig, axes = plt.subplots(1, 2, figsize=(2.2 * 6, 6 * GOLDEN), sharey=True)
+    for ax, (panel_title, rows) in zip(axes, [("DPA accuracy", dpa_o), ("GNG accuracy", gng_o)]):
+        means, sems = [], []
+        for si, st in enumerate(stages):
+            vals = rows[st][~np.isnan(rows[st])]
+            x    = STAGE_X[si]
+            if len(vals):
+                jit = rng.normal(0, 0.03, len(vals))
+                ax.scatter(np.full(len(vals), x) + jit, vals, s=22,
+                           color="tab:blue", alpha=0.3, linewidths=0, zorder=2)
+            means.append(float(np.mean(vals)) if len(vals) else float("nan"))
+            sems.append(float(np.std(vals, ddof=1) / np.sqrt(len(vals))) if len(vals) > 1 else 0.0)
+        ax.plot(STAGE_X, means, color="tab:blue", lw=2.0, alpha=0.85, zorder=3)
+        ax.errorbar(STAGE_X, means, yerr=sems, fmt="o", ms=9, mfc="tab:blue",
+                    mec="white", mew=1.6, ecolor="tab:blue", elinewidth=2.0,
+                    capsize=5, capthick=2.0, zorder=4)
+        ax.axhline(0.5, color="0.6", ls="--", lw=1.2, zorder=1)
+        ax.set_title(panel_title, pad=10)
+        ax.set_xticks(STAGE_X); ax.set_xticklabels(STAGE_LABELS)
+        ax.set_xlim(-0.5, len(STAGE_LABELS) - 0.5); ax.set_ylim(0, 1.05)
+        ax.set_xlabel("Checkpoint"); ax.grid(axis="y", color="0.92", lw=1.0)
+        ax.set_axisbelow(True)
+    axes[0].set_ylabel("Accuracy")
+    sns.despine(fig=fig, trim=True)
+    fig.suptitle(title or "Accuracy across stages (dual-trial eval)", y=1.02)
+    fig.tight_layout(w_pad=2.0)
+    out_path = os.path.join(out_dir, "accuracy_stages.pdf")
+    fig.savefig(out_path, bbox_inches="tight")
+    print(f"Saved {out_path}")
+    plt.close(fig)
 
 
 # --- 2. Accuracy by trial type ---
@@ -850,11 +899,13 @@ def _plot_trialtype_accuracy(data: dict, title: str, out_path: str):
 
 
 def summary_accuracy_by_trialtype(all_metas: list[RunMeta], ckpt_dir: str,
-                                   out_dir: str, device: str):
-    data = _collect_trialtype_accuracy(all_metas, ckpt_dir, device)
+                                   out_dir: str, device: str,
+                                   data: dict | None = None, title: str | None = None):
+    if data is None:
+        data = _collect_trialtype_accuracy(all_metas, ckpt_dir, device)
     _plot_trialtype_accuracy(
         data,
-        title    = "Accuracy by trial type (all runs)",
+        title    = title or "Accuracy by trial type (all runs)",
         out_path = os.path.join(out_dir, "accuracy_by_trialtype.pdf"),
     )
 
@@ -1370,13 +1421,17 @@ Examples:
         os.makedirs(sum_dir, exist_ok=True)
 
         if "acc" in want:
-            df = load_results(os.path.join(args.sweep_dir, "results.jsonl"))
-            if args.run_ids:
-                df = df[df["run_id"].isin(set(args.run_ids))]
+            # Evaluate every checkpoint on DUAL trials ONCE; both accuracy figures
+            # (stages = aggregate, by_trialtype = per type) share it → consistent.
+            acc_data = _collect_trialtype_accuracy(all_metas, args.sweep_dir, device)
+            run_lbl  = f" — {', '.join(args.run_ids)}" if args.run_ids else " (all runs)"
             print("\n[summary] accuracy_stages")
-            summary_accuracy_stages(df, sum_dir)
+            summary_accuracy_stages(all_metas, args.sweep_dir, sum_dir, device,
+                                    data=acc_data, title=f"Accuracy across stages (dual-trial){run_lbl}")
             print("\n[summary] accuracy_by_trialtype")
-            summary_accuracy_by_trialtype(all_metas, args.sweep_dir, sum_dir, device)
+            summary_accuracy_by_trialtype(all_metas, args.sweep_dir, sum_dir, device,
+                                          data=acc_data,
+                                          title=f"Accuracy by trial type{run_lbl}")
 
         if "scatter" in want:
             print("\n[summary] fp_scatters (by stage + per input condition)")

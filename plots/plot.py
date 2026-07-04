@@ -61,9 +61,20 @@ def plot_accuracy_stages(df, group_by="init_style", out_path=None):
 
     fig, axes = plt.subplots(1, 2, figsize=(2.2 * W, W * GOLDEN), sharey=True)
 
+    # At the DUAL checkpoint, use the DUAL-TASK metrics (dual_dpa / dual_gng) — NOT the
+    # standalone-task scores (after_dual/gng is a dual-specialised net scored on the
+    # isolated GNG task ≈ chance, which does NOT reflect dual go/nogo and mismatches the
+    # accuracy-by-trialtype figure). Fall back to the standalone column if dual_* is absent.
+    def _stage_cols(metric):
+        cols = []
+        for s in STAGE_KEYS:
+            dual = f"{s}/dual_{metric}"
+            cols.append(dual if dual in df.columns else f"{s}/{metric}")
+        return cols
+
     task_meta = [
-        ("DPA accuracy",  [f"{s}/dpa"      for s in STAGE_KEYS]),
-        ("GNG accuracy",  [f"{s}/gng"      for s in STAGE_KEYS]),
+        ("DPA accuracy",  _stage_cols("dpa")),
+        ("GNG accuracy",  _stage_cols("gng")),
     ]
 
     rng = np.random.default_rng(0)
