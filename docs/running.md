@@ -1,5 +1,45 @@
 # Running Experiments
 
+## ★ Isolation recipe (vanilla rank-2) — two isolated low memory wells
+
+Goal: A/B memory wells both at κ₁<0, as **two isolated wells** (not the 270° ring/U). Two
+ingredients (docs/ring_lowerplane_log.md §13): **LOWER** (directional break) + **ISOLATE** (drive
+the decision self-gain g·λ₁→1 so its autonomous wells vanish and the ring collapses).
+
+**Reference config = `sweep_kappa1reg` reg1 (the winner):**
+```python
+shared = dict(
+    model_type="lowrank", gain=2.0, hidden_size=512, rank=2, target_rank=2,
+    nonlinearity="tanh",            # plain odd tanh — symmetry break comes from attention
+    attention_input=True,           # tonic bias: makes both wells able to go κ₁<0 (replaces tanh_asym)
+    nolick_weight=0.5,              # one-sided relu(κ₁)² over free windows (downward direction)
+    hinge_gng=True,                 # hinges ALL 3 stages (go/nogo one-sided; match/nonmatch symmetric ±1)
+    memory_lambda=0.8,              # memory SUPERCRITICAL (deep A/B wells)
+    decision_lambda=0.25,           # decision starts SUBCRITICAL (g·λ₁=0.5 at init)
+    cue_on_go_input=True, cue_scale=2.0, nogo_target=0.0,
+    go_hinge_thresh=1.0, dpa_hinge_thresh=1.0,
+    optimizer="adam", learning_rate=0.01, stop_loss=0.1,
+    epochs_dpa=100, epochs_gng=100, epochs_dual=100,
+)
+# arm: kappa1_reg_weight=1.0   (Dual penalty w·relu(gain·n₁ᵀm₁/N − 1)² → pins g·λ₁ to ~1)
+```
+- **`kappa1_reg_weight` = the ISOLATE knob.** w=0 → g·λ₁≈3.5 (ring); **w=1 → g·λ₁=1.0, two isolated
+  wells at (±1,−0.9)**, DPA/match-nonmatch/go all 1.0, nogo 0.79. w>1 buys no more isolation, only
+  costs nogo (→0.43 at 3, →0.15 at 6). Sweet spot ≈ w=1 (finer: {0.5,1,1.5,2}).
+- **τ matters for optimization, not isolation:** τ=0.3 is the sweet spot; τ<0.3 (fast) stalls DPA and
+  the Dual never converges; τ>0.3 (slow) *raises* g·λ₁. Set via `tau` (RunConfig; α=dt/τ).
+- **Read-out:** g·λ₁=gain·n₁ᵀm₁/N (want ≈1), autonomous fixed-point count (want 2), their κ₁ (want <0),
+  and `dual_go`/`dual_nogo` (per-side, in results.jsonl `after_dual`).
+
+### The `hinge_gng` flag (decision-channel loss shape, all stages)
+- **True** → hinge losses everywhere: DPA=`ThresholdLoss` (symmetric ±th); GNG/Dual go≥`go_hinge_thresh`,
+  nogo≤`nogo_hinge_thresh` (−1 in the GNG memory delay, 0 after cue); match/nonmatch symmetric ±`dpa_hinge_thresh`.
+- **False** → pure MSE toward the targets on the decision channel, all stages.
+- `--hinge_gng {0,1}` CLI overrides it. `nolick_weight` (one-sided free-window pressure) is separate and
+  applies in both modes; it excludes the sample window and floors the Dual loss at ~0.13 (never hits 0.1).
+
+---
+
 ## LD_PRELOAD requirement
 
 Any script importing both `torch` and `matplotlib` must be run with:

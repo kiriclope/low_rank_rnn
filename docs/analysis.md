@@ -105,6 +105,19 @@ solutions.
 The search grid is set by `XLIM/YLIM` in `plot_sweep.py` — too narrow and FPs outside
 the window are missed (this was an issue for relu/softplus with FPs at κ≈±4).
 
+### Noise-averaged field/fixed points — `--field_input_noise`
+By default the flow **field + fixed points** use a clean, deterministic frozen input
+(`make_input`, no noise); only the overlaid **trajectories** carry input noise. Pass
+`--field_input_noise` to render the **noise-averaged** field `E_x[Ψ(κ)]` instead — each panel's
+frozen input is replicated into K draws (default 16) with the run's training `noise_sigma()` added
+per channel, and `low_rank_field_np` / `low_rank_jacobian_flow_np` average `φ` / the Jacobian over
+them. Use it to check a result is not a clean-input artifact.
+- **A single draw is NOT enough** — one noise vector projects through `Wi` as a *correlated* per-unit
+  bias that tilts the field and drops a well ~half the time. K≥8 is stable (default 16); 64 is overkill.
+- ~K× slower to render (the 151² grid), so keep it **off for routine plotting**; the deterministic
+  field is the correct basis for geometry claims (isolation, well count, g·λ).
+- Implemented as a 2D `ff_input` `(K, input_size)` to the numpy field/Jacobian (1D ⇒ K=1 ⇒ unchanged).
+
 ---
 
 ## Binned (simulation-based) flow fields (`ei_flow.py`)

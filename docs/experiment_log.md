@@ -245,6 +245,42 @@ Adam lr=0.1, ÷N_E, squared hinge, N=1000/K=125). 5/5 each. after_gng/dpa (DPA r
 
 ---
 
+### ★ Vanilla isolation — the ring→two-low-wells breakthrough (2026-07-05)
+Goal (docs/ring_lowerplane_log.md §13): two **isolated** A/B memory wells, both at κ₁<0. Confirmed
+the §12 two-ingredient theory — LOWER (directional break) + ISOLATE (g·λ₁→1) — in a live net.
+
+| sweep | recipe | isolation? | result |
+|---|---|---|---|
+| `sweep_curriculum` | DPA→GNG→Dual-paired→Dual | ✗ | best lowering (held-κ₁=−0.44) but ring (~3 wells) |
+| `sweep_recscale` | trainable per-mode `rec_scale` | ✗ | net grew s₁→1.4 (wants strong decision); ring |
+| `sweep_slowtau` | τ×{1,2,4} | ✗ | g·λ₁ *grew* with τ; falsifies the slow-transient idea |
+| `sweep_fasttau` | τ×{1,½,⅓}, tanh+attention | ✗ | both wells κ₁<0 but ring; τ<0.3 breaks convergence |
+| **`sweep_kappa1reg`** | **fast1 + Dual `kappa1_reg_weight`** | **✓** | **w=1 → g·λ₁=1.0, two isolated wells κ₁≈−0.9** |
+
+**`sweep_kappa1reg` (the winner).** Base = fast1: τ=0.3, `nonlinearity="tanh"`, `attention_input=True`,
+`nolick_weight=0.5`, `hinge_gng=True`, `decision_lambda=0.25`, `memory_lambda=0.8`, gain 2, 100/100/100.
+Arms `kappa1_reg_weight ∈ {0,1,3,6}` (reg0/1/3/6), 3 seeds.
+
+| w | g·λ₁ | #wells | mem-κ₁ | DPA | match/nonmatch | go | nogo | Dual loss |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 3.47 | 3 (ring) | −0.1 | 1.0 | 0.97 | 1.0 | 0.81 | 0.19 |
+| **1** | **1.01** | **2** | **−0.9** | 1.0 | **1.0** | 1.0 | **0.79** | **0.11** |
+| 3 | 1.01 | 2 | −0.7 | 1.0 | 1.0 | 1.0 | 0.43 | 0.21 |
+| 6 | 1.01 | 2 | −0.5 | 1.0 | 1.0 | 1.0 | 0.15 | 0.36 |
+
+- **w=1 = operating point:** isolation + deep low wells + task intact (only nogo softens to 0.79, the
+  criticality cost). More penalty buys no more isolation (g·λ₁ already 1) — only kills nogo. Next: finer
+  sweep w∈{0.5,1,1.5,2}.
+- Robust to input noise (`--field_input_noise`, noise-averaged field): reg1 wells hold (shift ~0.1).
+- Figures: `results/figures/sweep_kappa1reg/` (flows re-rendered noise-averaged).
+
+**Loss changes (this session, see docs/running.md "Isolation recipe"):** `hinge_gng` single switch
+(True=hinge all 3 stages / False=MSE); go/nogo asymmetric one-sided (nogo≤−1 mem / ≤0 post-cue),
+match/nonmatch symmetric ±th (same in DPA + Dual); `nolick` excludes the sample window; per-side
+`dual_go`/`dual_nogo` accuracy; trainable `rec_scale`; `--field_input_noise` noise-averaged flows.
+
+---
+
 ## Config reference (common base, current sweeps)
 
 ```python

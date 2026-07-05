@@ -617,3 +617,64 @@ tanh_asym γ=0.3, `decision_lambda=0.25`, `memory_lambda=0.8`, gain 2, nolick=0.
   incomplete/asymmetric → don't average its κ₁; measure the held state by simulation
   (`sim_ab_wells.py`) instead.
 - All Session-12 code + docs are **UNCOMMITTED**.
+
+## 13. Session 2026-07-05 — ★ ISOLATION ACHIEVED: the two-ingredient fix, confirmed
+
+§12e's prediction was **validated in a live network**: the ring opens into two isolated low
+wells *iff* the decision self-gain g·λ₁ is driven to ≈1 (ISOLATE) on top of the directional
+lowering (LOWER). Everything else this session only did (2) and left the ring intact.
+
+### 13a. What only *lowered* (ingredient 2 alone — ring always survived)
+Each pushed both A/B memory wells to κ₁<0 but left g·λ₁≈3.3–3.9 supercritical ⇒ ring/U persists:
+- **`sweep_curriculum`** (DPA→GNG→Dual-paired→Dual): held-κ₁ = **−0.44** (best lowering of any
+  no-clamp lever), 3/3 both wells <0 — but ~3.3 wells (ring).
+- **`sweep_recscale`** (trainable per-mode recurrent scale `rec_scale`, decouples recurrence from
+  readout): given a free knob the net **grew s₁ to ≈1.4** (wants a *stronger* decision) → g·λ₁≈3.7,
+  ring. Reveals the decision's supercriticality is the net's *preferred* solution, not an artifact.
+- **`sweep_slowtau`** (τ×{1,2,4}, "hold the decision by slow transient"): **falsified** — g·λ₁ *grew*
+  with τ (3.27→3.79) and nogo degraded; slowing τ doesn't subcriticalize.
+- **`sweep_fasttau`** (τ×{1,½,⅓}, plain tanh + attention): both wells κ₁<0 (attention breaks the odd
+  symmetry, replacing `tanh_asym`), but g·λ₁≈3.5, ~3 wells (ring). τ<0.3 also breaks *optimization*
+  (τ=0.10 stalls DPA, Dual never converges — ~4 steps/τ). **τ=0.3 (fast1) is the sweet spot base.**
+
+### 13b. ★ `sweep_kappa1reg` — the winner (fast1 base + Dual `kappa1_reg_weight`)
+Base = fast1 (τ=0.3, plain **tanh** + `attention_input`, `nolick=0.5`, `hinge_gng=True`,
+`decision_lambda=0.25`, `memory_lambda=0.8`, gain 2, hinges all 3 stages). Sweep `w =
+kappa1_reg_weight` (Dual penalty `w·relu(gain·n₁ᵀm₁/N − 1)²`), 3 seeds:
+
+| w | g·λ₁ | #wells | mem-well κ₁ | match/nonmatch | go | nogo |
+|---|---|---|---|---|---|---|
+| 0 | 3.47 | 3 (ring) | −0.1 | 0.97 | 1.0 | 0.81 |
+| **1** | **1.01** | **2 (isolated)** | **−0.9** | **1.0** | **1.0** | **0.79** |
+| 3 | 1.01 | 2 | −0.7 | 1.0 | 1.0 | 0.43 |
+| 6 | 1.01 | 2 | −0.5 | 1.0 | 1.0 | 0.15 |
+
+**w=1 is the operating point:** g·λ₁ pinned to 1.0 → decision's autonomous wells vanish → the ring
+collapses to **two isolated wells at (±1, −0.9), deep in the no-lick plane**, with DPA=1.0,
+match/nonmatch=1.0, go=1.0, nogo=0.79. It's also the **best-converging** Dual arm (0.11 ≈ the nolick
+floor): at criticality the decision is a line attractor, so the symmetric ±1 match/nonmatch is
+trivial to hold. **Why it works where §12 clamps didn't:** the penalty targets g·λ₁ directly (the
+bifurcation parameter), and the asymmetric hinge keeps go/nogo functional (input-driven) as the
+decision recurrence weakens.
+
+### 13c. The nogo tradeoff (the only cost)
+g·λ₁ is already pinned at 1.0 by w=1, so more penalty buys **no more isolation** — it only
+over-suppresses: nogo falls 0.81→0.79→0.43→0.15 and the wells shallow (−0.9→−0.5) as w grows. So the
+knee is at the low end; the unmapped region is **w∈{0.5,1,1.5,2}** (the "finer nogo tradeoff" sweep)
+to find the min penalty with max-retained nogo. nogo softens because at g·λ₁=1 the decision is a line
+attractor (holds the symmetric match/nonmatch, but the one-sided nogo drifts).
+
+### 13d. Robust to input noise
+The isolation is a property of the *deterministic* field, but it also survives the **noise-averaged**
+field `E_x[Ψ(κ)]` (`plot_sweep --field_input_noise`): reg1's wells shift ~0.1 toward the origin
+((−1.0,−0.84),(0.83,−0.78)) but stay two, isolated, κ₁<0. A *single* noise draw is NOT enough — one
+draw is a correlated input bias through Wi that tilts the field and drops a well ~half the time; K≥8
+draws is stable (default 16).
+
+### 13e. Loss cleanups this session (see `docs/running.md` "Isolation recipe")
+`hinge_gng` is now the single switch: **True → hinges all 3 stages, False → pure MSE**. Under True:
+go/nogo asymmetric one-sided (go≥`go_hinge_thresh`; nogo≤−1 in the GNG memory delay / ≤0 after cue),
+match/nonmatch **symmetric ±`dpa_hinge_thresh`** (same shape in DPA `ThresholdLoss` and Dual). `nolick`
+is a separate one-sided `relu(κ₁)²` over free windows, **excluding the sample** — its ~0.13 floor
+(the go lick-ramp just before the response window) is why Dual never hits `stop_loss=0.1`. `_dual_accuracy`
+now scores per-side (go/nogo) against the target in the after-cue window (`dual_go`/`dual_nogo`).
