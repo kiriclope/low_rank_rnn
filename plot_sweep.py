@@ -1400,7 +1400,8 @@ Examples:
                         help="Overlay the low-velocity ridge (slow manifold / remnant ring) on each flow panel.")
     parser.add_argument("--field_input_noise", action="store_true",
                         help="Render the NOISE-AVERAGED flow field/fixed points: freeze each panel's "
-                             "input with the run's training input noise (E_x[Ψ(κ)] over 64 draws).")
+                             "input with the run's training input noise (E_x[Ψ(κ)] over 16 draws; "
+                             "a single draw is unstable — one noise offset tilts the field via Wi).")
     parser.add_argument("--slow_manifold_thresh", type=float, default=0.12,
                         help="|F| threshold for the slow-manifold overlay (default 0.12).")
     parser.add_argument("--device",       type=str, default=None)

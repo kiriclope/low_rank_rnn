@@ -725,7 +725,7 @@ def plot_task_flow_fields(
     use_sim_field=False, sim_n_warmup=0, slow_tol=None,
     show_slow_manifold=False, slow_manifold_thresh=0.12,
     attention_input=False,
-    field_input_noise=0.0, field_noise_K=64, field_noise_seed=0,
+    field_input_noise=0.0, field_noise_K=16, field_noise_seed=0,
 ):
     """Generic low-rank phase portrait for DPA, GNG, and Dual tasks.
 
