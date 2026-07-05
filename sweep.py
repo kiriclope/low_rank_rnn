@@ -505,9 +505,12 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             print(f"[{rid}] W&B init failed ({e}); continuing without logging.", flush=True)
 
     criterion     = MaskedMultiTargetLoss(target_weight=1.0, zero_weight=1.0)
-    # DPA stage: squared-hinge targets (relu margin) when dpa_hinge_thresh set, else MSE
-    dpa_criterion = (ThresholdLoss(thresh=config.dpa_hinge_thresh, squared=config.hinge_squared)
-                     if config.dpa_hinge_thresh is not None else criterion)
+    # DPA stage: hinge vs MSE under the SAME hinge_gng flag as GNG/Dual → one switch controls
+    # hinge-vs-MSE for all three stages. hinge_gng=True → ThresholdLoss (squared ±thresh margin
+    # on every channel: memory & decision); False → MaskedMultiTargetLoss (pure MSE).
+    _dpa_th = config.dpa_hinge_thresh if config.dpa_hinge_thresh is not None else 1.0
+    dpa_criterion = (ThresholdLoss(thresh=_dpa_th, squared=config.hinge_squared)
+                     if config.hinge_gng else criterion)
     gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
                                    go_hinge_thresh=config.go_hinge_thresh,
                                    nolick_weight=config.nolick_weight,
@@ -921,7 +924,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         nonlinearity="tanh", nl_gamma=0.0,   # plain odd tanh — symmetry break comes from ATTENTION, not φ
         attention_input=True,          # tonic attention bias (breaks κ-field odd symmetry, replaces tanh_asym)
         nolick_weight=0.5,             # one-sided no-lick pressure over the free delay windows
-        hinge_gng=False,               # old MSE loss (matches the tau1 baseline that looked close); go/nogo works via go_hinge_thresh
+        hinge_gng=True,                # hinges for ALL stages (DPA ThresholdLoss + GNG/Dual asymmetric one-sided)
         rwd_gng=False,                 # no reward-feedback onto the last channel (clean; avoids the rwd/attention collision)
         cue_on_go_input=True,          # cue rides on go channel (attention arm → input_size=7, else 6)
         cue_scale=2.0,
