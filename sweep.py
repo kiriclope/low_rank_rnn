@@ -172,6 +172,7 @@ class RunConfig:
     kappa1_clamp:    float | None = None  # HARD constraint: rescale m1,n1 so g·λ₁ ≤ this after each Dual step (vs. soft reg)
     kappa_gain_target: float | None = None  # CRITICALITY: pin ALL modes' g·λ to this value (two-sided) after each step, ALL stages
     nolick_weight:   float = 0.0   # one-sided no-lick penalty relu(κ₁)² over free decision windows (GNG+Dual)
+    hinge_gng:       bool  = False # unified one-sided decision hinge at κ₁=0 (go+nogo & match/nonmatch, all stages)
 
     # Output
     out_dir: str = "../results/dual/vanilla"
@@ -505,7 +506,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                      if config.dpa_hinge_thresh is not None else criterion)
     gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
                                    go_hinge_thresh=config.go_hinge_thresh,
-                                   nolick_weight=config.nolick_weight)
+                                   nolick_weight=config.nolick_weight,
+                                   hinge_gng=config.hinge_gng)
                      if config.nogo_target == 0.0 else criterion)
     losses    = {}
     _global_step = [0]   # mutable so the nested helper can increment it
@@ -690,7 +692,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                 gng_go_weight=config.gng_go_weight, gng_nogo_weight=config.gng_nogo_weight,
                 aux_weight=config.aux_weight, bl_weight=config.bl_weight,
                 go_hinge_thresh=config.go_hinge_thresh, dpa_hinge_thresh=config.dpa_hinge_thresh,
-                nolick_weight=config.nolick_weight)
+                nolick_weight=config.nolick_weight, hinge_gng=config.hinge_gng)
             if config.dual_loss == "separated" else criterion)
         trainer = Optimization(model, tlp, vlp, paired_criterion, optp, schedp,
                                config.grad_clip_norm, num_epochs=config.epochs_dual_paired,
@@ -731,6 +733,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             go_hinge_thresh=config.go_hinge_thresh,
             dpa_hinge_thresh=config.dpa_hinge_thresh,
             nolick_weight=config.nolick_weight,
+            hinge_gng=config.hinge_gng,
         )
         print(f"[{rid}]  loss=separated"
               f"  dpa_w={config.dpa_weight}  gng_w={config.gng_weight}"
@@ -906,6 +909,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         decision_lambda=0.25,          # ↓ from 0.5 → g·λ₁=0.5 at init (decision starts SUBCRITICAL)
         nonlinearity="tanh_asym", nl_gamma=0.3,   # spiral-free symmetry-breaker
         nolick_weight=0.5,             # one-sided no-lick pressure over the free delay windows
+        hinge_gng=True,                # unified one-sided decision hinge (go+nogo & match/nonmatch) → no forced ±1 holds → subcritical decision viable
         rwd_gng=False,                 # no reward-feedback onto the last channel (clean; avoids the rwd/attention collision)
         cue_on_go_input=True,          # cue rides on go channel (attention arm → input_size=7, else 6)
         cue_scale=2.0,

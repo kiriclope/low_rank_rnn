@@ -387,6 +387,7 @@ class MaskedGNGLoss(nn.Module):
         zero_weight: float = 1.0,
         go_hinge_thresh: float | None = None,
         nolick_weight: float = 0.0,
+        hinge_gng: bool = False,
     ):
         super().__init__()
         self.timing          = timing
@@ -396,6 +397,7 @@ class MaskedGNGLoss(nn.Module):
         self.zero_weight     = zero_weight
         self.go_hinge_thresh = go_hinge_thresh
         self.nolick_weight   = nolick_weight
+        self.hinge_gng       = hinge_gng
 
     @staticmethod
     def masked_mean(loss, mask):
@@ -418,34 +420,34 @@ class MaskedGNGLoss(nn.Module):
             safe_pred = torch.where(finite, pred,   torch.zeros_like(pred))
 
             if ch == dec:
-                nogo_zero_mask = finite & resp_mask & (safe_tgt == 0)
-                go_resp_mask   = finite & resp_mask & (safe_tgt > 0)
-                other_mask     = finite & ~nogo_zero_mask & ~go_resp_mask
-
-                nogo_hinge = self.masked_mean(torch.relu(safe_pred) ** 2, nogo_zero_mask)
-
-                if self.go_hinge_thresh is not None:
-                    go_loss = self.masked_mean(
-                        torch.relu(self.go_hinge_thresh - safe_pred) ** 2, go_resp_mask)
+                if self.hinge_gng:
+                    # UNIFIED one-sided decision hinge at the no-lick boundary (κ₁=0), go+nogo,
+                    # EVERY targeted window (delay + response): lick/go(+)→κ₁≥0, no-lick/nogo(≤0)
+                    # →κ₁≤0. No forced magnitude ⇒ a subcritical decision can ride the sign by
+                    # slow transient (never charged for decaying toward 0 on its own side).
+                    dec_raw = torch.where(safe_tgt > 0,
+                                          torch.relu(-safe_pred) ** 2,
+                                          torch.relu(safe_pred) ** 2)
+                    loss = loss + self.masked_mean(dec_raw, finite)
                 else:
-                    go_loss = self.masked_mean(
-                        self.criterion(safe_pred, safe_tgt), go_resp_mask)
+                    nogo_zero_mask = finite & resp_mask & (safe_tgt == 0)
+                    go_resp_mask   = finite & resp_mask & (safe_tgt > 0)
+                    other_mask     = finite & ~nogo_zero_mask & ~go_resp_mask
 
-                # Delay / non-response holds: ONE-SIDED hinges at the no-lick boundary (κ₁=0)
-                # instead of two-sided MSE-to-±1. A decaying transient that stays on its side is
-                # not penalised, so a SUBCRITICAL decision can bridge the delay without an
-                # attractor. go(+1)→κ₁≥0, nogo(−1)→κ₁≤0. (go_hinge_thresh=None ⇒ legacy MSE.)
-                if self.go_hinge_thresh is not None:
-                    other_raw = torch.where(
-                        safe_tgt > 0, torch.relu(-safe_pred) ** 2,
-                        torch.where(safe_tgt < 0, torch.relu(safe_pred) ** 2,
-                                    self.criterion(safe_pred, torch.zeros_like(safe_pred))))
-                else:
-                    other_raw = torch.where(safe_tgt == 0,
-                                            self.criterion(safe_pred, torch.zeros_like(safe_pred)),
-                                            self.criterion(safe_pred, safe_tgt))
-                other_loss = self.masked_mean(other_raw, other_mask)
-                loss = loss + self.zero_weight * nogo_hinge + self.target_weight * go_loss + self.zero_weight * other_loss
+                    nogo_hinge = self.masked_mean(torch.relu(safe_pred) ** 2, nogo_zero_mask)
+
+                    if self.go_hinge_thresh is not None:
+                        go_loss = self.masked_mean(
+                            torch.relu(self.go_hinge_thresh - safe_pred) ** 2, go_resp_mask)
+                    else:
+                        go_loss = self.masked_mean(
+                            self.criterion(safe_pred, safe_tgt), go_resp_mask)
+
+                    other_raw  = torch.where(safe_tgt == 0,
+                                             self.criterion(safe_pred, torch.zeros_like(safe_pred)),
+                                             self.criterion(safe_pred, safe_tgt))
+                    other_loss = self.masked_mean(other_raw, other_mask)
+                    loss = loss + self.zero_weight * nogo_hinge + self.target_weight * go_loss + self.zero_weight * other_loss
 
                 # One-sided "no-lick" penalty over the free (NaN-target) decision windows:
                 # penalise lick (κ₁>0) only, leave κ₁<0 free. Opt-in via nolick_weight.
@@ -504,6 +506,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
         go_hinge_thresh: float | None = None,
         dpa_hinge_thresh: float | None = None,
         nolick_weight: float = 0.0,
+        hinge_gng: bool = False,
     ):
         super().__init__()
         self.timing          = timing
@@ -511,6 +514,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
         self.criterion       = criterion or nn.MSELoss(reduction="none")
         self.dpa_hinge_thresh = dpa_hinge_thresh
         self.nolick_weight   = nolick_weight
+        self.hinge_gng       = hinge_gng
         self.dpa_weight      = dpa_weight
         self.gng_weight      = gng_weight
         self.gng_go_weight   = gng_go_weight
@@ -560,28 +564,37 @@ class MaskedMultiTargetDualLoss(nn.Module):
         nogo_mask = gng_win_mask & (safe_t <= 0)  # target ≤  0 → nogo
 
         bl_loss = self.masked_mean(self.criterion(safe_p, torch.zeros_like(safe_p)), bl_mask)
-        # go: hinge relu(thresh - pred)² once pred ≥ thresh; else MSE toward +1
-        if self.go_hinge_thresh is not None:
-            go_loss = self.masked_mean(
-                torch.relu(self.go_hinge_thresh - safe_p) ** 2, go_mask)
+        if self.hinge_gng:
+            # UNIFIED one-sided decision hinge at the no-lick boundary (κ₁=0) for BOTH the
+            # go/nogo AND the match/nonmatch (DPA) decisions: lick(+)→κ₁≥0, no-lick(≤0)→κ₁≤0.
+            # No forced magnitude ⇒ a subcritical decision can ride the sign by slow transient.
+            go_loss   = self.masked_mean(torch.relu(-safe_p) ** 2, go_mask)
+            nogo_loss = self.masked_mean(torch.relu( safe_p) ** 2, nogo_mask)
+            dpa_raw   = torch.where(safe_t > 0, torch.relu(-safe_p) ** 2, torch.relu(safe_p) ** 2)
+            dpa_loss  = self.masked_mean(dpa_raw, dpa_mask)
         else:
-            go_loss = self.masked_mean(self.criterion(safe_p, safe_t), go_mask)
-        # nogo: hinge relu(pred)² when target==0; MSE when target<0
-        nogo_raw  = torch.where(safe_t == 0,
-                                torch.relu(safe_p) ** 2,
-                                self.criterion(safe_p, safe_t))
-        nogo_loss = self.masked_mean(nogo_raw, nogo_mask)
+            # go: hinge relu(thresh - pred)² once pred ≥ thresh; else MSE toward +1
+            if self.go_hinge_thresh is not None:
+                go_loss = self.masked_mean(
+                    torch.relu(self.go_hinge_thresh - safe_p) ** 2, go_mask)
+            else:
+                go_loss = self.masked_mean(self.criterion(safe_p, safe_t), go_mask)
+            # nogo: hinge relu(pred)² when target==0; MSE when target<0
+            nogo_raw  = torch.where(safe_t == 0,
+                                    torch.relu(safe_p) ** 2,
+                                    self.criterion(safe_p, safe_t))
+            nogo_loss = self.masked_mean(nogo_raw, nogo_mask)
+            # DPA decision (±1): squared hinge toward ±thresh (let attractor sit at any
+            # magnitude past the margin) when dpa_hinge_thresh is set; else MSE toward ±1.
+            if self.dpa_hinge_thresh is not None:
+                th = self.dpa_hinge_thresh
+                dpa_raw  = torch.where(safe_t > 0,
+                                       torch.relu(th - safe_p) ** 2,
+                                       torch.relu(safe_p + th) ** 2)
+                dpa_loss = self.masked_mean(dpa_raw, dpa_mask)
+            else:
+                dpa_loss = self.masked_mean(self.criterion(safe_p, safe_t), dpa_mask)
         gng_loss  = self.gng_go_weight * go_loss + self.gng_nogo_weight * nogo_loss
-        # DPA decision (±1): squared hinge toward ±thresh (let attractor sit at any
-        # magnitude past the margin) when dpa_hinge_thresh is set; else MSE toward ±1.
-        if self.dpa_hinge_thresh is not None:
-            th = self.dpa_hinge_thresh
-            dpa_raw  = torch.where(safe_t > 0,
-                                   torch.relu(th - safe_p) ** 2,
-                                   torch.relu(safe_p + th) ** 2)
-            dpa_loss = self.masked_mean(dpa_raw, dpa_mask)
-        else:
-            dpa_loss = self.masked_mean(self.criterion(safe_p, safe_t), dpa_mask)
 
         aux_loss = pred_dec.sum() * 0.0   # zero scalar carrying grad/device/dtype
         for ch in range(C):
