@@ -918,9 +918,10 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         init_style="structured",
         memory_lambda=0.8,             # memory mode stays supercritical (deep A/B wells)
         decision_lambda=0.25,          # ↓ from 0.5 → g·λ₁=0.5 at init (decision starts SUBCRITICAL)
-        nonlinearity="tanh_asym", nl_gamma=0.3,   # spiral-free symmetry-breaker
+        nonlinearity="tanh", nl_gamma=0.0,   # plain odd tanh — symmetry break comes from ATTENTION, not φ
+        attention_input=True,          # tonic attention bias (breaks κ-field odd symmetry, replaces tanh_asym)
         nolick_weight=0.5,             # one-sided no-lick pressure over the free delay windows
-        hinge_gng=True,                # unified one-sided decision hinge (go+nogo & match/nonmatch) → no forced ±1 holds → subcritical decision viable
+        hinge_gng=False,               # old MSE loss (matches the tau1 baseline that looked close); go/nogo works via go_hinge_thresh
         rwd_gng=False,                 # no reward-feedback onto the last channel (clean; avoids the rwd/attention collision)
         cue_on_go_input=True,          # cue rides on go channel (attention arm → input_size=7, else 6)
         cue_scale=2.0,
@@ -954,8 +955,8 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     # transient viable. Decision starts subcritical (decision_lambda=0.25); memory stays super-
     # critical (attractor, τ-independent). Prediction: 1× climbs supercritical (ring persists),
     # 2×/4× stay subcritical (ring breaks → two isolated low memory wells).
-    tau_arms = [("tau1", 0.30), ("tau2", 0.60), ("tau4", 1.20)]
-    for tag, tau in tau_arms:
+    fast_arms = [("fast1", 0.30), ("fast2", 0.15), ("fast3", 0.10)]
+    for tag, tau in fast_arms:
         for seed in range(3):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
                                      tau=tau, **shared))
