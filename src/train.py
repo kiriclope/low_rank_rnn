@@ -388,16 +388,18 @@ class MaskedGNGLoss(nn.Module):
         go_hinge_thresh: float | None = None,
         nolick_weight: float = 0.0,
         hinge_gng: bool = False,
+        nogo_hinge_thresh: float = -1.0,
     ):
         super().__init__()
-        self.timing          = timing
-        self.readout_index   = readout_index
-        self.criterion       = criterion or nn.MSELoss(reduction="none")
-        self.target_weight   = target_weight
-        self.zero_weight     = zero_weight
-        self.go_hinge_thresh = go_hinge_thresh
-        self.nolick_weight   = nolick_weight
-        self.hinge_gng       = hinge_gng
+        self.timing            = timing
+        self.readout_index     = readout_index
+        self.criterion         = criterion or nn.MSELoss(reduction="none")
+        self.target_weight     = target_weight
+        self.zero_weight       = zero_weight
+        self.go_hinge_thresh   = go_hinge_thresh
+        self.nolick_weight     = nolick_weight
+        self.hinge_gng         = hinge_gng
+        self.nogo_hinge_thresh = nogo_hinge_thresh   # memory-window nogo hinge; 0 after cue
 
     @staticmethod
     def masked_mean(loss, mask):
@@ -421,13 +423,18 @@ class MaskedGNGLoss(nn.Module):
 
             if ch == dec:
                 if self.hinge_gng:
-                    # UNIFIED one-sided decision hinge at the no-lick boundary (κ₁=0), go+nogo,
-                    # EVERY targeted window (delay + response): lick/go(+)→κ₁≥0, no-lick/nogo(≤0)
-                    # →κ₁≤0. No forced magnitude ⇒ a subcritical decision can ride the sign by
-                    # slow transient (never charged for decaying toward 0 on its own side).
+                    # ASYMMETRIC one-sided decision hinge (fixes the go/nogo collapse of the
+                    # symmetric-at-0 version): lick/go(+) → κ₁ ≥ go_hinge_thresh; no-lick/nogo(≤0)
+                    # → κ₁ ≤ nogo_th, where nogo_th = nogo_hinge_thresh (−1) during the MEMORY
+                    # delay (pre-cue) and 0 after the cue (resp_mask). A real ±gap separates go
+                    # from nogo (kills the trivial "always ≤0" solution), while each side is still
+                    # one-sided (a transient more extreme than its threshold is unpenalised).
+                    th_go   = self.go_hinge_thresh if self.go_hinge_thresh is not None else 1.0
+                    nogo_th = torch.where(resp_mask, torch.zeros_like(safe_pred),
+                                          torch.full_like(safe_pred, self.nogo_hinge_thresh))
                     dec_raw = torch.where(safe_tgt > 0,
-                                          torch.relu(-safe_pred) ** 2,
-                                          torch.relu(safe_pred) ** 2)
+                                          torch.relu(th_go - safe_pred) ** 2,
+                                          torch.relu(safe_pred - nogo_th) ** 2)
                     loss = loss + self.masked_mean(dec_raw, finite)
                 else:
                     nogo_zero_mask = finite & resp_mask & (safe_tgt == 0)
@@ -507,6 +514,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
         dpa_hinge_thresh: float | None = None,
         nolick_weight: float = 0.0,
         hinge_gng: bool = False,
+        nogo_hinge_thresh: float = -1.0,
     ):
         super().__init__()
         self.timing          = timing
@@ -515,6 +523,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
         self.dpa_hinge_thresh = dpa_hinge_thresh
         self.nolick_weight   = nolick_weight
         self.hinge_gng       = hinge_gng
+        self.nogo_hinge_thresh = nogo_hinge_thresh
         self.dpa_weight      = dpa_weight
         self.gng_weight      = gng_weight
         self.gng_go_weight   = gng_go_weight
@@ -565,12 +574,14 @@ class MaskedMultiTargetDualLoss(nn.Module):
 
         bl_loss = self.masked_mean(self.criterion(safe_p, torch.zeros_like(safe_p)), bl_mask)
         if self.hinge_gng:
-            # UNIFIED one-sided decision hinge at the no-lick boundary (κ₁=0) for BOTH the
-            # go/nogo AND the match/nonmatch (DPA) decisions: lick(+)→κ₁≥0, no-lick(≤0)→κ₁≤0.
-            # No forced magnitude ⇒ a subcritical decision can ride the sign by slow transient.
-            go_loss   = self.masked_mean(torch.relu(-safe_p) ** 2, go_mask)
+            # ASYMMETRIC one-sided decision hinge for the go/nogo AND match/nonmatch (DPA)
+            # decisions (fixes the go/nogo collapse): lick/go/match(+) → κ₁ ≥ go_hinge_thresh;
+            # no-lick/nogo/nonmatch(≤0) → κ₁ ≤ 0 (all Dual decision windows are response/readout,
+            # so the no-lick threshold is 0 here — the −1 memory threshold only applies in GNG).
+            th_go     = self.go_hinge_thresh if self.go_hinge_thresh is not None else 1.0
+            go_loss   = self.masked_mean(torch.relu(th_go - safe_p) ** 2, go_mask)
             nogo_loss = self.masked_mean(torch.relu( safe_p) ** 2, nogo_mask)
-            dpa_raw   = torch.where(safe_t > 0, torch.relu(-safe_p) ** 2, torch.relu(safe_p) ** 2)
+            dpa_raw   = torch.where(safe_t > 0, torch.relu(th_go - safe_p) ** 2, torch.relu(safe_p) ** 2)
             dpa_loss  = self.masked_mean(dpa_raw, dpa_mask)
         else:
             # go: hinge relu(thresh - pred)² once pred ≥ thresh; else MSE toward +1

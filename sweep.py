@@ -164,6 +164,7 @@ class RunConfig:
     gng_go_weight:   float = 1.0        # relative weight on go trials within gng_loss
     gng_nogo_weight: float = 1.0        # relative weight on nogo trials within gng_loss
     go_hinge_thresh: float | None = None  # if set, go response window uses relu(thresh-pred)² instead of MSE
+    nogo_hinge_thresh: float = -1.0       # hinge_gng no-lick threshold during the memory delay (0 after cue)
     dpa_hinge_thresh: float | None = None # if set, DPA ±1 decision uses squared hinge toward ±thresh (DPA + dual stages)
     hinge_squared:   bool = True   # DPA ThresholdLoss: True=relu(...)² (default), False=linear margin relu(...)
     aux_weight:      float = 1.0   # weight on the memory (non-decision) channels
@@ -507,7 +508,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
                                    go_hinge_thresh=config.go_hinge_thresh,
                                    nolick_weight=config.nolick_weight,
-                                   hinge_gng=config.hinge_gng)
+                                   hinge_gng=config.hinge_gng,
+                                   nogo_hinge_thresh=config.nogo_hinge_thresh)
                      if config.nogo_target == 0.0 else criterion)
     losses    = {}
     _global_step = [0]   # mutable so the nested helper can increment it
@@ -692,7 +694,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                 gng_go_weight=config.gng_go_weight, gng_nogo_weight=config.gng_nogo_weight,
                 aux_weight=config.aux_weight, bl_weight=config.bl_weight,
                 go_hinge_thresh=config.go_hinge_thresh, dpa_hinge_thresh=config.dpa_hinge_thresh,
-                nolick_weight=config.nolick_weight, hinge_gng=config.hinge_gng)
+                nolick_weight=config.nolick_weight, hinge_gng=config.hinge_gng,
+                nogo_hinge_thresh=config.nogo_hinge_thresh)
             if config.dual_loss == "separated" else criterion)
         trainer = Optimization(model, tlp, vlp, paired_criterion, optp, schedp,
                                config.grad_clip_norm, num_epochs=config.epochs_dual_paired,
@@ -734,6 +737,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             dpa_hinge_thresh=config.dpa_hinge_thresh,
             nolick_weight=config.nolick_weight,
             hinge_gng=config.hinge_gng,
+            nogo_hinge_thresh=config.nogo_hinge_thresh,
         )
         print(f"[{rid}]  loss=separated"
               f"  dpa_w={config.dpa_weight}  gng_w={config.gng_weight}"
