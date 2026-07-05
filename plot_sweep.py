@@ -1258,7 +1258,8 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
                     n_batch: int = 256, n_fp_seeds: int = 21,
                     use_sim_field: bool = False, sim_n_warmup: int = 0,
                     auto_xlim: bool = False, n_grid: int = 151, slow_tol=None,
-                    show_slow_manifold: bool = False, slow_manifold_thresh: float = 0.12):
+                    show_slow_manifold: bool = False, slow_manifold_thresh: float = 0.12,
+                    field_input_noise: bool = False):
     flow_dir = os.path.join(out_dir, "flow")
     os.makedirs(flow_dir, exist_ok=True)
     cue = meta.cue_on_go_input
@@ -1329,6 +1330,7 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
             cue_on_go_input = cue,
             cue_scale       = meta.cue_scale,
             attention_input = meta.attention_input,
+            field_input_noise = meta.noise_sigma() if field_input_noise else 0.0,
             xlim            = None if auto_xlim else XLIM,
             ylim            = None if auto_xlim else YLIM,
             n_grid          = n_grid,
@@ -1396,6 +1398,9 @@ Examples:
                         help="Trials used for overlaid flow-field trajectories (default 256).")
     parser.add_argument("--show_slow_manifold", action="store_true",
                         help="Overlay the low-velocity ridge (slow manifold / remnant ring) on each flow panel.")
+    parser.add_argument("--field_input_noise", action="store_true",
+                        help="Render the NOISE-AVERAGED flow field/fixed points: freeze each panel's "
+                             "input with the run's training input noise (E_x[Ψ(κ)] over 64 draws).")
     parser.add_argument("--slow_manifold_thresh", type=float, default=0.12,
                         help="|F| threshold for the slow-manifold overlay (default 0.12).")
     parser.add_argument("--device",       type=str, default=None)
@@ -1492,7 +1497,8 @@ Examples:
                                 n_grid=args.n_grid,
                                 slow_tol=args.slow_tol if args.mark_slow else None,
                                 show_slow_manifold=args.show_slow_manifold,
-                                slow_manifold_thresh=args.slow_manifold_thresh)
+                                slow_manifold_thresh=args.slow_manifold_thresh,
+                                field_input_noise=args.field_input_noise)
 
 
 if __name__ == "__main__":

@@ -151,16 +151,19 @@ def low_rank_field_np(params, kappa, ff_input=None, include_beta=False):
     kappa_flat = kappa.reshape(-1, rank)
 
     ff_input = (
-        np.zeros(Wi.shape[1], dtype=np.float64) if ff_input is None
-        else np.asarray(ff_input, dtype=np.float64)
-    )
+        np.zeros((1, Wi.shape[1]), dtype=np.float64) if ff_input is None
+        else np.atleast_2d(np.asarray(ff_input, dtype=np.float64))
+    )   # (K, input_size); K>1 ⇒ NOISE-AVERAGED field E_x[Ψ(κ)] over K input draws
 
     phi = params.get("phi", np.tanh)
     ub  = params.get("unit_bias", 0.0)
-    input_drive = Ai * (ff_input @ Wi.T + bi)
-    h   = kappa_flat @ M.T
-    r   = phi(gain * (input_drive[None, :] + h) + ub)
-    psi = r @ Nvec / M.shape[0]
+    h   = kappa_flat @ M.T                                  # (B, N)
+    psi = np.zeros((kappa_flat.shape[0], rank), dtype=np.float64)
+    for xk in ff_input:                                     # average φ over the K input draws
+        input_drive = Ai * (xk @ Wi.T + bi)                 # (N,)
+        r   = phi(gain * (input_drive[None, :] + h) + ub)
+        psi += r @ Nvec / M.shape[0]
+    psi /= ff_input.shape[0]
 
     field = psi - kappa_flat
     if include_beta:
@@ -176,17 +179,19 @@ def low_rank_jacobian_flow_np(params, kappa, ff_input=None):
 
     kappa    = np.asarray(kappa, dtype=np.float64).reshape(-1)
     ff_input = (
-        np.zeros(Wi.shape[1], dtype=np.float64) if ff_input is None
-        else np.asarray(ff_input, dtype=np.float64)
-    )
+        np.zeros((1, Wi.shape[1]), dtype=np.float64) if ff_input is None
+        else np.atleast_2d(np.asarray(ff_input, dtype=np.float64))
+    )   # (K, input_size); K>1 ⇒ noise-averaged Jacobian (matches the noise-averaged field)
 
     phi_prime_fn = params.get("phi_prime", lambda u: 1.0 - np.tanh(u) ** 2)
     ub          = params.get("unit_bias", 0.0)
-    input_drive = Ai * (ff_input @ Wi.T + bi)
-    u           = gain * (input_drive + M @ kappa) + ub
-    phi_prime   = phi_prime_fn(u)
-
-    J  = Nvec.T @ (phi_prime[:, None] * (gain * M)) / M.shape[0]
+    J = np.zeros((M.shape[1], M.shape[1]), dtype=np.float64)
+    for xk in ff_input:
+        input_drive = Ai * (xk @ Wi.T + bi)
+        u           = gain * (input_drive + M @ kappa) + ub
+        phi_prime   = phi_prime_fn(u)
+        J += Nvec.T @ (phi_prime[:, None] * (gain * M)) / M.shape[0]
+    J /= ff_input.shape[0]
     J -= np.eye(M.shape[1])
     return J
 
@@ -720,8 +725,15 @@ def plot_task_flow_fields(
     use_sim_field=False, sim_n_warmup=0, slow_tol=None,
     show_slow_manifold=False, slow_manifold_thresh=0.12,
     attention_input=False,
+    field_input_noise=0.0, field_noise_K=64, field_noise_seed=0,
 ):
-    """Generic low-rank phase portrait for DPA, GNG, and Dual tasks."""
+    """Generic low-rank phase portrait for DPA, GNG, and Dual tasks.
+
+    field_input_noise>0 renders the NOISE-AVERAGED field/fixed points: the frozen input for
+    each panel is replicated into field_noise_K draws with N(0, field_input_noise²) added per
+    channel and the field is averaged over them (E_x[Ψ(κ)]). Trajectories/slow-manifold keep
+    the clean input.
+    """
     task = task.lower()
     if model.m.shape[1] != 2:
         raise ValueError("This plotter assumes rank == 2.")
@@ -792,15 +804,21 @@ def plot_task_flow_fields(
                 model, fixed_points, ff_input, n_warmup=sim_n_warmup, slow_tol=slow_tol,
             )
         else:
+            ff_field = ff_input
+            if field_input_noise and field_input_noise > 0.0:
+                gen = torch.Generator(device=device).manual_seed(int(field_noise_seed))
+                nz  = field_input_noise * torch.randn(int(field_noise_K), input_size,
+                                                      generator=gen, device=device, dtype=dtype)
+                ff_field = ff_input[None, :] + nz   # (K, input_size) → noise-averaged field/FPs
             K1, K2, U, V, speed, params, ff_input_np = make_vector_field_grid(
-                model, ff_input=ff_input, xlim=xlim, ylim=ylim, n_grid=n_grid,
+                model, ff_input=ff_field, xlim=xlim, ylim=ylim, n_grid=n_grid,
                 include_beta=include_beta_in_field,
             )
             fixed_points, fixed_residuals = find_all_fixed_points(
-                model, xlim=xlim, ylim=ylim, ff_input=ff_input,
+                model, xlim=xlim, ylim=ylim, ff_input=ff_field,
                 n_seeds=n_fp_seeds, residual_tol=1e-8, merge_tol=5e-2,
             )
-            fp_labels, fp_eigvals = classify_fixed_points(model, fixed_points, ff_input=ff_input, slow_tol=slow_tol)
+            fp_labels, fp_eigvals = classify_fixed_points(model, fixed_points, ff_input=ff_field, slow_tol=slow_tol)
 
         panel_mask = _canonical_input_mask(
             effective_x, dims=spec["dims"], threshold=input_threshold, atol_inactive=inactive_atol
