@@ -878,7 +878,8 @@ def _worker(worker_id: int, n_gpus: int, job_queue: mp.Queue, result_queue: mp.Q
 
 def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool = True,
                  nogo_target: float | None = None, hinge_squared: bool | None = None,
-                 lr_additive: bool | None = None, dense_cee: bool | None = None) -> list[RunConfig]:
+                 lr_additive: bool | None = None, dense_cee: bool | None = None,
+                 hinge_gng: bool | None = None) -> list[RunConfig]:
     """
     Return the list of runs to execute.  Edit freely.
 
@@ -933,6 +934,8 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     )
     if nogo_target is not None:        # CLI override if desired
         shared["nogo_target"] = nogo_target
+    if hinge_gng is not None:          # CLI override: False = uncorrected two-sided MSE-to-±1 holds
+        shared["hinge_gng"] = hinge_gng
 
     # SLOW-τ ladder: can a SUBCRITICAL decision mode (g·λ₁<1, no autonomous well → ring
     # collapses) hold the go/nogo decision across the ~1 s GNG delay by SLOW TRANSIENT instead
@@ -996,6 +999,8 @@ def main():
                         help="Override nogo_target in make_configs (e.g. 0.0 or -1.0).")
     parser.add_argument("--hinge_squared",   type=int,  default=None, choices=[0, 1],
                         help="Override DPA hinge shape: 1=squared (default), 0=linear margin.")
+    parser.add_argument("--hinge_gng",       type=int,  default=None, choices=[0, 1],
+                        help="Override hinge_gng: 1=one-sided go+nogo hinge; 0=legacy two-sided MSE-to-±1 holds.")
     parser.add_argument("--lr_additive",     type=int,  default=None, choices=[0, 1],
                         help="Override E→E low-rank: 0=multiplicative C·(1+lr) (default), 1=additive C+lr.")
     parser.add_argument("--dense_cee",       type=int,  default=None, choices=[0, 1],
@@ -1011,7 +1016,8 @@ def main():
                                   nogo_target=args.nogo_target,
                                   hinge_squared=None if args.hinge_squared is None else bool(args.hinge_squared),
                                   lr_additive=None if args.lr_additive is None else bool(args.lr_additive),
-                                  dense_cee=None if args.dense_cee is None else bool(args.dense_cee))
+                                  dense_cee=None if args.dense_cee is None else bool(args.dense_cee),
+                                  hinge_gng=None if args.hinge_gng is None else bool(args.hinge_gng))
     if args.run_filter:
         configs = [c for c in configs if args.run_filter in c.run_id]
         print(f"run_filter={args.run_filter!r}: {len(configs)} matching configs")
