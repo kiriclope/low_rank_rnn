@@ -137,7 +137,7 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
     torch.save(model.state_dict(), os.path.join(out_dir, f"expert_{rid}.pth"))
 
     acc_after_dual = _eval("after Dual")
-    dual_dpa, dual_gng = _dual_accuracy(
+    dual_dpa, dual_gng, dual_go, dual_nogo = _dual_accuracy(
         model, dual_timing, config.input_size, noise=noise, device=device,
         target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
         cue_scale=config.cue_scale, nogo_target=config.nogo_target,

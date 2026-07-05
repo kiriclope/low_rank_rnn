@@ -279,7 +279,8 @@ def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=102
 
 @torch.no_grad()
 def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
-                   cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False):
+                   cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False,
+                   go_target=1.0):
     model.eval()
     X, y, _, condition_names = generate_dual_trials(
         n_trials, timing=timing, input_size=input_size, noise=noise, target_rank=target_rank,
@@ -294,17 +295,19 @@ def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, targ
     pred_dpa  = pred[:, dpa_start:].mean(1)
     dpa_acc   = ((pred_dpa > 0) == (y[:, -1, -1] > 0)).float().mean().item()
 
+    # go/nogo: evaluate κ₁ in the AFTER-CUE target window (where the response target actually
+    # lives, [n_off[2], n_off[2]+½·(test−cue2)]), and score each side by whether it goes to its
+    # target — go reaches the go side, nogo reaches ≤ its target — past the go/nogo midpoint.
     rwd_start = int(timing.n_stim_off[2])
-    rwd_stop  = int(timing.n_stim_on[3])
+    rwd_stop  = int(timing.n_stim_off[2] + (timing.n_stim_off[3] - timing.n_stim_on[3]) / 2)
     pred_gng  = pred[:, rwd_start:rwd_stop].mean(1)
     is_go     = torch.as_tensor(["_go_"   in n for n in names])
-    is_gng    = torch.as_tensor(["_go_"   in n or "_nogo_" in n for n in names])
-    thresh    = (1.0 + nogo_target) / 2.0
-    gng_acc   = (
-        ((pred_gng[is_gng] > thresh) == is_go[is_gng]).float().mean().item()
-        if is_gng.any() else float("nan")
-    )
-    return dpa_acc, gng_acc
+    is_ng     = torch.as_tensor(["_nogo_" in n for n in names])
+    thresh    = nogo_target   # decision boundary = the no-lick target: nogo correct iff it goes to ≤ its target
+    go_acc    = (pred_gng[is_go] >  thresh).float().mean().item() if is_go.any() else float("nan")
+    nogo_acc  = (pred_gng[is_ng] <= thresh).float().mean().item() if is_ng.any() else float("nan")
+    gng_acc   = float(np.nanmean([go_acc, nogo_acc]))
+    return dpa_acc, gng_acc, go_acc, nogo_acc
 
 
 # ---------------------------------------------------------------------------
@@ -783,17 +786,19 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     losses["dual"] = {"train": train_l, "val": val_l}
     torch.save(model.state_dict(), os.path.join(models_dir, f"expert_{rid}.pth"))
     acc_after_dual = _eval("after Dual")
-    dual_dpa, dual_gng = _dual_accuracy(model, dual_timing, config.input_size, noise=noise, device=device,
+    dual_dpa, dual_gng, dual_go, dual_nogo = _dual_accuracy(model, dual_timing, config.input_size, noise=noise, device=device,
                                          target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                          cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-                                         go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale, attention_input=config.attention_input)
+                                         go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale, attention_input=config.attention_input,
+                                         go_target=config.go_target)
     _stage_summary("Dual", train_l, val_l, acc_after_dual, t0)
     _log_params("after Dual")
 
     acc = {
         "after_dpa":  acc_after_dpa,
         "after_gng":  acc_after_gng,
-        "after_dual": {**acc_after_dual, "dual_dpa": dual_dpa, "dual_gng": dual_gng},
+        "after_dual": {**acc_after_dual, "dual_dpa": dual_dpa, "dual_gng": dual_gng,
+                        "dual_go": dual_go, "dual_nogo": dual_nogo},
     }
 
     _wb_log_losses("dual", train_l, val_l)
@@ -821,6 +826,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     print(f"{p}  ACCURACY SUMMARY", flush=True)
     print(f"{p}    after DPA : dpa={acc_after_dpa['dpa']:.3f}  gng={acc_after_dpa['gng']:.3f}", flush=True)
     print(f"{p}    after GNG : dpa={acc_after_gng['dpa']:.3f}  gng={acc_after_gng['gng']:.3f}", flush=True)
+    print(f"{p}    dual go/nogo: go={dual_go:.3f}  nogo={dual_nogo:.3f}  (gng={dual_gng:.3f})", flush=True)
     print(f"{p}    after Dual: dpa={acc_after_dual['dpa']:.3f}  gng={acc_after_dual['gng']:.3f}"
           f"  dual_dpa={dual_dpa:.3f}  dual_gng={dual_gng:.3f}", flush=True)
     print(f"{p} {'═'*60}", flush=True)
