@@ -509,8 +509,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     # hinge-vs-MSE for all three stages. hinge_gng=True → ThresholdLoss (squared ±thresh margin
     # on every channel: memory & decision); False → MaskedMultiTargetLoss (pure MSE).
     _dpa_th = config.dpa_hinge_thresh if config.dpa_hinge_thresh is not None else 1.0
-    dpa_criterion = (ThresholdLoss(thresh=_dpa_th, squared=config.hinge_squared,
-                                   readout_index=-1, go_hinge_thresh=config.go_hinge_thresh)
+    dpa_criterion = (ThresholdLoss(thresh=_dpa_th, squared=config.hinge_squared)
                      if config.hinge_gng else criterion)
     gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
                                    go_hinge_thresh=config.go_hinge_thresh,
