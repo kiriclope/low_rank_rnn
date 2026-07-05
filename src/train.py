@@ -431,16 +431,28 @@ class MaskedGNGLoss(nn.Module):
                     go_loss = self.masked_mean(
                         self.criterion(safe_pred, safe_tgt), go_resp_mask)
 
-                other_raw  = torch.where(safe_tgt == 0,
-                                         self.criterion(safe_pred, torch.zeros_like(safe_pred)),
-                                         self.criterion(safe_pred, safe_tgt))
+                # Delay / non-response holds: ONE-SIDED hinges at the no-lick boundary (κ₁=0)
+                # instead of two-sided MSE-to-±1. A decaying transient that stays on its side is
+                # not penalised, so a SUBCRITICAL decision can bridge the delay without an
+                # attractor. go(+1)→κ₁≥0, nogo(−1)→κ₁≤0. (go_hinge_thresh=None ⇒ legacy MSE.)
+                if self.go_hinge_thresh is not None:
+                    other_raw = torch.where(
+                        safe_tgt > 0, torch.relu(-safe_pred) ** 2,
+                        torch.where(safe_tgt < 0, torch.relu(safe_pred) ** 2,
+                                    self.criterion(safe_pred, torch.zeros_like(safe_pred))))
+                else:
+                    other_raw = torch.where(safe_tgt == 0,
+                                            self.criterion(safe_pred, torch.zeros_like(safe_pred)),
+                                            self.criterion(safe_pred, safe_tgt))
                 other_loss = self.masked_mean(other_raw, other_mask)
                 loss = loss + self.zero_weight * nogo_hinge + self.target_weight * go_loss + self.zero_weight * other_loss
 
                 # One-sided "no-lick" penalty over the free (NaN-target) decision windows:
                 # penalise lick (κ₁>0) only, leave κ₁<0 free. Opt-in via nolick_weight.
                 if self.nolick_weight:
-                    nolick_mask = torch.isfinite(pred) & ~torch.isfinite(target)
+                    sample_mask = ((t >= self.timing.n_stim_on[0].to(device)) &
+                                   (t <  self.timing.n_stim_off[0].to(device)))[None, :]  # no loss during sample
+                    nolick_mask = torch.isfinite(pred) & ~torch.isfinite(target) & ~sample_mask
                     nolick = self.masked_mean(torch.relu(pred) ** 2, nolick_mask)
                     loss = loss + self.nolick_weight * nolick
             else:
@@ -584,7 +596,8 @@ class MaskedMultiTargetDualLoss(nn.Module):
         # lick (κ₁>0) only, leave κ₁<0 free. Directional pressure with no painted κ₁ value.
         nolick_loss = pred_dec.sum() * 0.0
         if self.nolick_weight:
-            nolick_mask = torch.isfinite(pred_dec) & ~torch.isfinite(tgt_dec)
+            sample_mask = ((t >= n_on[0]) & (t < n_off[0]))[None, :]   # no loss during sample
+            nolick_mask = torch.isfinite(pred_dec) & ~torch.isfinite(tgt_dec) & ~sample_mask
             nolick_loss = self.masked_mean(torch.relu(pred_dec) ** 2, nolick_mask)
 
         self.last_components = {
