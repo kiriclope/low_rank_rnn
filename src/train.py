@@ -638,28 +638,46 @@ class ThresholdLoss(nn.Module):
         target_weight: float = 1.0,
         zero_weight: float = 1.0,
         squared: bool = True,
+        readout_index: int | None = None,
+        go_hinge_thresh: float | None = None,
     ):
         super().__init__()
         self.thresh        = thresh
         self.target_weight = target_weight
         self.zero_weight   = zero_weight
         self.squared       = squared   # True: relu(...)² (default); False: linear margin relu(...)
+        # If set, the readout (decision) channel uses the SAME asymmetric one-sided hinge as the
+        # Dual match/nonmatch — lick(+)→κ₁≥go_hinge_thresh, no-lick(≤0)→κ₁≤0 — while all other
+        # channels (memory) keep the symmetric ±thresh margin.
+        self.readout_index   = readout_index
+        self.go_hinge_thresh = go_hinge_thresh
 
     @staticmethod
     def masked_mean(loss: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         mask = mask.to(dtype=loss.dtype)
         return (loss * mask).sum() / mask.sum().clamp_min(1.0)
 
-    def forward_channel(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def forward_channel(self, pred: torch.Tensor, target: torch.Tensor,
+                        is_readout: bool = False) -> torch.Tensor:
         finite    = torch.isfinite(pred) & torch.isfinite(target)
         safe_tgt  = torch.where(finite, target, torch.zeros_like(target))
         safe_pred = torch.where(finite, pred,   torch.zeros_like(pred))
+        p    = 2 if self.squared else 1
+
+        if is_readout:
+            # ASYMMETRIC one-sided decision hinge — matches the Dual match/nonmatch exactly:
+            # lick(+) → κ₁ ≥ go_hinge_thresh ; no-lick(≤0) → κ₁ ≤ 0.
+            th_go    = self.go_hinge_thresh if self.go_hinge_thresh is not None else self.thresh
+            pos_mask = finite & (safe_tgt > 0)
+            neg_mask = finite & (safe_tgt <= 0)
+            pos_loss = self.masked_mean(torch.relu(th_go - safe_pred) ** p, pos_mask)
+            neg_loss = self.masked_mean(torch.relu(safe_pred) ** p, neg_mask)
+            return self.target_weight * pos_loss + self.zero_weight * neg_loss
 
         pos_mask  = finite & (safe_tgt > 0)   # target = +1
         neg_mask  = finite & (safe_tgt < 0)   # target = -1
         zero_mask = finite & (safe_tgt == 0)  # target =  0
 
-        p    = 2 if self.squared else 1
         pos_loss  = self.masked_mean(
             torch.relu(self.thresh - safe_pred) ** p, pos_mask)
         neg_loss  = self.masked_mean(
@@ -671,7 +689,8 @@ class ThresholdLoss(nn.Module):
 
     def forward(self, y_pred: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         loss = 0.0
+        dec  = self.readout_index % y.shape[-1] if self.readout_index is not None else None
         for ch in range(y.shape[-1]):
             loss = loss + self.forward_channel(
-                y_pred[..., ch].clone(), y[..., ch].clone())
+                y_pred[..., ch].clone(), y[..., ch].clone(), is_readout=(ch == dec))
         return loss
