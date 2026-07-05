@@ -370,12 +370,13 @@ class MaskedMultiTargetLoss(nn.Module):
 
 class MaskedGNGLoss(nn.Module):
     """
-    GNG-stage loss. Identical to MaskedMultiTargetLoss for all channels and timesteps,
-    except in the response window (t >= n_on[1]) of the decision channel:
-      - nogo (target == 0): relu(pred)²  — penalise positive readout only.
-      - go   (target  > 0): relu(thresh - pred)² when go_hinge_thresh is set,
-                            else standard MSE toward +1.
-    Trials with target < 0 (nogo_target=-1) are always trained with standard MSE.
+    GNG-stage loss. On the decision channel, hinge_gng selects the shape:
+      - hinge_gng=True  → ASYMMETRIC one-sided hinges: go/lick → κ₁ ≥ go_hinge_thresh;
+        nogo/no-lick → κ₁ ≤ nogo_hinge_thresh (−1 during the memory delay, 0 after the cue).
+      - hinge_gng=False → PURE MSE toward the task targets (go→+1, nogo→−1 delay / 0 after cue),
+        weighted by zero/target. No hinges.
+    The one-sided nolick penalty (relu(κ₁)² over free windows, sample excluded) is a separate
+    directional term, applied in both modes via nolick_weight.
     """
 
     def __init__(
@@ -437,24 +438,14 @@ class MaskedGNGLoss(nn.Module):
                                           torch.relu(safe_pred - nogo_th) ** 2)
                     loss = loss + self.masked_mean(dec_raw, finite)
                 else:
-                    nogo_zero_mask = finite & resp_mask & (safe_tgt == 0)
-                    go_resp_mask   = finite & resp_mask & (safe_tgt > 0)
-                    other_mask     = finite & ~nogo_zero_mask & ~go_resp_mask
-
-                    nogo_hinge = self.masked_mean(torch.relu(safe_pred) ** 2, nogo_zero_mask)
-
-                    if self.go_hinge_thresh is not None:
-                        go_loss = self.masked_mean(
-                            torch.relu(self.go_hinge_thresh - safe_pred) ** 2, go_resp_mask)
-                    else:
-                        go_loss = self.masked_mean(
-                            self.criterion(safe_pred, safe_tgt), go_resp_mask)
-
-                    other_raw  = torch.where(safe_tgt == 0,
-                                             self.criterion(safe_pred, torch.zeros_like(safe_pred)),
-                                             self.criterion(safe_pred, safe_tgt))
-                    other_loss = self.masked_mean(other_raw, other_mask)
-                    loss = loss + self.zero_weight * nogo_hinge + self.target_weight * go_loss + self.zero_weight * other_loss
+                    # PURE MSE toward the decision targets (go→+1, nogo→−1 in the delay / 0 after
+                    # cue, all set by the task), weighted by zero/target. hinge_gng=False ⇒ no
+                    # hinges anywhere on the decision channel (go_hinge_thresh is ignored here).
+                    zero_mask = finite & (safe_tgt == 0)
+                    tgt_mask  = finite & (safe_tgt != 0)
+                    zero_loss = self.masked_mean(self.criterion(safe_pred, torch.zeros_like(safe_pred)), zero_mask)
+                    tgt_loss  = self.masked_mean(self.criterion(safe_pred, safe_tgt), tgt_mask)
+                    loss = loss + self.zero_weight * zero_loss + self.target_weight * tgt_loss
 
                 # One-sided "no-lick" penalty over the free (NaN-target) decision windows:
                 # penalise lick (κ₁>0) only, leave κ₁<0 free. Opt-in via nolick_weight.
@@ -584,27 +575,11 @@ class MaskedMultiTargetDualLoss(nn.Module):
             dpa_raw   = torch.where(safe_t > 0, torch.relu(th_go - safe_p) ** 2, torch.relu(safe_p) ** 2)
             dpa_loss  = self.masked_mean(dpa_raw, dpa_mask)
         else:
-            # go: hinge relu(thresh - pred)² once pred ≥ thresh; else MSE toward +1
-            if self.go_hinge_thresh is not None:
-                go_loss = self.masked_mean(
-                    torch.relu(self.go_hinge_thresh - safe_p) ** 2, go_mask)
-            else:
-                go_loss = self.masked_mean(self.criterion(safe_p, safe_t), go_mask)
-            # nogo: hinge relu(pred)² when target==0; MSE when target<0
-            nogo_raw  = torch.where(safe_t == 0,
-                                    torch.relu(safe_p) ** 2,
-                                    self.criterion(safe_p, safe_t))
-            nogo_loss = self.masked_mean(nogo_raw, nogo_mask)
-            # DPA decision (±1): squared hinge toward ±thresh (let attractor sit at any
-            # magnitude past the margin) when dpa_hinge_thresh is set; else MSE toward ±1.
-            if self.dpa_hinge_thresh is not None:
-                th = self.dpa_hinge_thresh
-                dpa_raw  = torch.where(safe_t > 0,
-                                       torch.relu(th - safe_p) ** 2,
-                                       torch.relu(safe_p + th) ** 2)
-                dpa_loss = self.masked_mean(dpa_raw, dpa_mask)
-            else:
-                dpa_loss = self.masked_mean(self.criterion(safe_p, safe_t), dpa_mask)
+            # PURE MSE toward the decision targets (go→+1, nogo→0, match/nonmatch→±1).
+            # hinge_gng=False ⇒ no hinges anywhere (go_hinge_thresh / dpa_hinge_thresh ignored).
+            go_loss   = self.masked_mean(self.criterion(safe_p, safe_t), go_mask)
+            nogo_loss = self.masked_mean(self.criterion(safe_p, safe_t), nogo_mask)
+            dpa_loss  = self.masked_mean(self.criterion(safe_p, safe_t), dpa_mask)
         gng_loss  = self.gng_go_weight * go_loss + self.gng_nogo_weight * nogo_loss
 
         aux_loss = pred_dec.sum() * 0.0   # zero scalar carrying grad/device/dtype
