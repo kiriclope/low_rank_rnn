@@ -930,15 +930,18 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if nogo_target is not None:        # CLI override if desired
         shared["nogo_target"] = nogo_target
 
-    # TRAINABLE per-mode recurrent scale (rec_scale): W_rec = Σ_a s_a·m_a n_aᵀ/N. Decouples
-    # each mode's RECURRENCE (self-gain g·λ_a → g·s_a·λ_a) from its READOUT (κ=rates·n/N), so the
-    # net can LEARN a weak decision recurrence (s₁ small → no autonomous decision well → no ring)
-    # while keeping a strong decision readout. No clamp/curriculum/attention (isolate rec_scale).
-    rec_arms = [("recscale", True), ("control", False)]
-    for tag, rs in rec_arms:
+    # SLOW-τ ladder: can a SUBCRITICAL decision mode (g·λ₁<1, no autonomous well → ring
+    # collapses) hold the go/nogo decision across the ~1 s GNG delay by SLOW TRANSIENT instead
+    # of an attractor? Hold time ≈ τ/(1−g·λ); at τ=0.3 s a subcritical mode decays before the
+    # delay ends → training is forced supercritical. Slowing τ (×2, ×4) makes the subcritical
+    # transient viable. Decision starts subcritical (decision_lambda=0.25); memory stays super-
+    # critical (attractor, τ-independent). Prediction: 1× climbs supercritical (ring persists),
+    # 2×/4× stay subcritical (ring breaks → two isolated low memory wells).
+    tau_arms = [("tau1", 0.30), ("tau2", 0.60), ("tau4", 1.20)]
+    for tag, tau in tau_arms:
         for seed in range(3):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
-                                     use_rec_scale=rs, **shared))
+                                     tau=tau, **shared))
 
     return configs
 
