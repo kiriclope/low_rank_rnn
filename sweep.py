@@ -958,11 +958,16 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     # transient viable. Decision starts subcritical (decision_lambda=0.25); memory stays super-
     # critical (attractor, τ-independent). Prediction: 1× climbs supercritical (ring persists),
     # 2×/4× stay subcritical (ring breaks → two isolated low memory wells).
-    fast_arms = [("fast1", 0.30), ("fast2", 0.15), ("fast3", 0.10)]
-    for tag, tau in fast_arms:
+    # ISOLATION via decision-gain penalty: fast1 base (τ=0.3, plain tanh + attention, hinges all
+    # stages) + soft kappa1_reg pushing g·λ₁ → 1 during Dual. Both memory wells are already
+    # lowered (κ₁<0); the ring stays closed only because the decision is supercritical (g·λ₁≈3.5).
+    # Sweep the penalty to shrink the decision wells and (hopefully) open the U into two isolated
+    # low wells — measuring how much g·λ₁ we can shed before go/nogo + match/nonmatch break.
+    reg_arms = [("reg0", 0.0), ("reg1", 1.0), ("reg3", 3.0), ("reg6", 6.0)]
+    for tag, w in reg_arms:
         for seed in range(3):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
-                                     tau=tau, **shared))
+                                     tau=0.30, kappa1_reg_weight=w, **shared))
 
     return configs
 
