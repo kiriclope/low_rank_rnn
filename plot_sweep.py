@@ -967,14 +967,20 @@ def _style_fp_ax(ax, title: str, ylabel: bool, lim: tuple = None):
         ax.set_ylabel(r"$\kappa_1$", fontsize=9)
 
 
-def _fp_legend(fig, all_metas):
+def _fp_legend(fig, all_metas, kde=False):
     patches = [mpatches.Patch(color=STYLE_COLORS.get(s, "gray"), label=s)
                for s in ["structured", "random"]
                if any(m.init_style == s for m in all_metas)]
-    stab_handles = [
-        plt.scatter([], [], marker="o", s=60, facecolors="gray", edgecolors="gray",  label="attractor"),
-        plt.scatter([], [], marker="o", s=60, facecolors="gray", edgecolors="orange", linewidths=1.8, label="slow attractor"),
-    ]
+    if kde:
+        stab_handles = [
+            plt.scatter([], [], marker="*", s=130, facecolors="white", edgecolors="black",
+                        linewidths=0.9, label="cluster centroid"),
+        ]
+    else:
+        stab_handles = [
+            plt.scatter([], [], marker="o", s=60, facecolors="gray", edgecolors="gray",  label="attractor"),
+            plt.scatter([], [], marker="o", s=60, facecolors="gray", edgecolors="orange", linewidths=1.8, label="slow attractor"),
+        ]
     fig.legend(handles=patches + stab_handles, loc="lower center", ncol=5,
                fontsize=7, frameon=False, bbox_to_anchor=(0.5, -0.06))
 
@@ -1064,7 +1070,42 @@ def _collect_mean_flow(all_metas, ckpt_dir, device, conditions, lim, grid_n=56):
     return out
 
 
-def _render_meanflow_by_stage(mflow, scatter_data, stage, conditions, all_metas, out_path, lim):
+def _cluster_centroids(pts, tol=0.4):
+    """Greedy distance clustering of a point cloud → one centroid (mean) per cluster."""
+    clusters = []
+    for p in np.asarray(pts, dtype=float):
+        for c in clusters:
+            if np.hypot(*(np.mean(c, 0) - p)) < tol:
+                c.append(p); break
+        else:
+            clusters.append([p])
+    return [np.mean(c, 0) for c in clusters]
+
+
+def _kde_density_overlay(ax, pts, lim, cmap="plasma"):
+    """Filled 2-D KDE of the across-seed attractor points (bright = many seeds land here), plus a
+    centroid marker per cluster. Returns the contourf mappable (for a colorbar), or None if too few /
+    degenerate points (caller falls back to a scatter)."""
+    pts = np.asarray(pts, dtype=float)
+    if len(pts) < 4 or np.ptp(pts[:, 0]) < 1e-3 or np.ptp(pts[:, 1]) < 1e-3:
+        return None
+    try:
+        from scipy.stats import gaussian_kde
+        kde = gaussian_kde(pts.T)
+    except Exception:
+        return None
+    g = np.linspace(lim[0], lim[1], 80)
+    X, Y = np.meshgrid(g, g)
+    Z = kde(np.vstack([X.ravel(), Y.ravel()])).reshape(X.shape)
+    cs = ax.contourf(X, Y, Z, levels=6, cmap=cmap, alpha=0.55, zorder=4)
+    for cx, cy in _cluster_centroids(pts):
+        ax.scatter(cx, cy, marker="*", s=130, facecolors="white", edgecolors="black",
+                   linewidths=0.9, zorder=8)
+    return cs
+
+
+def _render_meanflow_by_stage(mflow, scatter_data, stage, conditions, all_metas, out_path, lim,
+                              overlay="scatter"):
     """One figure PER STAGE: panel per input condition. Background darkness = across-seed agreement
     (dark = all seeds flow the same way → mean flow trustworthy; white = they cancel → the white
     streamlines self-fade there, so a cancellation isn't mistaken for real flow). Attractors +
@@ -1074,7 +1115,7 @@ def _render_meanflow_by_stage(mflow, scatter_data, stage, conditions, all_metas,
     fig, axes = plt.subplots(1, n, figsize=(n * 2.15 + 0.4, 3.1),
                              constrained_layout=True, sharex=True, sharey=True)
     axes = np.atleast_1d(axes)
-    hm = None
+    hm = kde_hm = None
     for ax, (lbl, _d, _c, _m) in zip(axes, conds):
         m = mflow[lbl][stage]
         if m is not None:
@@ -1082,13 +1123,26 @@ def _render_meanflow_by_stage(mflow, scatter_data, stage, conditions, all_metas,
                                shading="auto", zorder=0, rasterized=True)
             ax.streamplot(m["K0"][0, :], m["K1"][:, 0], m["d0"], m["d1"], color="white",
                           density=1.0, linewidth=0.6, arrowsize=0.7, zorder=2)
-        for init_style, fps, stabs in scatter_data[lbl][stage]:
-            _draw_fp_points(ax, init_style, fps, stabs, only=("attractor", "slow_attractor"))
+        cs = None
+        if overlay == "kde":
+            pts = [(fp[0], fp[1]) for init_style, fps, stabs in scatter_data[lbl][stage]
+                   for fp, st in zip(fps, stabs) if st in ("attractor", "slow_attractor")]
+            cs = _kde_density_overlay(ax, pts, lim)
+            if cs is not None:
+                kde_hm = cs
+        if cs is None:   # scatter (default, or KDE fallback for too-few points)
+            for init_style, fps, stabs in scatter_data[lbl][stage]:
+                _draw_fp_points(ax, init_style, fps, stabs, only=("attractor", "slow_attractor"))
         _style_fp_ax(ax, lbl, ylabel=(ax is axes[0]), lim=lim)
-    _fp_legend(fig, all_metas)
+    _fp_legend(fig, all_metas, kde=(overlay == "kde"))
+    # colorbars: seed-agreement (Greys) always; attractor-density (plasma) in KDE mode.
     if hm is not None:
         cb = fig.colorbar(hm, ax=list(axes), fraction=0.012, pad=0.01)
         cb.set_label("across-seed flow agreement", fontsize=7); cb.ax.tick_params(labelsize=6)
+    if kde_hm is not None:
+        cb2 = fig.colorbar(kde_hm, ax=list(axes), fraction=0.012, pad=0.02)
+        cb2.set_label("attractor density (KDE)", fontsize=7)
+        cb2.ax.tick_params(labelsize=6); cb2.set_ticks([])
     fig.suptitle(f"{stage} ({STAGE_TASK[stage].upper()}) — mean flow (bg = seed agreement) + attractors",
                  fontsize=10)
     fig.savefig(out_path, bbox_inches="tight")
@@ -1097,7 +1151,8 @@ def _render_meanflow_by_stage(mflow, scatter_data, stage, conditions, all_metas,
 
 
 def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
-                        out_dir: str, device: str, n_seeds: int = 21, slow_tol=None):
+                        out_dir: str, device: str, n_seeds: int = 21, slow_tol=None,
+                        meanflow_overlay: str = "scatter"):
     ref        = all_metas[0]
     lim        = _scatter_lim(ref)
     conditions = _input_conditions("dual", ref.input_size, ref.cue_on_go_input)
@@ -1116,6 +1171,7 @@ def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
         _render_meanflow_by_stage(
             mflow, data, stage, conditions, all_metas,
             os.path.join(out_dir, f"fp_meanflow_{stage}.pdf"), lim=lim,
+            overlay=meanflow_overlay,
         )
 
 
@@ -1476,6 +1532,9 @@ Examples:
                         help="Render the NOISE-AVERAGED flow field/fixed points: freeze each panel's "
                              "input with the run's training input noise (E_x[Ψ(κ)] over 16 draws; "
                              "a single draw is unstable — one noise offset tilts the field via Wi).")
+    parser.add_argument("--meanflow_overlay", choices=["scatter", "kde"], default="scatter",
+                        help="fp_meanflow overlay of across-seed attractors: per-seed dots (default) "
+                             "or a KDE density (use when the dots get too busy)")
     parser.add_argument("--slow_manifold_thresh", type=float, default=0.12,
                         help="|F| threshold for the slow-manifold overlay (default 0.12).")
     parser.add_argument("--device",       type=str, default=None)
@@ -1537,7 +1596,8 @@ Examples:
             print("\n[summary] fp_scatters (by stage + per input condition)")
             summary_fp_scatters(all_metas, args.sweep_dir, sum_dir, device,
                                 n_seeds=args.n_fp_seeds,
-                                slow_tol=args.slow_tol if args.mark_slow else None)
+                                slow_tol=args.slow_tol if args.mark_slow else None,
+                                meanflow_overlay=args.meanflow_overlay)
 
         if "traj" in want:
             print("\n[summary] avg_trajectories")

@@ -191,7 +191,13 @@ These take `--ckpt_dir` / `results.jsonl` directly and are useful for quick insp
 | File | Content |
 |---|---|
 | `summary/fp_scatter_{stage}.pdf` | One panel per input condition (Autonomous / Sample A,B / Test C,D / Go / NoGo); each scatters the **attractors + slow attractors across all seeds** (colour = init_style). Read across-seed consistency: tight cluster = robust, spread = seed-variable. |
-| `summary/fp_meanflow_{stage}.pdf` | Same panels, but showing the **mean vector field** `⟨F_s(κ)⟩` (white streamlines) over a **background = across-seed flow agreement** `‖⟨F_s/‖F_s‖⟩‖`∈[0,1] (dark = seeds agree → mean flow trustworthy; light → they cancel, streamlines self-fade), with the attractor scatter overlaid. Averaging is valid because the κ-plane is a shared, consistently-oriented coordinate system (Sample A always at +κ₀). |
+| `summary/fp_meanflow_{stage}.pdf` | Same panels, but showing the **mean vector field** `⟨F_s(κ)⟩` (white streamlines) over a **background = across-seed flow agreement** `‖⟨F_s/‖F_s‖⟩‖`∈[0,1] (dark = seeds agree → mean flow trustworthy; light → they cancel, streamlines self-fade), with the attractors overlaid. Averaging is valid because the κ-plane is a shared, consistently-oriented coordinate system (Sample A always at +κ₀). |
+
+**`--meanflow_overlay {scatter,kde}`** (default `scatter`): swaps the per-seed attractor dots for a
+**KDE density** (plasma, `scipy.stats.gaussian_kde`) when the dots get busy — bright = many seeds land
+there; elongated smears reveal seed spread (e.g. Test C/D). Each density cluster gets a **white-star
+centroid**, and a second colorbar ("attractor density") is added (the Greys colorbar stays for agreement).
+Auto-falls back to the scatter per panel when a condition has <4 or degenerate (collinear) points.
 
 Both use `_reduce_marginals` on the Autonomous panel, so slow-manifold memory states appear as slow
 attractors, not marginal clutter.
