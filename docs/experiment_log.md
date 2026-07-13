@@ -327,3 +327,36 @@ More neurons (`sweep_n1024`) don't change the geometry (self-gains are N-indepen
 run's `config.json` (was hardcoded 512 → crashed loading N≠512 checkpoints); `RunMeta.hidden_size`
 added. `--meanflow_overlay kde` now writes `fp_meanflow_{stage}_kde.pdf` (own filename, never clobbers
 the scatter-overlay `fp_meanflow_{stage}.pdf`).
+
+### `sweep_n1024_mem5` — winner combo (N=1024 × mem50 depth), 11 seeds (2026-07-13)
+
+`memory_lambda=5` at N=1024 (else = `sweep_n1024`). Deep memory raises `g·λ₀` from ~2.1 to **~2.7–3.0**
+(g·λ₁ stays ~2.0–2.4) and **splits the central nogo pole into two low A/B wells** in the good seeds
+(e.g. s0 (−0.7,−0.3)&(+0.9,−0.8); s4 nogo=1.00). Accuracy: **DPA perfect** (dual_dpa mean 1.000, min
+0.999); **nogo lifted but still seed-variable** (dual_gng mean 0.908, range 0.42–1.00). Two seeds
+regressed (s3=0.42, s1=0.73) — their wells landed in the **lick** half-plane (κ₁>0), so nogo collapses.
+So deep memory reliably makes the two isolated wells but their κ₁ side is still seed-dependent.
+
+### DPA/GNG accuracy vs well location — two new analysis tools (2026-07-13)
+
+Both operate on trained checkpoints (any sweep), reusing `bifurcation_probe.load_run` + `dpa_stats`.
+
+- **`dpa_well_accuracy.py`** — d′ (graded match/nonmatch or go/nogo separation) vs memory-well location,
+  per sample (A/B) / trial-type (go/nogo), for each stage. Key result: **DPA decision is a fully-settled
+  attractor** — match/nonmatch clouds are *disjoint* (AUC=1.0, overlap=0.0) with **d′≈44–117σ** regardless
+  of well κ₁, so hard/AUC/overlap accuracy all saturate; only d′ (unsaturated) shows any location trend.
+  GNG go/nogo is also perfectly separable but **~10× thinner margin (d′≈5–32)** — the fragile axis.
+  Encoding split confirmed: **DPA sample→κ₀, GNG go/nogo→κ₁**. Per-seed d′-vs-location is weakly tuned
+  (R²≈0.2); binned/poly tuning fits added (`_add_tuning`, `--poly_deg`).
+- **`perturb_well_sweep.py`** — CAUSAL d′(well-location) curve from ONE network by sliding the wells and
+  re-measuring, across stages. Modes: **`input`** (default) tonic drive on the go channel — moves both
+  wells' κ₁ together, **weights & pairing untouched** (the clean manipulation); `n1`/`m0` weight
+  perturbations (antisymmetric). Findings: **expert d′ sharply peaks (~120) at the trained κ₁≈−0.5 and
+  goes negative (decision inverts) when the well is pushed to either extreme**; **Dual training sharpens
+  the DPA margin ~20×** over the DPA stage. A closed-form **LDA readout-rotation SNR**
+  `d′(ε)=(Δμ_n+εΔμ_m)/√([1,ε]V[1,ε]ᵀ)` is exact for readout rotation (<0.5% vs reprojection) and
+  approximates the physical perturbation at the expert stage (corr 0.53) but not at DPA (dynamics
+  reorganize). Caveat: the go-channel knob is untrained at the DPA stage (no learned κ₁-input there).
+  A/B curves differ by seed **asymmetry**: lopsided s0 gives A/B d′ 122 vs 72; near-symmetric s6
+  collapses them (60 vs 61) near the trained point, with residual split at large drive from the
+  fixed-input-direction × nonlinearity.

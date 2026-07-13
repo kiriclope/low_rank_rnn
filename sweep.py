@@ -953,14 +953,15 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if hinge_gng is not None:          # CLI override: False = uncorrected two-sided MSE-to-±1 holds
         shared["hinge_gng"] = hinge_gng
 
-    # SIZE test: cue_scale=2 (the best cue) with TWICE the neurons (hidden_size=1024 vs the usual
-    # 512), else identical to the cue-sweep base. Does doubling N change the two-well geometry /
-    # robustness? Self-gains are N-independent at init (structured init sets eigenvalues), so the
-    # κ-plane starts the same; this probes whether more units firm up the mem-well result.
+    # WINNER COMBO: N=1024 (firm statistics) × mem50 depth (memory_lambda=5, the two-low-wells
+    # recipe). At N=512 the shallow-memory n1024 base (mem_λ=1.6) kept a central nogo attractor
+    # near κ₀≈0 (supercritical decision self-sustains no-lick). Deep memory should SPLIT that pole
+    # into the two low A/B wells at (±1,−0.8). Question: does the mem50 split survive at N=1024,
+    # and does it fix the seed-variable nogo (0.78–0.95 in the shallow run)?
     for seed in range(11):
-        configs.append(RunConfig(run_id=f"s{seed}_n1024", seed=seed, tau=0.30, hidden_size=1024,
+        configs.append(RunConfig(run_id=f"s{seed}_n1024m5", seed=seed, tau=0.30, hidden_size=1024,
                                  kappa1_reg_weight=0.0, gain=1.0, noise=0.25,
-                                 memory_lambda=1.6, decision_lambda=0.5,
+                                 memory_lambda=5.0, decision_lambda=0.5,
                                  nonlinearity="tanh", nolick_weight=0.5,
                                  nogo_hinge_thresh=-1.0, cue_scale=2.0, **shared))
 
