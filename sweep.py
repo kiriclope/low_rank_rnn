@@ -165,6 +165,7 @@ class RunConfig:
     gng_nogo_weight: float = 1.0        # relative weight on nogo trials within gng_loss
     go_hinge_thresh: float | None = None  # if set, go response window uses relu(thresh-pred)² instead of MSE
     nogo_hinge_thresh: float = -1.0       # hinge_gng no-lick threshold during the memory delay (0 after cue)
+    ramping_gng: bool = False             # cue-driven ramping decision (no delay memory-hold; nogo cancels the cue ramp)
     dpa_hinge_thresh: float | None = None # if set, DPA ±1 decision uses squared hinge toward ±thresh (DPA + dual stages)
     hinge_squared:   bool = True   # DPA ThresholdLoss: True=relu(...)² (default), False=linear margin relu(...)
     aux_weight:      float = 1.0   # weight on the memory (non-decision) channels
@@ -513,7 +514,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                      if config.hinge_gng else criterion)
     gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
                                    go_hinge_thresh=config.go_hinge_thresh,
-                                   nolick_weight=config.nolick_weight,
+                                   nolick_weight=0.0,  # nolick is DUAL-ONLY (GNG delay is fully
+                                   # targeted go+1/nogo−1, so nolick there only hits the cue window)
                                    hinge_gng=config.hinge_gng,
                                    nogo_hinge_thresh=config.nogo_hinge_thresh)
                      if config.nogo_target == 0.0 else criterion)
@@ -651,7 +653,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         X, y   = generate_gng_trials(config.n_batch, gng_timing, config.input_size, noise=noise, target_rank=config.target_rank,
                                       cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                       nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
-                                      input_scale=config.input_scale, attention_input=config.attention_input)
+                                      input_scale=config.input_scale, attention_input=config.attention_input,
+                                      ramping_gng=config.ramping_gng)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -690,7 +693,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                             cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                             go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                             input_scale=config.input_scale, attention_input=config.attention_input,
-                                            paired_only=True)
+                                            paired_only=True, ramping_gng=config.ramping_gng)
         print(f"[{rid}]  data(paired): {list(Xp.shape)} → {list(yp.shape)}", flush=True)
         tlp, vlp     = train_val_split(Xp.to(device), yp.to(device), config.batch_size)
         optp, schedp = _opt_and_sched()
@@ -727,7 +730,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     X, y, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise, target_rank=config.target_rank,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                        nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
-                                       input_scale=config.input_scale, attention_input=config.attention_input)
+                                       input_scale=config.input_scale, attention_input=config.attention_input,
+                                       ramping_gng=config.ramping_gng)
     print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
     tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
     opt, sched = _opt_and_sched()
@@ -917,19 +921,17 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     shared = dict(
         model_type="lowrank",
         hidden_size=512, rank=2, target_rank=2,
-        gain=2.0,                      # g·λ₀(mem)=1.6 at init (bistable); tanh_asym saturates → no spiral
+        # gain / memory_lambda / decision_lambda are set PER-ARM below (gain scan).
         init_style="structured",
-        memory_lambda=0.8,             # memory mode stays supercritical (deep A/B wells)
-        decision_lambda=0.25,          # ↓ from 0.5 → g·λ₁=0.5 at init (decision starts SUBCRITICAL)
-        nonlinearity="tanh", nl_gamma=0.0,   # plain odd tanh — symmetry break comes from ATTENTION, not φ
+        nl_gamma=0.0,                  # nonlinearity set PER-ARM below
         attention_input=True,          # tonic attention bias (breaks κ-field odd symmetry, replaces tanh_asym)
-        nolick_weight=0.5,             # one-sided no-lick pressure over the free delay windows
+        # nolick_weight set PER-ARM below
         hinge_gng=True,                # hinges for ALL stages (DPA ThresholdLoss + GNG/Dual asymmetric one-sided)
         rwd_gng=False,                 # no reward-feedback onto the last channel (clean; avoids the rwd/attention collision)
         cue_on_go_input=True,          # cue rides on go channel (attention arm → input_size=7, else 6)
-        cue_scale=2.0,
+        # cue_scale set PER-ARM below
         input_scale=1.0,
-        noise=0.5, model_noise=0.0,
+        model_noise=0.0,               # `noise` (input noise) is set PER-ARM below
         nogo_target=0.0,               # one-sided nogo (consistent no-lick philosophy)
         go_target=1.0,
         go_hinge_thresh=1.0,
@@ -951,23 +953,19 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if hinge_gng is not None:          # CLI override: False = uncorrected two-sided MSE-to-±1 holds
         shared["hinge_gng"] = hinge_gng
 
-    # SLOW-τ ladder: can a SUBCRITICAL decision mode (g·λ₁<1, no autonomous well → ring
-    # collapses) hold the go/nogo decision across the ~1 s GNG delay by SLOW TRANSIENT instead
-    # of an attractor? Hold time ≈ τ/(1−g·λ); at τ=0.3 s a subcritical mode decays before the
-    # delay ends → training is forced supercritical. Slowing τ (×2, ×4) makes the subcritical
-    # transient viable. Decision starts subcritical (decision_lambda=0.25); memory stays super-
-    # critical (attractor, τ-independent). Prediction: 1× climbs supercritical (ring persists),
-    # 2×/4× stay subcritical (ring breaks → two isolated low memory wells).
-    # ISOLATION via decision-gain penalty: fast1 base (τ=0.3, plain tanh + attention, hinges all
-    # stages) + soft kappa1_reg pushing g·λ₁ → 1 during Dual. Both memory wells are already
-    # lowered (κ₁<0); the ring stays closed only because the decision is supercritical (g·λ₁≈3.5).
-    # Sweep the penalty to shrink the decision wells and (hopefully) open the U into two isolated
-    # low wells — measuring how much g·λ₁ we can shed before go/nogo + match/nonmatch break.
-    reg_arms = [("reg0", 0.0), ("reg1", 1.0), ("reg3", 3.0), ("reg6", 6.0)]
-    for tag, w in reg_arms:
+    # CUE-SCALE sweep (NO regularization). The cue rides on the go channel and drives κ₁ UP; on nogo
+    # trials the net must counteract it to keep κ₁≤0. Hypothesis: a STRONGER cue forces it to sit the
+    # resting/memory wells LOWER (more negative κ₁) to preserve nogo accuracy — so cue_scale is a
+    # task-intrinsic LOWER knob and the wells should deepen with it, no penalty needed. Standard task
+    # (not ramping), baseline memory (mem_λ=1.6), reg=0, nolick=0.5.
+    cue_arms = [("cue2", 2.0), ("cue4", 4.0), ("cue6", 6.0), ("cue8", 8.0)]
+    for tag, cs in cue_arms:
         for seed in range(3):
-            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
-                                     tau=0.30, kappa1_reg_weight=w, **shared))
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, tau=0.30,
+                                     kappa1_reg_weight=0.0, gain=1.0, noise=0.25,
+                                     memory_lambda=1.6, decision_lambda=0.5,
+                                     nonlinearity="tanh", nolick_weight=0.5,
+                                     nogo_hinge_thresh=-1.0, cue_scale=cs, **shared))
 
     return configs
 

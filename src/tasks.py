@@ -110,6 +110,7 @@ def generate_gng_trials(
     go_on_rwd_input: bool = False,
     input_scale: float = 1.0,
     attention_input: bool = False,
+    ramping_gng: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -146,17 +147,22 @@ def generate_gng_trials(
 
     targets[:, n_on[0]:, -1] = torch.nan
 
-    # memory: hold the go/nogo decision (±1) through the sample-off → cue-on delay
-    targets[idx_go,   n_off[0]:n_on[1], -1] = 1.0
-    targets[idx_nogo, n_off[0]:n_on[1], -1] = -1.0
-
-    # # during cue
-    # targets[idx_go,   n_on[1]:n_off[1], -1] = go_target
-    # targets[idx_nogo, n_on[1]:n_off[1], -1] = nogo_target
-
-    # # after cue
-    targets[idx_go,   n_off[1]:, -1] = go_target
-    targets[idx_nogo, n_off[1]:, -1] = nogo_target
+    if ramping_gng:
+        # RAMPING GNG: NO decision memory-hold through the delay (that hold was the source of the
+        # supercritical requirement). The cue (on the go channel, both trials) drives a lick ramp;
+        # go EXPRESSES it, nogo DELETES it (−1 during cue). The decision is input-driven at the
+        # cue → free to stay subcritical, so no autonomous decision wells (ring / nogo pole).
+        targets[idx_go,   n_on[1]:n_off[1], -1] = go_target   # cue: express the ramp
+        targets[idx_nogo, n_on[1]:n_off[1], -1] = -1.0        # cue: cancel the cue-driven ramp
+        targets[idx_go,   n_off[1]:, -1] = go_target          # reward
+        targets[idx_nogo, n_off[1]:, -1] = nogo_target        # reward: rest at no-lick
+    else:
+        # memory: hold the go/nogo decision (±1) through the sample-off → cue-on delay
+        targets[idx_go,   n_off[0]:n_on[1], -1] = 1.0
+        targets[idx_nogo, n_off[0]:n_on[1], -1] = -1.0
+        # after cue
+        targets[idx_go,   n_off[1]:, -1] = go_target
+        targets[idx_nogo, n_off[1]:, -1] = nogo_target
 
     return inputs, targets
 
@@ -176,6 +182,7 @@ def generate_dual_trials(
     input_scale: float = 1.0,
     attention_input: bool = False,
     paired_only: bool = False,
+    ramping_gng: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -259,8 +266,15 @@ def generate_dual_trials(
     # # 500 ms after cue
     dt = int(n_off[2] + (n_off[-1] - n_on[-1]) / 2)
 
-    targets[idx_go,   n_off[2]:dt, -1] = go_target
-    targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
+    if ramping_gng:
+        # cue drives the ramp (both trials); go expresses through cue+reward, nogo DELETES it
+        # during the cue (−1) then rests no-lick. Delay stays free (no decision memory-hold).
+        targets[idx_go,   n_on[2]:dt, -1] = go_target
+        targets[idx_nogo, n_on[2]:n_off[2], -1] = -1.0        # cue: cancel the ramp
+        targets[idx_nogo, n_off[2]:dt, -1] = nogo_target      # reward: rest at no-lick
+    else:
+        targets[idx_go,   n_off[2]:dt, -1] = go_target
+        targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
 
     condition_names = np.array([
         f"{s}_{g}_{t}" if g != "none" else f"{s}_{t}"

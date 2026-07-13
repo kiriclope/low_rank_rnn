@@ -713,6 +713,34 @@ def _condition_colors(cond_labels):
 # Main phase-portrait plotter
 # ---------------------------------------------------------------------------
 
+def _reduce_marginals(pts, labels, mem_thresh=0.6, keep_thresh=0.3):
+    """Autonomous-field marginal cleanup. A near-line-attractor makes almost every point
+    'marginal'. If the memory is resolved as a genuine BISTABLE PAIR of (slow_)attractors
+    (one κ₀>mem_thresh and one κ₀<−mem_thresh), drop ALL marginal points (slow-manifold clutter).
+    If a memory side is MISSING, keep a single best marginal point — the most extreme κ₀ on that
+    side — as a good approximation of where the missing memory well sits."""
+    pts = np.asarray(pts); labels = np.asarray(labels, dtype=object).copy()
+    if len(pts) == 0:
+        return pts, labels
+    att = np.isin(labels, ("attractor", "slow_attractor"))
+    mem_pos = bool(np.any(att & (pts[:, 0] >  mem_thresh)))
+    mem_neg = bool(np.any(att & (pts[:, 0] < -mem_thresh)))
+    marg = labels == "marginal"
+    keep = ~marg                       # drop all marginals by default
+    if not (mem_pos and mem_neg):      # a memory is missing → keep one representative per missing side,
+        midx = np.where(marg)[0]       # relabeled 'slow_attractor' (it IS transversely attracting)
+        if len(midx):
+            if not mem_neg:
+                j = midx[np.argmin(pts[midx, 0])]
+                if pts[j, 0] < -keep_thresh:
+                    keep[j] = True; labels[j] = "slow_attractor"
+            if not mem_pos:
+                j = midx[np.argmax(pts[midx, 0])]
+                if pts[j, 0] >  keep_thresh:
+                    keep[j] = True; labels[j] = "slow_attractor"
+    return pts[keep], labels[keep]
+
+
 def plot_task_flow_fields(
     model, inputs, timing, task,
     targets=None, condition_names=None, dual_mode="conditions",
@@ -866,12 +894,16 @@ def plot_task_flow_fields(
             ax.streamplot(K1[0, :], K2[:, 0], U, V, color="white", density=1.05,
                           linewidth=0.70, arrowsize=0.80, zorder=2)
 
+        fps_draw, labels_draw = cache["fixed_points"], cache["fp_labels"]
+        if spec["name"] == "Autonomous" and len(labels_draw):
+            fps_draw, labels_draw = _reduce_marginals(fps_draw, labels_draw)
+
         for label, marker in [("attractor","o"),("slow_attractor","o"),("marginal","s"),
                               ("saddle","x"),("repeller","^"),("nonhyperbolic","D")]:
-            if len(cache["fp_labels"]) == 0: continue
-            mask = cache["fp_labels"] == label
+            if len(labels_draw) == 0: continue
+            mask = labels_draw == label
             if not np.any(mask): continue
-            pts = cache["fixed_points"][mask]
+            pts = fps_draw[mask]
             if label == "saddle":
                 ax.scatter(pts[:, 0], pts[:, 1], s=60, marker="x", color="cyan", linewidths=1.5, zorder=10, label=label)
             elif label == "marginal":
@@ -941,7 +973,10 @@ def plot_task_flow_fields(
         h, l = ax.get_legend_handles_labels()
         handles.extend(h); labels_list.extend(l)
     unique = dict(zip(labels_list, handles))
-    axes[0].legend(unique.values(), unique.keys(), frameon=False, fontsize=7, loc="best", handlelength=1.1)
+    _leg = axes[0].legend(unique.values(), unique.keys(), frameon=False, fontsize=7,
+                          loc="lower right", handlelength=1.1)
+    for _t in _leg.get_texts():
+        _t.set_color("white")
 
     cbar = fig.colorbar(last_hm, cax=cax)
     if use_sim_field:

@@ -678,3 +678,65 @@ match/nonmatch **symmetric ±`dpa_hinge_thresh`** (same shape in DPA `ThresholdL
 is a separate one-sided `relu(κ₁)²` over free windows, **excluding the sample** — its ~0.13 floor
 (the go lick-ramp just before the response window) is why Dual never hits `stop_loss=0.1`. `_dual_accuracy`
 now scores per-side (go/nogo) against the target in the after-cue window (`dual_go`/`dual_nogo`).
+
+## 14. Session 2026-07-13 — self-gains are task-locked; strong-memory wins; analysis tooling
+
+Systematic follow-up to §13. Question: reach the **two isolated low wells** robustly, *without* the
+fragile isolation of §13. Ran ~10 sweeps (all `docs/experiment_log.md`, 2026-07-13). Findings:
+
+### 14a. The self-gains are TASK-LOCKED (the unifying negative result)
+`memory_lambda`, `decision_lambda`, `gain`, `noise` are all **initialization / scale** knobs; the
+**trained** self-gains `g·λ₀`, `g·λ₁` are set by the *task*, not the init — training regrows them.
+- `sweep_gainscan` (gain {0.5,1,1.5}, init self-gains held fixed): g·λ₁ tracks gain but stays
+  supercritical (1.8–2.8) — never reaches ≈1.
+- `sweep_noise_g10` (noise {0.1..1}): high noise → higher g·λ₁ (robustness needs a deeper attractor);
+  low noise plateaus ~2.2 and can *collapse* to a single deep nogo well. Doesn't reach the sweet spot.
+- `sweep_relu_ml` (memory_lambda {0.6..1.6}, relu): trained g·λ₀ regrows to ~1.6–2.0 regardless of init
+  → relu stays a near-marginal, unstable **integrator** (Re₀>0, no point attractors); DPA still solves.
+- Setting `decision_lambda` small does NOT help isolation — the decision must autonomously *hold*
+  go/nogo across the no-input delay, so training forces g·λ₁>1. Confirmed conceptually + by every sweep.
+
+### 14b. Isolation is fragile (confirms §13's caveat)
+`sweep_nolick1` (reg + strong nolick): driving g·λ₁→1 gives the two low wells in only ~1/3 seeds; in
+the rest the marginal decision + coupling **destabilizes the memory** (0 stable attractors even in ±4.5).
+"Get rid of the nogo pole" ⟺ remove the decision's down-well ⟺ isolate ⟺ fragile (`sweep_nogopole`:
+raising `nogo_hinge_thresh` toward 0 does NOT remove the pole — it's the decision's autonomous down-well,
+a consequence of supercriticality, and worsens at thresh 0).
+
+### 14c. ★ WINNER — strong memory (no isolation): `sweep_mem` mem50
+`memory_lambda=5` (init g·λ₀=5, trains to ~3), `kappa1_reg_weight=0` (decision left SUPERCRITICAL/robust),
+gain 1, noise 0.25, nolick 0.5. A deep-enough memory forces the deep no-lick state to **retain κ₀=±1**,
+splitting the memory-erasing nogo pole at (≈0,−1.5) into **two memory-preserving low wells at (±1,−0.8)**
+— the two-low-wells target with a *robust supercritical* decision (g·λ₁≈2.3–2.6), DPA/go=1.0, **nogo up to
+1.0**, in **2/3 seeds**. The failing seed had the *highest* g·λ₁ (2.88) → a mild g·λ₁ trim (not full
+isolation) is the obvious follow-up to make it 3/3. Even mem16 (g·λ₀≈2.1) hits it in a good seed.
+
+### 14d. Task-side attempts (both negative)
+- **Ramping-GNG** (`ramping_gng` flag, `sweep_ramping`): removed the delay memory-hold so the decision is
+  cue-driven (go expresses the cue ramp, nogo cancels it). Prediction: subcritical decision. **Failed** —
+  g·λ₁ still ~2.2 (init 0.1 or 0.5), ring/pole persists, nogo often *worse*. The go/nogo identity still
+  has to survive the delay so the net holds it in κ₁ supercritically anyway. Removing the *explicit*
+  target isn't enough; you'd have to make go/nogo genuinely reactive (present at response).
+- **cue_scale** (`sweep_cuescale`, cue {2,4,6,8}): hypothesis = stronger cue → deeper wells to keep nogo.
+  **Refuted** — stronger cue *amplifies the decision poles* (more ring-like) and monotonically *hurts*
+  nogo (0.91→0.71). And there's a **ceiling/peak**: the cue-driven κ₁ peaks ~cue 2 (~0.73·ceiling) then
+  *decreases* — a very strong cue overrides the recurrence and forces the raw input-sign pattern (less
+  n₁-aligned). So cue_scale's useful range is ~1–3; beyond that it only degrades.
+
+### 14e. Why the decision/cue poles sit at κ₁≈1.5 (not π/2)
+The go/nogo/cue attractors are **input-clamped** → decision units saturate → κ₁ → the readout ceiling
+`(1/N)Σ|n₁|` (≈1.9), landing at ~**0.8·‖n₁‖₁/N** (the input aligns ~80% with the readout sign pattern).
+Same law on the memory axis with `|n₀|` (smaller → memory poles at ±1 are shorter than decision poles).
+So the ~1.5 is the trained decision-readout scale; **π/2 is a coincidence**.
+
+### 14f. Analysis tooling built this session (see `docs/running.md`, `docs/analysis.md`)
+- **`/bifurcation-probe` skill** — `bifurcation_probe.py` (g·λ₀/g·λ₁, off-diagonals, Re₀, wells, accuracy
+  table), `bifurcation_flows.py` (labeled κ-plane flows), `bifurcation_gaussian.py` (generic-Gaussian
+  bifurcation illustration).
+- **brainpy `SlowPointFinder`** as the default fixed-point finder (`--finder brainpy`, scipy fallback),
+  with `--slow_tol`/`--marg` exposed. Verified it matches scipy on tanh; adds slow-manifold detection.
+  Marginal points that are transversely-attracting slow segments are relabeled **slow attractor**.
+- **New `plot_sweep` summaries**: `fp_scatter_{stage}.pdf` (per stage, panel per input condition,
+  across-seed attractor/slow-attractor scatter) and `fp_meanflow_{stage}.pdf` (mean vector field +
+  across-seed agreement background + attractor overlay). Replaced the old `fp_scatter_by_*`.
+- **Figure 1 draft**: `results/figures/paper/fig1_model.pdf` (model + κ-framework + tasks + curriculum).

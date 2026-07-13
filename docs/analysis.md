@@ -165,3 +165,33 @@ These take `--ckpt_dir` / `results.jsonl` directly and are useful for quick insp
 | `plot_fp_scatter.py` | FP scatter for one run |
 | `plot_ring.py` | Ring visualisation |
 | `plot_dpa_by_trialtype.py` | DPA accuracy split by trial type |
+
+---
+
+## Fixed-point finder & marginal handling (updated 2026-07-13)
+
+`plot_sweep.py`'s individual flows and FP scatters, and the standalone `bifurcation_*` tools, now share:
+
+- **brainpy `SlowPointFinder`** is the default FP finder in the `bifurcation_*` tools (`--finder brainpy`,
+  scipy fallback; `--slow_tol`, `--marg` exposed). `plot_sweep`'s individual flows still use the internal
+  scipy `find_all_fixed_points` (keeps the exact original multi-panel look).
+- **Marginal cleanup** (`_reduce_marginals` in `src/dynamics.py`): a near-line-attractor makes almost
+  every point "marginal". If the autonomous field is a resolved **bistable pair** (an attractor at κ₀>0.6
+  *and* one at κ₀<−0.6), all marginal clutter is dropped. If a memory side is **missing**, the single best
+  marginal (most extreme κ₀ on that side) is kept and **relabeled `slow_attractor`** (orange circle) — it
+  is genuinely transversely attracting (~−0.6) with a near-neutral along-manifold direction, so it *is* the
+  (soft) memory attractor, just not a stiff point. Applied to the Autonomous panel of the individual flows
+  and the scatter/mean-flow summaries.
+- Individual-flow **legend** → bottom-right, white text (on the dark magma Autonomous panel).
+
+## New summary figures (per stage, replacing `fp_scatter_by_*`)
+
+`summary_fp_scatters` now emits, for each stage `dpa/naive/expert` (via `plot_sweep --plots scatter`):
+
+| File | Content |
+|---|---|
+| `summary/fp_scatter_{stage}.pdf` | One panel per input condition (Autonomous / Sample A,B / Test C,D / Go / NoGo); each scatters the **attractors + slow attractors across all seeds** (colour = init_style). Read across-seed consistency: tight cluster = robust, spread = seed-variable. |
+| `summary/fp_meanflow_{stage}.pdf` | Same panels, but showing the **mean vector field** `⟨F_s(κ)⟩` (white streamlines) over a **background = across-seed flow agreement** `‖⟨F_s/‖F_s‖⟩‖`∈[0,1] (dark = seeds agree → mean flow trustworthy; light → they cancel, streamlines self-fade), with the attractor scatter overlaid. Averaging is valid because the κ-plane is a shared, consistently-oriented coordinate system (Sample A always at +κ₀). |
+
+Both use `_reduce_marginals` on the Autonomous panel, so slow-manifold memory states appear as slow
+attractors, not marginal clutter.

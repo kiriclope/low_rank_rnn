@@ -296,3 +296,27 @@ shared = dict(
     optimizer="adam", use_scheduler=False,
 )
 ```
+
+---
+
+## 2026-07-13 — self-gain / task-side sweeps (all tanh unless noted, gain 1.0, noise 0.25, nolick 0.5, reg 0 unless noted)
+
+Base = §13 fast1 recipe (structured init, attention, hinge_gng, tau 0.30, adam, 100/100/100). Init
+self-gains held fixed across arms via λ-scaling (`memory_lambda=1.6/gain`, `decision_lambda=0.5/gain`)
+where a gain axis is swept. Read-out via `bifurcation_probe.py` (g·λ₀/g·λ₁, wells, nogo). Science in
+`docs/ring_lowerplane_log.md` §14.
+
+| sweep | axis | key result |
+|---|---|---|
+| `sweep_gainscan` | gain {0.5,1,1.5} | g·λ₁ tracks gain (1.8→2.8) but stays supercritical; wells at κ₁≈0, seed-inconsistent. Self-gain is task-locked. |
+| `sweep_noise_g10` | noise {0.1,0.25,0.5,1} @ gain 1 | high noise → higher g·λ₁ (robustness); low noise plateaus ~2.2 / collapses to single nogo well. No sweet spot. |
+| `sweep_nolick0` | reg {0,0.5,1} @ nolick **0** | without nolick the isolated wells float UP to κ₁≈+0.7 (lick side, 2/3 seeds), nogo collapses. nolick does the lowering. |
+| `sweep_nolick1` | reg {0,0.5,1} @ nolick **1** (Dual-only) | reg1 seed 2 nails two low wells at (±1,−0.9) nogo 0.90; but 2/3 seeds lose the memory attractor entirely (isolation fragile). |
+| `sweep_nogopole` | `nogo_hinge_thresh` {0,−0.5,−1} | raising toward 0 does NOT remove the nogo pole — it becomes the sole global attractor (memory poles → saddles). The pole = decision's autonomous down-well. |
+| `sweep_relu_noreg` | relu, reg 0 | relu → asymmetric spiral, **0 point attractors** (near-marginal integrator), broken A/B symmetry. Not ring-capable. |
+| `sweep_relu_ml` | relu, memory_lambda {0.6..1.6} | trained g·λ₀ regrows to ~1.6–2.0 regardless; Re₀>0 everywhere (unstable), no attractors. Verified reduced field = exact 2-timescale stability (h is the fast var, α_rec>α). |
+| **`sweep_mem`** ★ | **memory_lambda {1.6,2.5,3.5,5}** | **mem50 (memory_lambda=5): two isolated low wells at (±1,−0.8), robust supercritical decision (no isolation), DPA/go=1.0, nogo up to 1.0, 2/3 seeds.** The winning robust route. |
+| `sweep_ramping` | `ramping_gng=True`, decision_lambda {0.1,0.5} | cue-driven decision did NOT go subcritical (g·λ₁~2.2); go/nogo delay-memory forces supercritical. Nogo often worse. |
+| `sweep_cuescale` | cue_scale {2,4,6,8} | stronger cue amplifies decision poles + hurts nogo (0.91→0.71). Ceiling: cue-driven κ₁ peaks ~cue 2 then decreases (strong cue overrides recurrence). |
+
+**Takeaway:** `sweep_mem` mem50 (deep memory, robust decision, no isolation) is the two-low-wells recipe.

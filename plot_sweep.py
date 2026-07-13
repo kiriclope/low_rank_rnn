@@ -44,7 +44,8 @@ import torch
 from analyze import load_results
 from src.dynamics import (
     find_all_fixed_points, classify_fixed_points, make_input,
-    plot_task_flow_fields,
+    plot_task_flow_fields, _reduce_marginals,
+    low_rank_numpy_params, low_rank_field_np,
 )
 from src.models import LowRankModel, EILowRankModel, EISTPModel
 from src.tasks import (
@@ -932,11 +933,14 @@ def _slug(label: str) -> str:
     return label.lower().replace(" ", "_")
 
 
-def _draw_fp_points(ax, init_style: str, fps, stabs):
+def _draw_fp_points(ax, init_style: str, fps, stabs, only=None):
     """Scatter one run's fixed points onto ax (color = init_style, fill = stability).
-    slow_attractor → orange edge, marginal → gold hollow (matches flow plots)."""
+    slow_attractor → orange edge, marginal → gold hollow (matches flow plots).
+    only: iterable of stability labels to draw (e.g. ('attractor','slow_attractor'))."""
     rc = STYLE_COLORS.get(init_style, "gray")
     for fp, stab in zip(fps, stabs):
+        if only is not None and stab not in only:
+            continue
         if stab == "attractor":
             fc, ec, sz, lw = rc, rc, 60, 0.8
         elif stab == "slow_attractor":
@@ -968,11 +972,8 @@ def _fp_legend(fig, all_metas):
                for s in ["structured", "random"]
                if any(m.init_style == s for m in all_metas)]
     stab_handles = [
-        plt.scatter([], [], marker="o", s=60, facecolors="gray",  edgecolors="gray",  label="attractor"),
-        plt.scatter([], [], marker="o", s=60, facecolors="gray",  edgecolors="orange", linewidths=1.8, label="slow attractor"),
-        plt.scatter([], [], marker="o", s=60, facecolors="none",  edgecolors="gold",   linewidths=1.8, label="marginal"),
-        plt.scatter([], [], marker="o", s=45, facecolors="white", edgecolors="gray",  linewidths=1.2, label="saddle"),
-        plt.scatter([], [], marker="o", s=35, facecolors="white", edgecolors="gray",  linewidths=0.7, label="repeller"),
+        plt.scatter([], [], marker="o", s=60, facecolors="gray", edgecolors="gray",  label="attractor"),
+        plt.scatter([], [], marker="o", s=60, facecolors="gray", edgecolors="orange", linewidths=1.8, label="slow attractor"),
     ]
     fig.legend(handles=patches + stab_handles, loc="lower center", ncol=5,
                fontsize=7, frameon=False, bbox_to_anchor=(0.5, -0.06))
@@ -1000,21 +1001,96 @@ def _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds, slow_t
                     fps, _   = find_all_fixed_points(model, xlim=XLIM, ylim=YLIM, ff_input=ff,
                                                      n_seeds=n_seeds, residual_tol=1e-8, merge_tol=5e-2)
                     stabs, _ = classify_fixed_points(model, fps, ff_input=ff, slow_tol=slow_tol)
+                    if label == "Autonomous":   # collapse slow-manifold marginals to slow attractors
+                        fps, stabs = _reduce_marginals(np.asarray(fps), np.asarray(stabs))
                     data[label][stage].append((meta.init_style, fps, stabs))
             del model
         print(f"  fp_scatter collected: {meta.run_id}")
     return data
 
 
-def _render_fp_by_stage(data_for_label, all_metas, title, out_path, lim=None):
-    """3-panel (stage) figure for a single input condition."""
-    fig, axes = plt.subplots(1, len(STAGES), figsize=(13, 4.5), constrained_layout=True)
-    for ax, stage in zip(axes, STAGES):
-        for init_style, fps, stabs in data_for_label[stage]:
-            _draw_fp_points(ax, init_style, fps, stabs)
-        _style_fp_ax(ax, f"{stage} ({STAGE_TASK[stage].upper()})", ylabel=(ax is axes[0]), lim=lim)
+def _render_fp_scatter_by_stage(data, stage, conditions, all_metas, out_path, lim=None):
+    """One figure PER STAGE: a panel per input condition (Autonomous + samples/tests + go/nogo),
+    each scattering the ATTRACTORS + SLOW ATTRACTORS across all seeds (color = init_style)."""
+    conds = list(conditions)
+    n = len(conds)
+    fig, axes = plt.subplots(1, n, figsize=(n * 2.15 + 0.4, 3.1),
+                             constrained_layout=True, sharex=True, sharey=True)
+    axes = np.atleast_1d(axes)
+    for ax, (label, _dims, _c, _m) in zip(axes, conds):
+        for init_style, fps, stabs in data[label][stage]:
+            _draw_fp_points(ax, init_style, fps, stabs, only=("attractor", "slow_attractor"))
+        _style_fp_ax(ax, label, ylabel=(ax is axes[0]), lim=lim)
     _fp_legend(fig, all_metas)
-    fig.suptitle(title, fontsize=10)
+    fig.suptitle(f"{stage} ({STAGE_TASK[stage].upper()}) — attractors & slow attractors across seeds",
+                 fontsize=10)
+    fig.savefig(out_path, bbox_inches="tight")
+    print(f"Saved {out_path}")
+    plt.close(fig)
+
+
+def _collect_mean_flow(all_metas, ckpt_dir, device, conditions, lim, grid_n=56):
+    """mflow[label][stage] = dict(K0,K1, d0,d1 = MEAN field across seeds, R = across-seed agreement
+    in [0,1] = ‖⟨F_s/‖F_s‖⟩‖ ; ≈1 all seeds flow the same way, ≈0 they cancel). Analytic field, so
+    LowRankModel only (eistp/ei skipped)."""
+    ax = np.linspace(lim[0], lim[1], grid_n)
+    K0, K1 = np.meshgrid(ax, ax)
+    kap = np.stack([K0, K1], axis=-1)
+    acc = {lbl: {s: {"d0": [], "d1": []} for s in STAGES} for lbl, *_ in conditions}
+    for meta in all_metas:
+        for stage in STAGES:
+            model = _build_model(meta, device)
+            if not _load_ckpt(model, ckpt_dir, stage, meta.run_id, device) or _model_has_backbone(model):
+                del model; continue
+            p = low_rank_numpy_params(model)
+            dtype = next(model.parameters()).dtype
+            for lbl, dims, _c, _m in conditions:
+                ff = make_input(meta.input_size, active_dims=dims, value=1.0, device=device, dtype=dtype)
+                if meta.attention_input:
+                    ff[-1] = 1.0
+                F = low_rank_field_np(p, kap, ff_input=ff.detach().cpu().numpy())
+                acc[lbl][stage]["d0"].append(F[..., 0]); acc[lbl][stage]["d1"].append(F[..., 1])
+            del model
+        print(f"  mean_flow collected: {meta.run_id}")
+    out = {lbl: {s: None for s in STAGES} for lbl, *_ in conditions}
+    for lbl in acc:
+        for s in STAGES:
+            if not acc[lbl][s]["d0"]:
+                continue
+            D0 = np.stack(acc[lbl][s]["d0"]); D1 = np.stack(acc[lbl][s]["d1"])
+            nrm = np.hypot(D0, D1); nrm = np.where(nrm < 1e-9, 1e-9, nrm)
+            R = np.hypot((D0 / nrm).mean(0), (D1 / nrm).mean(0))
+            out[lbl][s] = dict(K0=K0, K1=K1, d0=D0.mean(0), d1=D1.mean(0), R=R)
+    return out
+
+
+def _render_meanflow_by_stage(mflow, scatter_data, stage, conditions, all_metas, out_path, lim):
+    """One figure PER STAGE: panel per input condition. Background darkness = across-seed agreement
+    (dark = all seeds flow the same way → mean flow trustworthy; white = they cancel → the white
+    streamlines self-fade there, so a cancellation isn't mistaken for real flow). Attractors +
+    slow attractors from every seed overlaid."""
+    conds = list(conditions)
+    n = len(conds)
+    fig, axes = plt.subplots(1, n, figsize=(n * 2.15 + 0.4, 3.1),
+                             constrained_layout=True, sharex=True, sharey=True)
+    axes = np.atleast_1d(axes)
+    hm = None
+    for ax, (lbl, _d, _c, _m) in zip(axes, conds):
+        m = mflow[lbl][stage]
+        if m is not None:
+            hm = ax.pcolormesh(m["K0"], m["K1"], m["R"], cmap="Greys", vmin=0.0, vmax=1.0,
+                               shading="auto", zorder=0, rasterized=True)
+            ax.streamplot(m["K0"][0, :], m["K1"][:, 0], m["d0"], m["d1"], color="white",
+                          density=1.0, linewidth=0.6, arrowsize=0.7, zorder=2)
+        for init_style, fps, stabs in scatter_data[lbl][stage]:
+            _draw_fp_points(ax, init_style, fps, stabs, only=("attractor", "slow_attractor"))
+        _style_fp_ax(ax, lbl, ylabel=(ax is axes[0]), lim=lim)
+    _fp_legend(fig, all_metas)
+    if hm is not None:
+        cb = fig.colorbar(hm, ax=list(axes), fraction=0.012, pad=0.01)
+        cb.set_label("across-seed flow agreement", fontsize=7); cb.ax.tick_params(labelsize=6)
+    fig.suptitle(f"{stage} ({STAGE_TASK[stage].upper()}) — mean flow (bg = seed agreement) + attractors",
+                 fontsize=10)
     fig.savefig(out_path, bbox_inches="tight")
     print(f"Saved {out_path}")
     plt.close(fig)
@@ -1027,21 +1103,19 @@ def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
     conditions = _input_conditions("dual", ref.input_size, ref.cue_on_go_input)
     data       = _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds, slow_tol=slow_tol)
 
-    # Autonomous → fp_scatter_by_stage.pdf
-    _render_fp_by_stage(
-        data["Autonomous"], all_metas,
-        "Autonomous fixed points across stages — all runs",
-        os.path.join(out_dir, "fp_scatter_by_stage.pdf"), lim=lim,
-    )
+    # One figure per STAGE (dpa / naive / expert), panels = input conditions, across-seed scatter.
+    for stage in STAGES:
+        _render_fp_scatter_by_stage(
+            data, stage, conditions, all_metas,
+            os.path.join(out_dir, f"fp_scatter_{stage}.pdf"), lim=lim,
+        )
 
-    # Each input-driven condition → one by-stage figure
-    for label, dims, _color, _marker in conditions:
-        if label == "Autonomous":
-            continue
-        _render_fp_by_stage(
-            data[label], all_metas,
-            f"Input-driven fixed points across stages — {label} (all runs)",
-            os.path.join(out_dir, f"fp_scatter_by_input_{_slug(label)}.pdf"), lim=lim,
+    # Companion mean-flow figures: averaged vector field + across-seed agreement + attractor overlay.
+    mflow = _collect_mean_flow(all_metas, ckpt_dir, device, conditions, lim=lim)
+    for stage in STAGES:
+        _render_meanflow_by_stage(
+            mflow, data, stage, conditions, all_metas,
+            os.path.join(out_dir, f"fp_meanflow_{stage}.pdf"), lim=lim,
         )
 
 

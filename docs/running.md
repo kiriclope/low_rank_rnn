@@ -252,3 +252,41 @@ The `/√K` coupling + STP is near-critical and can run away (rates → ∞). Th
 3. **Graceful divergence** — if a whole epoch goes non-finite, `_run_epoch` returns `nan` →
    `fit()` stops that run and keeps the best pre-divergence state (records a result, no crash).
 Plus `grad_clip_norm=1.0` (keep it on — it's the difference between 5/5 and ~4/5).
+
+---
+
+## Bifurcation analysis tools (`/bifurcation-probe` skill)
+
+Repo-root tools (added 2026-07-13) for the decision-mode bifurcation analysis. All are pure-analytic
+(exact for `LowRankModel`) and need the usual `LD_PRELOAD`.
+
+```bash
+# g·λ₀/g·λ₁ + off-diagonals + Re₀ + wells + accuracy, per run (auto-discovers runs):
+LD_PRELOAD=… python bifurcation_probe.py --sweep_dir results/dual/sweep_mem [--xlim 2.5] [--csv t.csv]
+
+# labeled κ-plane flow per run (streamlines + fixed points + F₁=0 nullcline + slow-field background):
+LD_PRELOAD=… python bifurcation_flows.py --sweep_dir results/dual/sweep_mem [--run_ids s0_mem50] \
+    [--xlim 2.0] [--stages dpa naive expert] [--field_noise]
+
+# generic-Gaussian bifurcation illustration (no checkpoints):
+LD_PRELOAD=… python bifurcation_gaussian.py --N 512 --gain 2 --gl0 4 --gl1 0.6 1 2 3.5 --beta 0.5
+```
+
+**Fixed-point finder** (both probe + flows): `--finder brainpy` (default) uses brainpy's
+`SlowPointFinder` (Adam gradient descent on the speed ½‖F‖², then the exact analytic Jacobian for
+classification), with an automatic **scipy fallback** if jax/brainpy is missing. `--finder scipy` is the
+old grid root-finder (faster for the tabular readout). Knobs: `--slow_tol` (max squared speed kept as a
+slow fixed point; raise to reveal slow manifolds) and `--marg` (|Re eigenvalue| below this → labeled
+`marginal`/slow-manifold direction; a transversely-attracting slow segment is shown as **slow attractor**).
+
+Requires `jax[cpu]` + `brainpy` (installed 2026-07-13). CPU jax is deliberate — 2-D FP finding is
+negligible compute and jax[cuda] alongside torch risks a CUDA/cuDNN clash. brainpy matches scipy on the
+tanh fields; its value is slow-manifold detection (relu integrator, rings).
+
+## Ramping-GNG task variant (`ramping_gng` flag)
+
+`RunConfig(ramping_gng=True)` makes the go/nogo decision **cue-driven** instead of delay-held: no decision
+target during the memory delay (`src/tasks.py`, both `generate_gng_trials` and `generate_dual_trials`);
+during the cue window go → `go_target`, **nogo → −1** (cancel the cue's upward ramp), then the reward
+window rests at `nogo_target`. Default `False` (byte-identical to before). Result: did *not* subcriticalize
+the decision (`docs/ring_lowerplane_log.md` §14d) — kept for the record / future reactive-task work.
