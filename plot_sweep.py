@@ -1072,22 +1072,25 @@ def _collect_mean_flow(all_metas, ckpt_dir, device, conditions, lim, grid_n=56):
     return out
 
 
-def _cluster_centroids(pts, tol=0.4):
-    """Greedy distance clustering of a point cloud → one centroid (mean) per cluster."""
-    clusters = []
-    for p in np.asarray(pts, dtype=float):
-        for c in clusters:
-            if np.hypot(*(np.mean(c, 0) - p)) < tol:
-                c.append(p); break
-        else:
-            clusters.append([p])
-    return [np.mean(c, 0) for c in clusters]
+def _kde_modes(X, Y, Z, frac=0.50, min_dist=0.5):
+    """Density peaks (local maxima) of the KDE grid → one point per visible cloud. Greedy-dedup
+    within min_dist, keep only peaks above frac·max. Matches the number of clouds the eye sees
+    (unlike distance-clustering the raw points, which over-splits a smeared cloud)."""
+    from scipy.ndimage import maximum_filter
+    zmax = maximum_filter(Z, size=max(3, Z.shape[0] // 8))
+    cand = sorted(((Z[i, j], X[i, j], Y[i, j])
+                   for i, j in np.argwhere((Z == zmax) & (Z > frac * Z.max()))), reverse=True)
+    modes = []
+    for _z, cx, cy in cand:
+        if all(np.hypot(cx - ux, cy - uy) > min_dist for ux, uy in modes):
+            modes.append((cx, cy))
+    return modes
 
 
 def _kde_density_overlay(ax, pts, lim, cmap="plasma"):
     """Filled 2-D KDE of the across-seed attractor points (bright = many seeds land here), plus a
-    centroid marker per cluster. Returns the contourf mappable (for a colorbar), or None if too few /
-    degenerate points (caller falls back to a scatter)."""
+    small white dot at each density peak (one per cloud). Returns the contourf mappable (for a
+    colorbar), or None if too few / degenerate points (caller falls back to a scatter)."""
     pts = np.asarray(pts, dtype=float)
     if len(pts) < 4 or np.ptp(pts[:, 0]) < 1e-3 or np.ptp(pts[:, 1]) < 1e-3:
         return None
@@ -1100,9 +1103,7 @@ def _kde_density_overlay(ax, pts, lim, cmap="plasma"):
     X, Y = np.meshgrid(g, g)
     Z = kde(np.vstack([X.ravel(), Y.ravel()])).reshape(X.shape)
     cs = ax.contourf(X, Y, Z, levels=6, cmap=cmap, alpha=0.55, zorder=4)
-    # small white centroid dots (one per attractor/slow-attractor cluster) — kept small so the KDE
-    # density stays visible. pts is already filtered to attractor + slow_attractor by the caller.
-    for cx, cy in _cluster_centroids(pts):
+    for cx, cy in _kde_modes(X, Y, Z):   # one small white dot per KDE cloud
         ax.scatter(cx, cy, marker="o", s=16, facecolors="white", edgecolors="black",
                    linewidths=0.4, zorder=8)
     return cs
