@@ -318,5 +318,12 @@ where a gain axis is swept. Read-out via `bifurcation_probe.py` (g·λ₀/g·λ�
 | **`sweep_mem`** ★ | **memory_lambda {1.6,2.5,3.5,5}** | **mem50 (memory_lambda=5): two isolated low wells at (±1,−0.8), robust supercritical decision (no isolation), DPA/go=1.0, nogo up to 1.0, 2/3 seeds.** The winning robust route. |
 | `sweep_ramping` | `ramping_gng=True`, decision_lambda {0.1,0.5} | cue-driven decision did NOT go subcritical (g·λ₁~2.2); go/nogo delay-memory forces supercritical. Nogo often worse. |
 | `sweep_cuescale` | cue_scale {2,4,6,8} | stronger cue amplifies decision poles + hurts nogo (0.91→0.71). Ceiling: cue-driven κ₁ peaks ~cue 2 then decreases (strong cue overrides recurrence). |
+| `sweep_n1024` | **N=1024** @ cue_scale 2, 11 seeds | doubling N (vs 512) leaves self-gains unchanged (N-independent init) but firms up the statistics: **DPA retention rock-solid (dual_dpa mean 0.985, min 0.915); nogo the weaker axis (dual_gng mean 0.883, range 0.78–0.95)**. The earlier 3-seed nogo floor (0.65) was a small-sample artifact — across 11 seeds the floor is ~0.78. |
 
 **Takeaway:** `sweep_mem` mem50 (deep memory, robust decision, no isolation) is the two-low-wells recipe.
+More neurons (`sweep_n1024`) don't change the geometry (self-gains are N-independent) but shrink seed variance: DPA is essentially perfect, nogo reliably 0.82–0.95.
+
+**Plotting infra fixes (2026-07-13):** `plot_sweep._build_model` now reads `hidden_size` from each
+run's `config.json` (was hardcoded 512 → crashed loading N≠512 checkpoints); `RunMeta.hidden_size`
+added. `--meanflow_overlay kde` now writes `fp_meanflow_{stage}_kde.pdf` (own filename, never clobbers
+the scatter-overlay `fp_meanflow_{stage}.pdf`).

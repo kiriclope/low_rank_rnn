@@ -920,7 +920,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     # See docs/ring_lowerplane_log.md, theory_landscape.md §4/§8, scratchpad test_subcritical.py.
     shared = dict(
         model_type="lowrank",
-        hidden_size=512, rank=2, target_rank=2,
+        rank=2, target_rank=2,   # hidden_size set PER-ARM below
         # gain / memory_lambda / decision_lambda are set PER-ARM below (gain scan).
         init_style="structured",
         nl_gamma=0.0,                  # nonlinearity set PER-ARM below
@@ -953,19 +953,16 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if hinge_gng is not None:          # CLI override: False = uncorrected two-sided MSE-to-±1 holds
         shared["hinge_gng"] = hinge_gng
 
-    # CUE-SCALE sweep (NO regularization). The cue rides on the go channel and drives κ₁ UP; on nogo
-    # trials the net must counteract it to keep κ₁≤0. Hypothesis: a STRONGER cue forces it to sit the
-    # resting/memory wells LOWER (more negative κ₁) to preserve nogo accuracy — so cue_scale is a
-    # task-intrinsic LOWER knob and the wells should deepen with it, no penalty needed. Standard task
-    # (not ramping), baseline memory (mem_λ=1.6), reg=0, nolick=0.5.
-    cue_arms = [("cue2", 2.0), ("cue4", 4.0), ("cue6", 6.0), ("cue8", 8.0)]
-    for tag, cs in cue_arms:
-        for seed in range(3):
-            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, tau=0.30,
-                                     kappa1_reg_weight=0.0, gain=1.0, noise=0.25,
-                                     memory_lambda=1.6, decision_lambda=0.5,
-                                     nonlinearity="tanh", nolick_weight=0.5,
-                                     nogo_hinge_thresh=-1.0, cue_scale=cs, **shared))
+    # SIZE test: cue_scale=2 (the best cue) with TWICE the neurons (hidden_size=1024 vs the usual
+    # 512), else identical to the cue-sweep base. Does doubling N change the two-well geometry /
+    # robustness? Self-gains are N-independent at init (structured init sets eigenvalues), so the
+    # κ-plane starts the same; this probes whether more units firm up the mem-well result.
+    for seed in range(11):
+        configs.append(RunConfig(run_id=f"s{seed}_n1024", seed=seed, tau=0.30, hidden_size=1024,
+                                 kappa1_reg_weight=0.0, gain=1.0, noise=0.25,
+                                 memory_lambda=1.6, decision_lambda=0.5,
+                                 nonlinearity="tanh", nolick_weight=0.5,
+                                 nogo_hinge_thresh=-1.0, cue_scale=2.0, **shared))
 
     return configs
 

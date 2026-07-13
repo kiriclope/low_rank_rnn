@@ -98,7 +98,8 @@ class RunMeta:
     gain:           float
     cue_on_go_input:bool
     input_size:     int      # already post-__post_init__ (decremented for cue_on_go_input and/or rwd=False)
-    noise:          float    # input noise prefactor
+    hidden_size:    int = 512 # N (LowRankModel); read from config so N≠512 sweeps load correctly
+    noise:          float = 0.0  # input noise prefactor
     model_noise:    float = 0.0  # recurrent noise prefactor (used during eval)
     accuracy:       dict  = None
     rwd:            bool  = True
@@ -172,6 +173,7 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             gain            = float(cfg.get("gain", 2.0)),
             cue_on_go_input = cue,
             input_size      = isize,
+            hidden_size     = int(cfg.get("hidden_size", 512)),
             noise           = float(cfg.get("noise", 0.0)),
             model_noise     = float(cfg.get("model_noise", 0.0)),
             accuracy        = r.get("accuracy", {}),
@@ -254,7 +256,7 @@ def _build_model(meta: RunMeta, device: str):
         )
     return LowRankModel(
         input_size    = meta.input_size,
-        hidden_size   = 512,
+        hidden_size   = meta.hidden_size,
         output_size   = 0,
         rank          = 2,
         gain          = meta.gain,
@@ -1171,11 +1173,13 @@ def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
         )
 
     # Companion mean-flow figures: averaged vector field + across-seed agreement + attractor overlay.
+    # KDE overlay writes to a separate `_kde` filename so it never clobbers the scatter-overlay version.
+    suffix = "_kde" if meanflow_overlay == "kde" else ""
     mflow = _collect_mean_flow(all_metas, ckpt_dir, device, conditions, lim=lim)
     for stage in STAGES:
         _render_meanflow_by_stage(
             mflow, data, stage, conditions, all_metas,
-            os.path.join(out_dir, f"fp_meanflow_{stage}.pdf"), lim=lim,
+            os.path.join(out_dir, f"fp_meanflow_{stage}{suffix}.pdf"), lim=lim,
             overlay=meanflow_overlay,
         )
 
