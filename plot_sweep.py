@@ -968,13 +968,15 @@ def _style_fp_ax(ax, title: str, ylabel: bool, lim: tuple = None):
 
 
 def _fp_legend(fig, all_metas, kde=False):
-    patches = [mpatches.Patch(color=STYLE_COLORS.get(s, "gray"), label=s)
-               for s in ["structured", "random"]
-               if any(m.init_style == s for m in all_metas)]
+    # init_style patches key the dot COLOUR (scatter mode only). In KDE mode the density is plasma,
+    # not coloured by init_style, so the patches are meaningless → drop them.
+    patches = [] if kde else [
+        mpatches.Patch(color=STYLE_COLORS.get(s, "gray"), label=s)
+        for s in ["structured", "random"] if any(m.init_style == s for m in all_metas)]
     if kde:
         stab_handles = [
-            plt.scatter([], [], marker="*", s=130, facecolors="white", edgecolors="black",
-                        linewidths=0.9, label="cluster centroid"),
+            plt.scatter([], [], marker="o", s=16, facecolors="white", edgecolors="black",
+                        linewidths=0.4, label="attractor/slow-attractor centroid"),
         ]
     else:
         stab_handles = [
@@ -1098,9 +1100,11 @@ def _kde_density_overlay(ax, pts, lim, cmap="plasma"):
     X, Y = np.meshgrid(g, g)
     Z = kde(np.vstack([X.ravel(), Y.ravel()])).reshape(X.shape)
     cs = ax.contourf(X, Y, Z, levels=6, cmap=cmap, alpha=0.55, zorder=4)
+    # small white centroid dots (one per attractor/slow-attractor cluster) — kept small so the KDE
+    # density stays visible. pts is already filtered to attractor + slow_attractor by the caller.
     for cx, cy in _cluster_centroids(pts):
-        ax.scatter(cx, cy, marker="*", s=130, facecolors="white", edgecolors="black",
-                   linewidths=0.9, zorder=8)
+        ax.scatter(cx, cy, marker="o", s=16, facecolors="white", edgecolors="black",
+                   linewidths=0.4, zorder=8)
     return cs
 
 
