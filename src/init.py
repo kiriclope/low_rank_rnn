@@ -8,6 +8,9 @@ def init_dpa_internal_readout_prepost(
     model,
     mem: int = 0,
     out: int = 1,
+    gng: int | None = None,
+    gng_lambda: float = 0.900,
+    gng_scale: float = 0.8,
     memory_lambda: float = 0.990,
     decision_lambda: float = 0.900,
     target_mn_corr: float = 0.5,
@@ -142,6 +145,28 @@ def init_dpa_internal_readout_prepost(
 
     model.n[:, out] = n_out
     model.m[:, out] = m_out
+
+    # ------------------------------------------------------------------
+    # 5b. Install GNG-memory rank (rank-3 nets): a self-sustaining go/nogo
+    #     memory eigenmode, orthogonal to sample-memory / test / readout,
+    #     driven by the go (+) and nogo (−) input channels (4, 5).
+    # ------------------------------------------------------------------
+    if gng is not None:
+        assert model.rank >= 3, "Need rank >= 3 for a gng-memory mode."
+        assert gng != mem and gng != out, "gng rank must differ from mem and out."
+        basis = [u_mem, p_m, p_n, u_test, u_mix, u_priv, u_noise]
+        u_gng = zscore(orthogonalize(randn(N), basis))
+        p_gm  = zscore(orthogonalize(randn(N), basis + [u_gng]))
+        p_gn  = zscore(orthogonalize(randn(N), basis + [u_gng, p_gm]))
+        a_g = gng_lambda ** 0.5
+        s_g = (gng_lambda * (1.0 / target_mn_corr - 1.0)) ** 0.5
+        m_gng = a_g * u_gng + s_g * p_gm
+        n_gng = a_g * u_gng + s_g * p_gn
+        C_gng = (n_gng @ m_gng) / N
+        n_gng = n_gng * (gng_lambda / C_gng.clamp_min(1e-8))
+        model.m[:, gng] = m_gng
+        model.n[:, gng] = n_gng
+        # (go/nogo input wiring done AFTER step 6, which randomises channels 4+)
 
     # ------------------------------------------------------------------
     # 6. Install DPA inputs

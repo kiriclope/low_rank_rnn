@@ -360,3 +360,28 @@ Both operate on trained checkpoints (any sweep), reusing `bifurcation_probe.load
   A/B curves differ by seed **asymmetry**: lopsided s0 gives A/B d′ 122 vs 72; near-symmetric s6
   collapses them (60 vs 61) near the trained point, with residual split at large drive from the
   fixed-input-direction × nonlinearity.
+
+### RANK-3 role split (κ0 sample / κ1 gng / κ2 action) — new architecture (2026-07-15)
+
+**Code (all guarded on `rank>=3`; rank-2 unchanged):** `src/init.py` installs a 3rd self-sustaining
+eigenmode for κ1 wired from the go(+)/nogo(−) input channels. `src/tasks.py` GNG & Dual generators
+split the held memory (κ1) from the action (κ2); DPA already produced the right layout. `sweep.py`:
+`gng_lambda` field; structured init passes `mem=0,gng=1,out=2`; progressive freeze locks κ0 after DPA,
+κ0+κ1 after GNG (`dual_mem_freeze`); the κ1-reg regularizer now targets the **last** column (κ2 action
+for rank-3, κ1 for rank-2). `plot_sweep.py` reads `rank`/`hidden_size` from config so rank-3 loads.
+
+**`sweep_rank3` (structured init, 4 seeds, memory_lambda=gng_lambda=5, decision_lambda=0.5, no reg):**
+the split works structurally — autonomous field holds the two memories with κ2 at rest, **DPA retained
+(dual_dpa 0.76–1.00), go perfect (1.00)** — but **nogo collapses (0.00–0.07)**. Cause (from `rank3_flow`):
+the action mode κ2 trained supercritical (g·λ2 ≈ 2.4–2.9 from init 0.5), so under the cue there's a
+**single global lick attractor** (κ2≈+1) that the negative-κ1 nogo memory can't veto. Convergence: DPA/GNG
+early-stop ~20-45 ep; the combined Dual loss never hit stop_loss in 100 ep (still descending).
+
+**`sweep_rand3` (random init, no reg, epochs 150/150/300):** control for whether the role split emerges
+without the structured scaffold. Same nogo-collapse family (action mode goes supercritical).
+
+**`rank3_flow.py` (new tool):** 3-D fixed-point flow portraits, rank-2 conventions (magma/white/cyan),
+8 dual input-driven condition rows × 3 κ-plane columns. brainpy `SlowPointFinder` (jax) for the FPs —
+identical attractors to scipy/simulation, `--slow_tol`/`--marg` expose slow-manifold detection; jax
+(jit) **adiabatic projection** (relax the off-plane κ to its nullcline per grid point, seeded from the
+nearest FP) so streamlines converge onto the projected 3-D fixed points instead of a flat-slice artifact.

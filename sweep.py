@@ -90,8 +90,9 @@ class RunConfig:
 
     # Initialisation
     init_style:         str   = "random"        # "structured" | "random"
-    memory_lambda:      float = 0.8
-    decision_lambda:    float = 0.5
+    memory_lambda:      float = 0.8              # κ0 sample-memory init eigenvalue
+    gng_lambda:         float = 0.8              # κ1 gng-memory init eigenvalue (rank-3 only)
+    decision_lambda:    float = 0.5              # κ1 (rank-2) / κ2 (rank-3) action-mode init eigenvalue
     target_mn_corr:     float = 0.8
     target_out_mn_corr: float = 0.8
     sample_scale:       float = 1.0
@@ -473,8 +474,11 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
           f"  Wi{list(model.wi.weight.shape)}", flush=True)
 
     if config.init_style == "structured" and config.model_type not in ("ei", "eistp"):
+        # rank-3 role split: κ0 sample-memory (mem), κ1 gng-memory (gng), κ2 action/decision (out).
+        rank3 = config.rank >= 3
         init_dpa_internal_readout_prepost(
-            model, mem=0, out=1,
+            model, mem=0, out=(2 if rank3 else 1),
+            gng=(1 if rank3 else None), gng_lambda=config.gng_lambda,
             memory_lambda=config.memory_lambda,
             decision_lambda=config.decision_lambda,
             target_mn_corr=config.target_mn_corr,
@@ -680,13 +684,17 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         wb_run.log({"after_gng/acc_dpa": acc_after_gng["dpa"],
                     "after_gng/acc_gng": acc_after_gng["gng"]})
 
+    # rank-3 progressive freeze: the Dual stages lock BOTH memories (κ0 sample + κ1 gng) and train
+    # only κ2 (action). rank-2 keeps the old behaviour (optionally freeze rank-0).
+    dual_mem_freeze = [0, 1] if config.rank >= 3 else ([0] if config.freeze_rank0_dual else None)
+
     # ------------------------------------------------------------------
     # Stage 2.5 — Dual-paired (MATCH trials only) → overwrites "naive" (curriculum bridge)
     # ------------------------------------------------------------------
     if config.dual_paired_stage:
         paired_freeze_input = list(range(config.input_size)) if "dual" in config.freeze_input_stages else []
         _stage_header("Dual-paired", config.epochs_dual_paired, paired_freeze_input,
-                      [0] if config.freeze_rank0_dual else [])
+                      dual_mem_freeze or [])
         t0 = time.time()
         Xp, yp, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise,
                                             target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
@@ -708,7 +716,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             if config.dual_loss == "separated" else criterion)
         trainer = Optimization(model, tlp, vlp, paired_criterion, optp, schedp,
                                config.grad_clip_norm, num_epochs=config.epochs_dual_paired,
-                               freeze_low_rank_cols=[0] if config.freeze_rank0_dual else None,
+                               freeze_low_rank_cols=dual_mem_freeze,
                                freeze_input_dims=paired_freeze_input,
                                stop_loss=config.stop_loss,
                                kappa1_clamp=config.kappa1_clamp,
@@ -725,7 +733,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     # Stage 3 — Dual  (freeze all input dims)
     # ------------------------------------------------------------------
     dual_freeze_input = list(range(config.input_size)) if "dual" in config.freeze_input_stages else []
-    _stage_header("Dual", config.epochs_dual, dual_freeze_input, [0] if config.freeze_rank0_dual else [])
+    _stage_header("Dual", config.epochs_dual, dual_freeze_input, dual_mem_freeze or [])
     t0 = time.time()
     X, y, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise, target_rank=config.target_rank,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
@@ -761,17 +769,18 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         dual_criterion = criterion
         print(f"[{rid}]  loss=multi (MaskedMultiTargetLoss)", flush=True)
 
-    dual_freeze_rank0 = [0] if config.freeze_rank0_dual else None
+    dual_freeze_rank0 = dual_mem_freeze
 
     dual_regularizer = None
     if config.kappa1_reg_weight > 0.0:
         _w   = config.kappa1_reg_weight
         _gain = float(model.gain) if torch.is_tensor(model.gain) else float(model.gain)
-        def dual_regularizer(m, _w=_w, _gain=_gain):
-            N     = m.m.shape[0]
-            lam1  = _gain * (m.n[:, 1] @ m.m[:, 1]) / N   # gain * n1^T m1 / N
-            return _w * torch.relu(lam1 - 1.0) ** 2
-        print(f"[{rid}]  κ₁ regularizer: weight={_w}  penalises gain·λ₁ > 1", flush=True)
+        _dec = config.rank - 1        # ACTION/decision mode = last low-rank column (κ1 rank-2, κ2 rank-3)
+        def dual_regularizer(m, _w=_w, _gain=_gain, _dec=_dec):
+            N      = m.m.shape[0]
+            lam_d  = _gain * (m.n[:, _dec] @ m.m[:, _dec]) / N   # gain * n_dec^T m_dec / N
+            return _w * torch.relu(lam_d - 1.0) ** 2
+        print(f"[{rid}]  action regularizer: weight={_w}  penalises gain·λ{_dec} > 1", flush=True)
 
     trainer    = Optimization(model, tl, vl, dual_criterion, opt, sched,
                               config.grad_clip_norm, num_epochs=config.epochs_dual,
@@ -920,7 +929,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     # See docs/ring_lowerplane_log.md, theory_landscape.md §4/§8, scratchpad test_subcritical.py.
     shared = dict(
         model_type="lowrank",
-        rank=2, target_rank=2,   # hidden_size set PER-ARM below
+        # rank / target_rank / hidden_size set PER-ARM below
         # gain / memory_lambda / decision_lambda are set PER-ARM below (gain scan).
         init_style="structured",
         nl_gamma=0.0,                  # nonlinearity set PER-ARM below
@@ -953,17 +962,19 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if hinge_gng is not None:          # CLI override: False = uncorrected two-sided MSE-to-±1 holds
         shared["hinge_gng"] = hinge_gng
 
-    # WINNER COMBO: N=1024 (firm statistics) × mem50 depth (memory_lambda=5, the two-low-wells
-    # recipe). At N=512 the shallow-memory n1024 base (mem_λ=1.6) kept a central nogo attractor
-    # near κ₀≈0 (supercritical decision self-sustains no-lick). Deep memory should SPLIT that pole
-    # into the two low A/B wells at (±1,−0.8). Question: does the mem50 split survive at N=1024,
-    # and does it fix the seed-variable nogo (0.78–0.95 in the shallow run)?
-    for seed in range(11):
-        configs.append(RunConfig(run_id=f"s{seed}_n1024m5", seed=seed, tau=0.30, hidden_size=1024,
+    # RANK-3, RANDOM init, NO regularization. The structured 3-mode installer is skipped, so the
+    # modes get no pre-assigned sample/gng/action roles — this probes whether the role split emerges
+    # on its own. Progressive freeze (κ0 after DPA, κ0+κ1 after GNG) still applies via rank>=3.
+    # Epochs adapted from the structured rank-3 run: DPA/GNG converge fast (early-stop ~20-45 ep) but
+    # the combined Dual loss never hit stop_loss in 100 ep (still descending), so Dual gets 300.
+    rand_shared = {**shared, "init_style": "random",
+                   "epochs_dpa": 150, "epochs_gng": 150, "epochs_dual": 300}
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_rand3", seed=seed, tau=0.30, hidden_size=1024,
+                                 rank=3, target_rank=3,
                                  kappa1_reg_weight=0.0, gain=1.0, noise=0.25,
-                                 memory_lambda=5.0, decision_lambda=0.5,
                                  nonlinearity="tanh", nolick_weight=0.5,
-                                 nogo_hinge_thresh=-1.0, cue_scale=2.0, **shared))
+                                 nogo_hinge_thresh=-1.0, cue_scale=2.0, **rand_shared))
 
     return configs
 

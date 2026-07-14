@@ -99,6 +99,7 @@ class RunMeta:
     cue_on_go_input:bool
     input_size:     int      # already post-__post_init__ (decremented for cue_on_go_input and/or rwd=False)
     hidden_size:    int = 512 # N (LowRankModel); read from config so N≠512 sweeps load correctly
+    rank:           int = 2   # low-rank dimension (read from config so rank-3 sweeps load correctly)
     noise:          float = 0.0  # input noise prefactor
     model_noise:    float = 0.0  # recurrent noise prefactor (used during eval)
     accuracy:       dict  = None
@@ -174,6 +175,7 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             cue_on_go_input = cue,
             input_size      = isize,
             hidden_size     = int(cfg.get("hidden_size", 512)),
+            rank            = int(cfg.get("rank", 2)),
             noise           = float(cfg.get("noise", 0.0)),
             model_noise     = float(cfg.get("model_noise", 0.0)),
             accuracy        = r.get("accuracy", {}),
@@ -258,7 +260,7 @@ def _build_model(meta: RunMeta, device: str):
         input_size    = meta.input_size,
         hidden_size   = meta.hidden_size,
         output_size   = 0,
-        rank          = 2,
+        rank          = meta.rank,
         gain          = meta.gain,
         alpha         = meta.alpha,
         alpha_rec     = meta.alpha_rec,
@@ -345,7 +347,7 @@ def _eval_dual_by_trialtype(model, meta: RunMeta, device: str,
     timing = TIMINGS["dual"]
     X, y, _, cnames = generate_dual_trials(
         n_trials, timing=timing, input_size=meta.input_size,
-        noise=meta.noise_sigma(), target_rank=2,
+        noise=meta.noise_sigma(), target_rank=meta.rank,
         cue_on_go_input=meta.cue_on_go_input, cue_scale=meta.cue_scale,
         nogo_target=meta.nogo_target, attention_input=meta.attention_input,
     )
@@ -388,7 +390,7 @@ def _eval_gng_by_trialtype(model, meta: RunMeta, device: str,
     timing = TIMINGS["gng"]
     X, y = generate_gng_trials(
         n_trials, timing=timing, input_size=meta.input_size,
-        noise=meta.noise_sigma(), target_rank=2,
+        noise=meta.noise_sigma(), target_rank=meta.rank,
         cue_on_go_input=meta.cue_on_go_input, cue_scale=meta.cue_scale,
         nogo_target=meta.nogo_target, attention_input=meta.attention_input,
     )
@@ -433,7 +435,7 @@ def _make_gng_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None =
     n_sigma = _noise_sigma(ref_meta.noise) if noise is None else noise
     X, y = generate_gng_trials(
         n_batch, timing=timing, input_size=ref_meta.input_size,
-        noise=n_sigma, target_rank=2, cue_on_go_input=ref_meta.cue_on_go_input,
+        noise=n_sigma, target_rank=ref_meta.rank, cue_on_go_input=ref_meta.cue_on_go_input,
         cue_scale=ref_meta.cue_scale, nogo_target=ref_meta.nogo_target,
         attention_input=ref_meta.attention_input,
     )
@@ -459,7 +461,7 @@ def _make_dual_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None 
     n_sigma = _noise_sigma(ref_meta.noise) if noise is None else noise
     X, y, _, cnames = generate_dual_trials(
         n_batch, timing=timing, input_size=ref_meta.input_size,
-        noise=n_sigma, target_rank=2, cue_on_go_input=ref_meta.cue_on_go_input,
+        noise=n_sigma, target_rank=ref_meta.rank, cue_on_go_input=ref_meta.cue_on_go_input,
         cue_scale=ref_meta.cue_scale, nogo_target=ref_meta.nogo_target,
         attention_input=ref_meta.attention_input,
     )

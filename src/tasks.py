@@ -138,6 +138,19 @@ def generate_gng_trials(
         else:
             inputs[:, n_on[1]:n_off[1], 6] += cue_scale * input_scale
 
+    if target_rank >= 3:
+        # RANK-3 role split: κ0 sample-memory (off-task here → clamp 0), κ1 gng-memory
+        # (hold go/nogo ±1 through the delay), κ2 action (no-lick until the cue, then go→lick /
+        # nogo→rest). See init_dpa_internal_readout_prepost gng mode / sweep.py rank-3 arm.
+        targets[:] = 0.0                                       # everything clamped/finite by default
+        targets[:, n_on[0]:n_off[0], 1] = torch.nan           # κ1 free during the go/nogo stim
+        targets[idx_go,   n_off[0]:, 1] = 1.0                 # κ1: hold go/nogo memory to trial end
+        targets[idx_nogo, n_off[0]:, 1] = -1.0
+        targets[:, n_on[1]:n_off[1], 2] = torch.nan           # κ2 free during the cue
+        targets[idx_go,   n_off[1]:, 2] = go_target           # κ2 action: express after the cue
+        targets[idx_nogo, n_off[1]:, 2] = nogo_target
+        return inputs, targets
+
     if target_rank == 2:
         targets[:, :n_on[0], 0] = 0.0
         baseline_value = None
@@ -275,6 +288,19 @@ def generate_dual_trials(
     else:
         targets[idx_go,   n_off[2]:dt, -1] = go_target
         targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
+
+    if target_rank >= 3:
+        # RANK-3 role split: add the two held memories on κ0 / κ1 (κ2 action already set on the
+        # last channel via idx_pair / go-nogo logic above). Sample-memory κ0 = A/B; gng-memory κ1 =
+        # go(+1)/nogo(−1)/none(0); both held from their stim offset to the end, free during their stim.
+        targets[:, :, 0] = 0.0
+        targets[:, n_on[0]:n_off[0], 0] = torch.nan
+        targets[idx_A, n_off[0]:, 0] = 1.0
+        targets[idx_B, n_off[0]:, 0] = -1.0
+        targets[:, :, 1] = 0.0
+        targets[:, n_on[1]:n_off[1], 1] = torch.nan
+        targets[idx_go,   n_off[1]:, 1] = 1.0
+        targets[idx_nogo, n_off[1]:, 1] = -1.0
 
     condition_names = np.array([
         f"{s}_{g}_{t}" if g != "none" else f"{s}_{t}"
