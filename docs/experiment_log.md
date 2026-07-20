@@ -385,3 +385,14 @@ without the structured scaffold. Same nogo-collapse family (action mode goes sup
 identical attractors to scipy/simulation, `--slow_tol`/`--marg` expose slow-manifold detection; jax
 (jit) **adiabatic projection** (relax the off-plane κ to its nullcline per grid point, seeded from the
 nearest FP) so streamlines converge onto the projected 3-D fixed points instead of a flat-slice artifact.
+
+**Target-timing revision (`src/tasks.py`, commit `22ae9e4`, 2026-07-20 — Leon's edit):** the clean
+"κ1 = pure held memory, κ2 = pure action" split above no longer holds. The rank-3 GNG/Dual generators
+now (a) hold each memory only over its behaviourally-relevant window rather than to trial end — Dual
+κ0 (A/B) held `n_off[0]:n_on[3]` (to test onset), κ1 (go/nogo) held `n_off[1]:n_on[2]`; and (b) make
+**κ1 double as an action channel after the cue** — GNG κ1 holds ±1 gng-memory `n_off[0]:n_on[1]` then
+expresses `go_target`/`nogo_target` from `n_off[1]:`, in parallel with κ2 also carrying the action.
+The blanket `targets[:]=0.0` clamp was dropped. Motivation (inferred): give the *subcritical* κ1 mode
+a share of the action so the decision no longer rests solely on the supercritical κ2 mode that caused
+the nogo collapse. **Not yet re-swept** — the `sweep_rank3`/`sweep_rand3` results above predate this
+edit and used the old pure-split targets.
