@@ -271,42 +271,49 @@ def generate_dual_trials(
     targets[idx_pair,  n_off[3]:, -1] = 1.0
     targets[~idx_pair, n_off[3]:, -1] = -1.0
 
-    # # memory
-    # targets[idx_go,   n_off[1]:n_on[2], -1] = 1.0
-    # targets[idx_nogo, n_off[1]:n_on[2], -1] = -1.0
-
-    # during cue
-    # targets[idx_go,   n_on[2]:n_off[2], -1] = go_target
-    # during cue and before test
-    # targets[idx_nogo, n_on[2]:n_on[3], -1] = nogo_target
-
     # # 500 ms after cue
     dt = int(n_off[2] + (n_off[-1] - n_on[-1]) / 2)
 
     if ramping_gng:
-        # cue drives the ramp (both trials); go expresses through cue+reward, nogo DELETES it
-        # during the cue (−1) then rests no-lick. Delay stays free (no decision memory-hold).
-        targets[idx_go,   n_on[2]:dt, -1] = go_target
-        targets[idx_nogo, n_on[2]:n_off[2], -1] = -1.0        # cue: cancel the ramp
-        targets[idx_nogo, n_off[2]:dt, -1] = nogo_target      # reward: rest at no-lick
+        # gng ramping
+        targets[idx_go,   n_on[2], -1] = 1.0
+        targets[idx_nogo, n_on[2], -1] = -1.0        # before cue: ramp till +/- 1
+        
     else:
-        targets[idx_go,   n_off[2]:dt, -1] = go_target
-        targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
+        # gng memory
+        targets[idx_go,   n_off[1]:n_on[2], -1] = 1.0
+        targets[idx_nogo, n_off[1]:n_on[2], -1] = -1.0
+
+    # gng rwd
+    targets[idx_go,   n_off[2]:dt, -1] = go_target
+    targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
+
 
     if target_rank >= 3:
-        # RANK-3 role split: add the two held memories on κ0 / κ1 (κ2 action already set on the
-        # last channel via idx_pair / go-nogo logic above). Sample-memory κ0 = A/B; gng-memory κ1 =
-        # go(+1)/nogo(−1)/none(0); both held from their stim offset to the end, free during their stim.
+        # RANK-3 role split: κ0 sample-memory (A/B); κ1 gng-memory→action IDENTICAL to the standalone
+        # GNG task (hold go/nogo through the delay, then express the action after the cue); κ2 = lick,
+        # ALREADY built on the last channel above (go/nogo response after the cue + match/nonmatch pair
+        # decision after the test) — do NOT overwrite it here.
         targets[:, :n_on[0], 0] = 0.0
-        targets[idx_A, n_off[0]:n_on[3], 0] = 1.0
+        targets[idx_A, n_off[0]:n_on[3], 0] = 1.0             # κ0: hold A/B through to the test
         targets[idx_B, n_off[0]:n_on[3], 0] = -1.0
 
-        targets[:, :n_on[1], 1] = 0.0 # κ1 action: express after the cue
-        targets[idx_go,   n_off[1]:n_on[2], 1] = 1.0
-        targets[idx_nogo, n_off[1]:n_on[2], 1] = -1.0
+        # gng bl
+        targets[:, :n_on[1], 1] = 0.0
 
-        targets[idx_go,   n_off[1]:, 2] = go_target           # κ2 action: express after the cue
-        targets[idx_nogo, n_off[1]:, 2] = nogo_target
+        if ramping_gng:
+            # gng ramping
+            targets[idx_go,   n_on[2], 1] = 1.0
+            targets[idx_nogo, n_on[2], 1] = -1.0        # before cue: ramp till +/- 1
+
+        else:
+            # gng memory
+            targets[idx_go,   n_off[1]:n_on[2], 1] = 1.0
+            targets[idx_nogo, n_off[1]:n_on[2], 1] = -1.0
+        
+        # gng rwd
+        targets[idx_go,   n_off[2]:dt, 1] = go_target           # κ1: express the action after the cue
+        targets[idx_nogo, n_off[2]:dt, 1] = nogo_target    
 
 
     condition_names = np.array([

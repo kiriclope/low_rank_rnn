@@ -386,13 +386,19 @@ identical attractors to scipy/simulation, `--slow_tol`/`--marg` expose slow-mani
 (jit) **adiabatic projection** (relax the off-plane κ to its nullcline per grid point, seeded from the
 nearest FP) so streamlines converge onto the projected 3-D fixed points instead of a flat-slice artifact.
 
-**Target-timing revision (`src/tasks.py`, commit `22ae9e4`, 2026-07-20 — Leon's edit):** the clean
-"κ1 = pure held memory, κ2 = pure action" split above no longer holds. The rank-3 GNG/Dual generators
-now (a) hold each memory only over its behaviourally-relevant window rather than to trial end — Dual
-κ0 (A/B) held `n_off[0]:n_on[3]` (to test onset), κ1 (go/nogo) held `n_off[1]:n_on[2]`; and (b) make
-**κ1 double as an action channel after the cue** — GNG κ1 holds ±1 gng-memory `n_off[0]:n_on[1]` then
-expresses `go_target`/`nogo_target` from `n_off[1]:`, in parallel with κ2 also carrying the action.
-The blanket `targets[:]=0.0` clamp was dropped. Motivation (inferred): give the *subcritical* κ1 mode
-a share of the action so the decision no longer rests solely on the supercritical κ2 mode that caused
-the nogo collapse. **Not yet re-swept** — the `sweep_rank3`/`sweep_rand3` results above predate this
-edit and used the old pure-split targets.
+**Target-timing revision (`src/tasks.py`, commits `22ae9e4`→`a48e2a6`→final 2026-07-20 — Leon's edits):**
+the clean "κ1 = pure held memory, κ2 = pure action" split no longer holds; the current rank-3 layout is:
+- **κ0 = sample memory** — held ±1 only over its behaviourally-relevant window (GNG: free/NaN throughout;
+  DPA: sample→test delay; Dual: `n_off[0]:n_on[3]`, sample-off to test-on), NaN during its own stim.
+- **κ1 = gng-memory→action** — holds go(+1)/nogo(−1) through the gng delay, then expresses the action in
+  the **reward pulse** `[n_off_cue, dt)` (`dt = n_off[2] + ½·test_window`), go→`go_target`, nogo→`nogo_target`.
+  Same structure in GNG and Dual (`ramping_gng` gives the single-step ramp variant in both).
+- **κ2 = lick** — in Dual it's the shared last-channel decision built by the non-rank-3 code: gng-memory
+  in the delay + the same reward pulse **+ the DPA match/nonmatch pair decision after the test** (`n_off[3]:`,
+  pair→+1/nonpair→−1). The rank-3 block no longer overwrites it. So κ1 and κ2 share the gng part; κ2 adds
+  the pairing decision. (In GNG, with no test, κ2 = the go/nogo action only.)
+
+Verified by `scratchpad/plot_task_io.py` → `results/figures/task_io/{dpa,gng,dual}_rank3_io.pdf` (input-channel
+heatmap + κ0/κ1/κ2 target traces per condition; NaN=free shown as gaps). Motivation (inferred): give the
+*subcritical* κ1 mode a share of the action so the decision no longer rests solely on the supercritical κ2 that
+caused the nogo collapse. **Not yet re-swept** — `sweep_rank3`/`sweep_rand3` predate this and used the old targets.
