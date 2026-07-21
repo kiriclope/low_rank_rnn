@@ -58,7 +58,7 @@ def generate_dpa_trials(
     n_off = timing.n_stim_off
 
     inputs = noise * torch.randn(n_trials, n_steps, input_size)
-    targets = torch.zeros(n_trials, n_steps, target_rank)
+    targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
 
     if attention_input:   # tonic attentional/context input on the LAST channel,
         inputs[:, n_on[0]:, -1] += input_scale
@@ -73,25 +73,21 @@ def generate_dpa_trials(
     inputs[idx_C, n_on[1]:n_off[1], 2] += input_scale
     inputs[idx_D, n_on[1]:n_off[1], 3] += input_scale
 
-    if input_size == 9:
-        inputs[:, n_on[0]:, -2] += input_scale
-
     idx_pair = (idx_A & idx_C) | (idx_B & idx_D)
 
-    if target_rank > 1:
-        targets[idx_A, n_on[0]:, 0] = 1.0
-        targets[idx_B, n_on[0]:, 0] = -1.0
-        targets[:, :n_on[0]] = 0.0
-        targets[:, n_on[0]:n_off[0], 0] = torch.nan
-        targets[:, n_on[1]:, 0] = torch.nan
-        baseline_value = None
+    # baseline
+    targets[:, :n_on[0], 0] = 0.0 # on kappa 0
+    targets[:, :n_on[1], -1] = 0.0 # on kappa 1
 
-    if baseline_value is not None:
-        targets[:, :n_on[0]] = baseline_value
+    # memory
+    targets[idx_A, n_on[0]:n_on[1], 0] = 1.0
+    targets[idx_B, n_on[0]:n_on[1], 0] = -1.0
+    
+    baseline_value = None
 
+    # pairing
     targets[idx_pair,  n_on[1]:, -1] = 1.0
     targets[~idx_pair, n_on[1]:, -1] = -1.0
-    targets[:, n_on[1]:n_off[1], -1] = torch.nan
 
     return inputs, targets
 
@@ -133,53 +129,37 @@ def generate_gng_trials(
     else:
         inputs[idx_go,   n_on[0]:n_off[0], 4] += input_scale
         inputs[idx_nogo, n_on[0]:n_off[0], 5] += input_scale
+
         if cue_on_go_input:
             inputs[:, n_on[1]:n_off[1], 4] += cue_scale * input_scale
         else:
             inputs[:, n_on[1]:n_off[1], 6] += cue_scale * input_scale
 
-    if target_rank >= 3:
-        # RANK-3 role split: κ0 sample-memory (off-task here → clamp 0), κ1 gng-memory
-        # (hold go/nogo ±1 through the delay), κ2 action (no-lick until the cue, then go→lick /
-        # nogo→rest). See init_dpa_internal_readout_prepost gng mode / sweep.py rank-3 arm.
+    # baseline
+    targets[:, :n_on[0]] = 0.0
 
-        targets[:, :n_on[0], 1] = torch.nan           
-        targets[idx_go,   n_off[0]:n_on[1], 1] = 1.0          # κ1: hold go/nogo memory to cue
+    # # 500 ms after cue
+    dt = int(n_off[1] + (n_off[-1] - n_on[-1]) / 2)
+
+    # ramping
+    if ramping_gng:
+        targets[idx_go,   n_on[1], -1] = 1.0
+        targets[idx_nogo, n_on[1], -1] = -1.0
+    else:
+        # memory
+        targets[idx_go,   n_off[0]:n_on[1], 1] = 1.0 
         targets[idx_nogo, n_off[0]:n_on[1], 1] = -1.0
 
-        targets[idx_go,   n_off[1]:, 1] = go_target           # κ1 action: express after the cue
-        targets[idx_nogo, n_off[1]:, 1] = nogo_target
-        
-        targets[idx_go,   n_off[1]:, 2] = go_target           # κ2 action: express after the cue
-        targets[idx_nogo, n_off[1]:, 2] = nogo_target
 
-        return inputs, targets
+    # response
+    targets[idx_go,   n_off[1]:dt, 1] = go_target
+    targets[idx_nogo, n_off[1]:dt, 1] = nogo_target
 
-    if target_rank == 2:
-        targets[:, :n_on[0], 0] = 0.0
-        baseline_value = None
+    if target_rank >= 3:
+        targets[idx_go,   n_off[1]:dt, 2] = go_target           # κ2 action: express after the cue
+        targets[idx_nogo, n_off[1]:dt, 2] = nogo_target
 
-    if baseline_value is not None:
-        targets[:, :n_on[0]] = baseline_value
-
-    targets[:, n_on[0]:, -1] = torch.nan
-
-    if ramping_gng:
-        # RAMPING GNG: NO decision memory-hold through the delay (that hold was the source of the
-        # supercritical requirement). The cue (on the go channel, both trials) drives a lick ramp;
-        # go EXPRESSES it, nogo DELETES it (−1 during cue). The decision is input-driven at the
-        # cue → free to stay subcritical, so no autonomous decision wells (ring / nogo pole).
-        targets[idx_go,   n_on[1]:n_off[1], -1] = go_target   # cue: express the ramp
-        targets[idx_nogo, n_on[1]:n_off[1], -1] = -1.0        # cue: cancel the cue-driven ramp
-        targets[idx_go,   n_off[1]:, -1] = go_target          # reward
-        targets[idx_nogo, n_off[1]:, -1] = nogo_target        # reward: rest at no-lick
-    else:
-        # memory: hold the go/nogo decision (±1) through the sample-off → cue-on delay
-        targets[idx_go,   n_off[0]:n_on[1], -1] = 1.0
-        targets[idx_nogo, n_off[0]:n_on[1], -1] = -1.0
-        # after cue
-        targets[idx_go,   n_off[1]:, -1] = go_target
-        targets[idx_nogo, n_off[1]:, -1] = nogo_target
+    baseline_value = None
 
     return inputs, targets
 
@@ -260,61 +240,35 @@ def generate_dual_trials(
     inputs[idx_C,    n_on[3]:n_off[3], 2] += input_scale
     inputs[idx_D,    n_on[3]:n_off[3], 3] += input_scale
 
-    if target_rank > 1:
-        targets[:, :n_on[0]] = 0.0
-        baseline_value = None
-
-    if baseline_value is not None:
-        targets[:, :n_on[0]] = baseline_value
-
-    idx_pair = (idx_A & idx_C) | (idx_B & idx_D)
-    targets[idx_pair,  n_off[3]:, -1] = 1.0
-    targets[~idx_pair, n_off[3]:, -1] = -1.0
+    # baseline
+    targets[:, :n_on[0]] = 0.0
+    # targets[:, :n_on[1], 1] = 0.0
 
     # # 500 ms after cue
     dt = int(n_off[2] + (n_off[-1] - n_on[-1]) / 2)
 
     if ramping_gng:
         # gng ramping
-        targets[idx_go,   n_on[2], -1] = 1.0
-        targets[idx_nogo, n_on[2], -1] = -1.0        # before cue: ramp till +/- 1
-        
+        targets[idx_go,   n_on[2], 1] = 1.0
+        targets[idx_nogo, n_on[2], 1] = -1.0        # before cue: ramp till +/- 1
+
     else:
         # gng memory
-        targets[idx_go,   n_off[1]:n_on[2], -1] = 1.0
-        targets[idx_nogo, n_off[1]:n_on[2], -1] = -1.0
+        targets[idx_go,   n_off[1]:n_on[2], 1] = 1.0
+        targets[idx_nogo, n_off[1]:n_on[2], 1] = -1.0
 
     # gng rwd
+    targets[idx_go,   n_off[2]:dt, 1] = go_target           # κ1: express the action after the cue
+    targets[idx_nogo, n_off[2]:dt, 1] = nogo_target    
+
+    # gng rwd if rank>2
     targets[idx_go,   n_off[2]:dt, -1] = go_target
     targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
 
-
-    if target_rank >= 3:
-        # RANK-3 role split: κ0 sample-memory (A/B); κ1 gng-memory→action IDENTICAL to the standalone
-        # GNG task (hold go/nogo through the delay, then express the action after the cue); κ2 = lick,
-        # ALREADY built on the last channel above (go/nogo response after the cue + match/nonmatch pair
-        # decision after the test) — do NOT overwrite it here.
-        targets[:, :n_on[0], 0] = 0.0
-        targets[idx_A, n_off[0]:n_on[3], 0] = 1.0             # κ0: hold A/B through to the test
-        targets[idx_B, n_off[0]:n_on[3], 0] = -1.0
-
-        # gng bl
-        targets[:, :n_on[1], 1] = 0.0
-
-        if ramping_gng:
-            # gng ramping
-            targets[idx_go,   n_on[2], 1] = 1.0
-            targets[idx_nogo, n_on[2], 1] = -1.0        # before cue: ramp till +/- 1
-
-        else:
-            # gng memory
-            targets[idx_go,   n_off[1]:n_on[2], 1] = 1.0
-            targets[idx_nogo, n_off[1]:n_on[2], 1] = -1.0
-        
-        # gng rwd
-        targets[idx_go,   n_off[2]:dt, 1] = go_target           # κ1: express the action after the cue
-        targets[idx_nogo, n_off[2]:dt, 1] = nogo_target    
-
+    # pairing
+    idx_pair = (idx_A & idx_C) | (idx_B & idx_D)
+    targets[idx_pair,  n_off[3]:, -1] = 1.0
+    targets[~idx_pair, n_off[3]:, -1] = -1.0
 
     condition_names = np.array([
         f"{s}_{g}_{t}" if g != "none" else f"{s}_{t}"

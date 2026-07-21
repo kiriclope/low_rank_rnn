@@ -168,6 +168,7 @@ class RunConfig:
     nogo_hinge_thresh: float = -1.0       # hinge_gng no-lick threshold during the memory delay (0 after cue)
     ramping_gng: bool = False             # cue-driven ramping decision (no delay memory-hold; nogo cancels the cue ramp)
     dpa_hinge_thresh: float | None = None # if set, DPA ±1 decision uses squared hinge toward ±thresh (DPA + dual stages)
+    dpa_zero_thresh: float = 0.0   # DPA ThresholdLoss dead-zone for ZERO targets (baselines); 0 ⇒ MSE-to-0 (pins baseline)
     hinge_squared:   bool = True   # DPA ThresholdLoss: True=relu(...)² (default), False=linear margin relu(...)
     aux_weight:      float = 1.0   # weight on the memory (non-decision) channels
     bl_weight:       float = 1.0   # weight on the pre-sample baseline term
@@ -514,7 +515,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     # hinge-vs-MSE for all three stages. hinge_gng=True → ThresholdLoss (squared ±thresh margin
     # on every channel: memory & decision); False → MaskedMultiTargetLoss (pure MSE).
     _dpa_th = config.dpa_hinge_thresh if config.dpa_hinge_thresh is not None else 1.0
-    dpa_criterion = (ThresholdLoss(thresh=_dpa_th, squared=config.hinge_squared)
+    dpa_criterion = (ThresholdLoss(thresh=_dpa_th, squared=config.hinge_squared,
+                                   zero_thresh=config.dpa_zero_thresh)
                      if config.hinge_gng else criterion)
     gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
                                    go_hinge_thresh=config.go_hinge_thresh,
@@ -962,19 +964,18 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if hinge_gng is not None:          # CLI override: False = uncorrected two-sided MSE-to-±1 holds
         shared["hinge_gng"] = hinge_gng
 
-    # RANK-3, RANDOM init, NO regularization. The structured 3-mode installer is skipped, so the
-    # modes get no pre-assigned sample/gng/action roles — this probes whether the role split emerges
-    # on its own. Progressive freeze (κ0 after DPA, κ0+κ1 after GNG) still applies via rank>=3.
-    # Epochs adapted from the structured rank-3 run: DPA/GNG converge fast (early-stop ~20-45 ep) but
-    # the combined Dual loss never hit stop_loss in 100 ep (still descending), so Dual gets 300.
-    rand_shared = {**shared, "init_style": "random",
-                   "epochs_dpa": 150, "epochs_gng": 150, "epochs_dual": 300}
+    # SUBCRITICAL-λ recipe (rank-2). Base self-gain g·λ<1 (memory_lambda=0.8, gain=1) so that WITHOUT
+    # attention κ=0 is a stable fixed point → the pre-sample baseline sits at 0 (no drift). Additive
+    # attention (last channel, 0 at baseline / 1 after stim) gates the bistability on its own via the
+    # trained input projection — both flat baseline AND held memory. (The multiplicative gain-gate was
+    # tried and removed: it flattened the baseline too but hurt memory persistence.)
+    sub_common = dict(rank=2, target_rank=2, tau=0.30, hidden_size=1024, gain=1.0, noise=0.25,
+                      nonlinearity="tanh", nolick_weight=0.5,
+                      memory_lambda=0.8, decision_lambda=0.5,   # subcritical base (g·λ<1, 0 stable off-attention)
+                      kappa1_reg_weight=0.0, nogo_hinge_thresh=-1.0, cue_scale=2.0)
+
     for seed in range(4):
-        configs.append(RunConfig(run_id=f"s{seed}_rand3", seed=seed, tau=0.30, hidden_size=1024,
-                                 rank=3, target_rank=3,
-                                 kappa1_reg_weight=0.0, gain=1.0, noise=0.25,
-                                 nonlinearity="tanh", nolick_weight=0.5,
-                                 nogo_hinge_thresh=-1.0, cue_scale=2.0, **rand_shared))
+        configs.append(RunConfig(run_id=f"s{seed}_ng", seed=seed, **sub_common, **shared))
 
     return configs
 

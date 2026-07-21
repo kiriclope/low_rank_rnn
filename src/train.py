@@ -625,10 +625,15 @@ class ThresholdLoss(nn.Module):
     Squared hinge loss: penalises predictions on the wrong side of a threshold,
     with zero gradient once the prediction is correctly above/below it.
 
-    For target = +1 :  loss = relu(thresh - pred)²      (penalise if pred < thresh)
-    For target = -1 :  loss = relu(thresh + pred)²      (penalise if pred > -thresh)
-    For target =  0 :  loss = relu(|pred| - thresh)²    (penalise if |pred| > thresh)
+    For target = +1 :  loss = relu(thresh - pred)²        (penalise if pred < thresh)
+    For target = -1 :  loss = relu(thresh + pred)²        (penalise if pred > -thresh)
+    For target =  0 :  loss = relu(|pred| - zero_thresh)² (penalise if |pred| > zero_thresh)
     NaN targets are masked out (no gradient).
+
+    The ±1 targets keep a wide margin (`thresh`) so the decision saturates, but the ZERO
+    targets (baselines, nogo "rest") get their OWN `zero_thresh` — default 0 ⇒ relu(|pred|)² =
+    pred², i.e. MSE-to-0. This pins baselines to zero instead of leaving a free ±thresh dead-zone
+    (with `zero_thresh = thresh` the deep-memory dynamics drift the baseline into a ±well for free).
 
     Works as a drop-in for MaskedMultiTargetLoss.
     Supports any number of target values as long as they are +1, -1, 0, or nan.
@@ -640,12 +645,14 @@ class ThresholdLoss(nn.Module):
         target_weight: float = 1.0,
         zero_weight: float = 1.0,
         squared: bool = True,
+        zero_thresh: float = 0.0,
     ):
         super().__init__()
         self.thresh        = thresh
         self.target_weight = target_weight
         self.zero_weight   = zero_weight
         self.squared       = squared   # True: relu(...)² (default); False: linear margin relu(...)
+        self.zero_thresh   = zero_thresh   # dead-zone half-width for ZERO targets (0 ⇒ MSE-to-0)
 
     @staticmethod
     def masked_mean(loss: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -667,7 +674,7 @@ class ThresholdLoss(nn.Module):
         neg_loss  = self.masked_mean(
             torch.relu(self.thresh + safe_pred) ** p, neg_mask)
         zero_loss = self.masked_mean(
-            torch.relu(safe_pred.abs() - self.thresh) ** p, zero_mask)
+            torch.relu(safe_pred.abs() - self.zero_thresh) ** p, zero_mask)
 
         return self.target_weight * (pos_loss + neg_loss) + self.zero_weight * zero_loss
 

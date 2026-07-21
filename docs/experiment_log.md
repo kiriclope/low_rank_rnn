@@ -402,3 +402,41 @@ Verified by `scratchpad/plot_task_io.py` → `results/figures/task_io/{dpa,gng,d
 heatmap + κ0/κ1/κ2 target traces per condition; NaN=free shown as gaps). Motivation (inferred): give the
 *subcritical* κ1 mode a share of the action so the decision no longer rests solely on the supercritical κ2 that
 caused the nogo collapse. **Not yet re-swept** — `sweep_rank3`/`sweep_rand3` predate this and used the old targets.
+
+### Baseline drift → subcritical-λ is the fix (2026-07-21)
+
+Chased why the **pre-sample baseline** (t<n_on[0]) sits off-zero and drifts in the κ-trajectories. Three
+compounding causes found and fixed, in order of importance:
+
+1. **Deep-λ init makes 0 unstable (the real cause).** With `memory_lambda=gng_lambda=5` the self-gain
+   `g·λ = gain·(n·m/N) ≈ 5 ≫ 1` — so κ=0 is a strongly *unstable* saddle before any stimulus, and the net
+   slides into a well during the input-free baseline. **Fix = subcritical init `memory_lambda=0.8`** (g·λ≈0.8<1
+   ⇒ 0 is a stable FP off-attention). `sweep_sub_nogate` (rank-2, tanh, N=1024, 4 seeds): baseline now **flat
+   at 0** AND κ0 memory **held at ±1 through the whole delay** — additive attention (last input channel, 0 at
+   baseline / 1 after stim) gates the bistability on its own via the trained `wi` projection. DPA~1.0, go 1.0
+   (nogo weak 0.03–0.56, a separate decision-mode issue).
+2. **`ThresholdLoss` zero-target was toothless** (`src/train.py`). Zero targets (baselines, nogo rest) were
+   scored `relu(|pred|−thresh)²` with `thresh=1.0` → a free ±1 dead-zone. Added **`zero_thresh` (default 0 ⇒
+   MSE-to-0)** so baselines are pinned while ±1 keeps its margin. Config: `dpa_zero_thresh`. (Affects ALL
+   hinge/ThresholdLoss sweeps.)
+3. **GNG generator never pinned the baseline** (`src/tasks.py`). It inits `zeros*nan` and only wrote task
+   windows, leaving `[0,n_on0)` free (NaN) for every κ — DPA/dual clamp it, GNG didn't. Added
+   `targets[:, :n_on[0]] = 0.0`.
+
+**Multiplicative attention gain-gate — tried and REMOVED.** Hypothesis: attention should multiply the
+recurrent self-gain (`g·(1+s·attn)·λ`) so 0 is stable off-attention (baseline) and bistable on. Implemented in
+`models.py` + swept (`sweep_sub_gate`, s=2). Result: baseline flat 0 ✓ but κ0 memory **decays during the delay**
+(transient, not latched) — the uniform gate on `rec_inputs` destabilises the held state. Additive attention
+(nogate) does strictly better (flat baseline + held memory), so the gate was reverted; `models.py` back to plain
+`gain·(input+rec)`. **Takeaway: subcritical init + additive attention is the clean recipe** for a stable-0
+baseline with persistent memory; no gain-gate needed.
+
+**Plotting/infra this thread:** `plot_sweep.py` now saves **PNG+SVG (no PDF)** via a `save_fig` helper (PNGs
+publish straight to the localhost figure gallery — see the `figure-gallery` shared skill) and passes
+`target_rank=meta.rank` in `individual_flow` (was defaulting to 1 → IndexError on the new rank-restricted
+`generate_dual_trials`). `rank3_flow.py` likewise emits PNG+SVG. Rank-3 sweeps must plot with
+`--plots acc traj` (the analytic FP finder is rank-2 only; flows come from `rank3_flow.py`).
+
+Earlier this session (`sweep_r2_newtgt`/`sweep_r3_newtgt`, pre-subcritical): the revised rank-3 targets +
+`zero_thresh` lifted rank-3 DPA retention to ~1.0 and recovered nogo on 3/4 seeds (was 0/4); rank-2 held DPA
+1.0 with seed-variable nogo. Superseded as the baseline recipe by the subcritical-λ finding above.
