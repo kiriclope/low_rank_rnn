@@ -620,6 +620,11 @@ tanh_asym γ=0.3, `decision_lambda=0.25`, `memory_lambda=0.8`, gain 2, nolick=0.
 
 ## 13. Session 2026-07-05 — ★ ISOLATION ACHIEVED: the two-ingredient fix, confirmed
 
+> **⚠ SUPERSEDED by §15 (2026-07-21):** the isolation attributed here to `kappa1_reg` (ingredient 1) and
+> the lowering to `nolick`/`tanh_asym` (ingredient 2) is **not** what does it. Ablation shows the
+> **attention input** isolates the wells (kills the ring by destabilising the lick attractor); `kappa1_reg`
+> and `nolick` can both be 0 and the geometry holds. Read §15 for the corrected mechanism.
+
 §12e's prediction was **validated in a live network**: the ring opens into two isolated low
 wells *iff* the decision self-gain g·λ₁ is driven to ≈1 (ISOLATE) on top of the directional
 lowering (LOWER). Everything else this session only did (2) and left the ring intact.
@@ -740,3 +745,58 @@ So the ~1.5 is the trained decision-readout scale; **π/2 is a coincidence**.
   across-seed attractor/slow-attractor scatter) and `fp_meanflow_{stage}.pdf` (mean vector field +
   across-seed agreement background + attractor overlay). Replaced the old `fp_scatter_by_*`.
 - **Figure 1 draft**: `results/figures/paper/fig1_model.pdf` (model + κ-framework + tasks + curriculum).
+
+## 15. Session 2026-07-21 — ★★ THE MECHANISM: attention isolates the wells (supersedes §13's attribution)
+
+**§13 said isolation = `kappa1_reg` (hold g·λ₁≈1). That attribution is wrong.** A factorial ablation
+this session shows the isolation of the two no-lick memory wells — killing the 270° ring — is done by the
+**attention input**, with `kappa1_reg=0` throughout. The reg was masking the real lever.
+
+### 15a. The ablation
+Base = subcritical rank-2 recipe: N=1024, tanh, gain=1, `memory_lambda=0.8`, `decision_lambda=0.5`,
+`cue_scale=2`, `nolick=0.5`, **fixed lr** (`use_scheduler=False`), `kappa1_reg=0`. All flows computed with
+attention ON (`ff[-1]=1`, incl. Autonomous), ±2 window.
+
+| sweep | attention | nolick | DPA ep | dual_dpa | dual_nogo | autonomous flow |
+|---|---|---|---|---|---|---|
+| `sweep_subcrit` | trained | 0.5 | 100 | 0.95 | 0.40 | 2 isolated wells, κ₁≈−0.8 |
+| `sweep_nonolick` | trained | 0 | 100 | 0.95 | 0.21 | 2 isolated wells, κ₁≈−0.8 |
+| `sweep_subcrit_dpa300` | trained | 0.5 | 300 | ~1.0 | 0.53 | 2 isolated wells |
+| `sweep_frzatt` | **frozen** | 0.5 | 100 | 1.0 | 0.29 | 2 isolated wells |
+| `sweep_noatt` | **OFF** | 0 | 100 | 1.0 | **0.00** | **3-attractor RING** (lick well returns) |
+
+### 15b. The mechanism (not "lowering" — *isolation by killing the lick node*)
+The A/B memory wells sit at **κ₁≈−0.8 in every regime** — attention does NOT push them down. What it does:
+- **Attention OFF:** the go/lick node at κ₁≈+1.7 is a **stable attractor**. Autonomous flow = the old
+  270° ring/U (top lick well + two bottom memory wells). On nogo trials the state falls into the lick
+  well ⇒ **nogo = 0**.
+- **Attention ON:** that top node becomes a **repeller**; only the two no-lick memory wells survive,
+  isolated, no ring. This is exactly the geometry §13 chased with `kappa1_reg`.
+
+So the effective self-gain story from §12/§13 (g·λ₁≈1 to kill the ring) is achieved here **by the
+attention drive shifting the operating point of the decision mode**, not by a reg penalty. Removing the
+reg does nothing; removing attention brings the ring straight back.
+
+### 15c. What each knob actually does (by elimination)
+- **attention = necessary and sufficient for isolation.** OFF ⇒ ring, nogo→0.
+- **attention need NOT be learned.** `frzatt` freezes the attention `wi` column at random init (new
+  `freeze_attention_input` flag, freezes it in DPA+GNG; Dual freezes all inputs anyway) and still
+  isolates (nogo 0.29). Any fixed tonic break suffices — the specific projection barely matters.
+- **`nolick` ≠ isolation/lowering.** `nnl` gives identical well positions; nolick only buys a modest
+  nogo margin (0.40 vs 0.21). It is NOT the directional ingredient we thought (contra §13's ingredient-2).
+- **init criticality washes out.** subcritical (λ₀=0.8) vs supercritical (λ₀=2.0) → identical geometry
+  (self-gains task-locked, confirming §14a).
+- **longer DPA helps nogo:** 100→300 epochs lifts nogo 0.40→0.53. (DPA never reaches stop_loss 0.1 —
+  floors ~0.34 — because the pre-sample baseline is attention-OFF where κ=0 is a supercritical saddle;
+  κ₁ drifts there, penalised but structurally un-removable. The Dual stage pins its baseline and does
+  converge <0.1.)
+
+### 15d. Reinterpretation of the whole thread
+The years-long fragility (§12/§13/§14) was partly a **task-target problem** masked by the reg/nolick/
+tanh_asym scaffolding. This session cleaned the targets (pinned baselines, clean κ₀/κ₁ role windows,
+fixed the response-window `dt` bug) and went to fixed lr; with a well-posed objective the network finds
+the clean two-well-in-no-lick geometry on its own, and **attention alone supplies the ring-killing
+isolation**. Historic "isolation recipes" (kappa1_reg, isolate_clamp) were treating a symptom.
+
+Figures: `rnn/{sweep_subcrit,sweep_nonolick,sweep_subcrit_dpa300,sweep_frzatt,sweep_noatt}/` in the
+localhost gallery (±2, KDE mean-flows). Full inventory: `docs/experiment_log.md` (2026-07-21).
