@@ -138,6 +138,7 @@ class RunConfig:
     go_target:        float = 1.0   # target value for go response window
     input_scale:      float = 1.0   # global multiplier on all stimulus + cue input amplitudes
     attention_input:  bool  = False # tonic attention/context input (last channel, =1 from first stim onset); input_size += 1
+    freeze_attention_input: bool = False # keep the attention channel's wi column FROZEN at init in ALL stages (untrained attention)
     rwd:              bool  = False  # teacher-forced reward feedback
     rwd_scale:        float = 1.0   # amplitude of the reward pulse (default +1)
     # Which stages freeze ALL input dims. Subset of ['dpa', 'gng', 'dual'].
@@ -576,6 +577,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         if config.freeze_gng_input_during_dpa:
             gng_dims = list(range(4, config.input_size - 1))  # go/nogo/cue; excludes reward (last)
             dpa_freeze_input = sorted(set(dpa_freeze_input) | set(gng_dims))
+        if config.freeze_attention_input and config.attention_input:
+            dpa_freeze_input = sorted(set(dpa_freeze_input) | {config.input_size - 1})
         _stage_header("DPA", config.epochs_dpa, dpa_freeze_input, [])
         t0 = time.time()
         X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input)
@@ -654,6 +657,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     else:
         gng_freeze_input = (list(range(config.input_size)) if "gng" in config.freeze_input_stages
                             else [0, 1, 2, 3] + ([config.input_size - 1] if config.rwd else []))
+        if config.freeze_attention_input and config.attention_input:
+            gng_freeze_input = sorted(set(gng_freeze_input) | {config.input_size - 1})
         _stage_header("GNG", config.epochs_gng, gng_freeze_input, [0])
         t0 = time.time()
         X, y   = generate_gng_trials(config.n_batch, gng_timing, config.input_size, noise=noise, target_rank=config.target_rank,
@@ -952,7 +957,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         freeze_rank0_dual=False,
         optimizer="adam",              # no weight decay
         learning_rate=0.01,
-        use_scheduler=True,
+        use_scheduler=False,           # FIXED lr (these nets learn better with constant lr; no scheduler)
         stop_loss=0.1,
         batch_size=64, n_batch=516,
         grad_clip_norm=None,
@@ -964,18 +969,43 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     if hinge_gng is not None:          # CLI override: False = uncorrected two-sided MSE-to-±1 holds
         shared["hinge_gng"] = hinge_gng
 
-    # SUBCRITICAL-λ recipe (rank-2). Base self-gain g·λ<1 (memory_lambda=0.8, gain=1) so that WITHOUT
-    # attention κ=0 is a stable fixed point → the pre-sample baseline sits at 0 (no drift). Additive
-    # attention (last channel, 0 at baseline / 1 after stim) gates the bistability on its own via the
-    # trained input projection — both flat baseline AND held memory. (The multiplicative gain-gate was
-    # tried and removed: it flattened the baseline too but hurt memory persistence.)
-    sub_common = dict(rank=2, target_rank=2, tau=0.30, hidden_size=1024, gain=1.0, noise=0.25,
-                      nonlinearity="tanh", nolick_weight=0.5,
-                      memory_lambda=0.8, decision_lambda=0.5,   # subcritical base (g·λ<1, 0 stable off-attention)
-                      kappa1_reg_weight=0.0, nogo_hinge_thresh=-1.0, cue_scale=2.0)
+    # SUBCRITICAL vs SUPERCRITICAL memory mode (rank-2), same everything else. Tests the baseline
+    # hypothesis: with g·λ0<1 the pre-sample baseline κ=0 is a stable FP (flat, no drift); with g·λ0>1
+    # it's an unstable saddle and the net drifts into a well before any stimulus. Additive attention
+    # (last channel, 0 at baseline / 1 after stim) gates the bistability. Launch into SEPARATE dirs with
+    # --run_filter _sub / _sup.
+    base = dict(rank=2, target_rank=2, tau=0.30, hidden_size=1024, gain=1.0, noise=0.25,
+                nonlinearity="tanh", nolick_weight=0.5, decision_lambda=0.5,
+                kappa1_reg_weight=0.0, nogo_hinge_thresh=-1.0, cue_scale=2.0)
 
+    # subcritical memory mode: g·λ0 = 1·0.8 = 0.8 < 1 → 0 stable at baseline.
+    # Longer DPA (300) — at 100 ep DPA floored at ~0.34 (still descending), never hit stop_loss 0.1;
+    # give it room to converge (the κ1 baseline drift is the residual keeping it up).
+    shared_ld = {**shared, "epochs_dpa": 300}
+    for seed in range(11):
+        configs.append(RunConfig(run_id=f"s{seed}_sub", seed=seed, memory_lambda=0.8, **base, **shared_ld))
+
+    # supercritical memory mode: g·λ0 = 1·2.0 = 2.0 > 1 → 0 unstable → baseline drifts
     for seed in range(4):
-        configs.append(RunConfig(run_id=f"s{seed}_ng", seed=seed, **sub_common, **shared))
+        configs.append(RunConfig(run_id=f"s{seed}_sup", seed=seed, memory_lambda=2.0, **base, **shared))
+
+    # subcritical WITHOUT the one-sided no-lick regularisation (nolick_weight=0) — isolates its effect
+    no_nolick = {**base, "nolick_weight": 0.0}
+    for seed in range(11):
+        configs.append(RunConfig(run_id=f"s{seed}_nnl", seed=seed, memory_lambda=0.8, **no_nolick, **shared))
+
+    # CONTROL: no attention (symmetry-breaker OFF) AND no nolick reg — expect wells to straddle κ1≈0
+    # (both lowering ingredients removed). Short: 3 seeds.
+    no_att        = {**base, "nolick_weight": 0.0}
+    no_att_shared = {**shared, "attention_input": False}
+    for seed in range(3):
+        configs.append(RunConfig(run_id=f"s{seed}_noatt", seed=seed, memory_lambda=0.8, **no_att, **no_att_shared))
+
+    # FROZEN attention: attention ON but its wi column never trained (kept at init) — tests whether the
+    # net needs to LEARN the attention projection or works with a fixed random one. Else = subcritical recipe.
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_frzatt", seed=seed, memory_lambda=0.8,
+                                 freeze_attention_input=True, **base, **shared))
 
     return configs
 

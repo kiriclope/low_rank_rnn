@@ -75,7 +75,7 @@ STAGE_KEYS      = ["after_dpa", "after_gng", "after_dual"]
 STAGE_X         = np.arange(3)
 STAGE_TASK      = {"dpa": "dpa", "naive": "gng", "expert": "dual"}
 CONDITION_COLS  = ("tab:blue", "tab:orange")
-XLIM = YLIM     = (-1.5, 1.5)
+XLIM = YLIM     = (-2.0, 2.0)
 
 # ── Central color config ──────────────────────────────────────────────────────
 # Each entry: (primary, light_shade).  Used by trajectories, accuracy plots,

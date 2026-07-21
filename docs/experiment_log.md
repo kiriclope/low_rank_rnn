@@ -446,3 +446,46 @@ Earlier this session (`sweep_r2_newtgt`/`sweep_r3_newtgt`, pre-subcritical): the
 but the test in Dual (0.5 s), so the GNG response was silently half as long. Both now compute a fixed 500 ms
 window explicitly: `dt = cue_off + int(round(0.5/timing.dt))` (robust to the timestep). GNG response widened
 250 → 500 ms; Dual unchanged (still 0.5 s, now explicit).
+
+### ★ ATTENTION isolates the wells — the mechanism, by ablation (2026-07-21)
+
+Factorial ablation on the subcritical rank-2 recipe (N=1024, tanh, gain=1, `memory_lambda=0.8`,
+`decision_lambda=0.5`, `cue_scale=2`, **fixed lr** `use_scheduler=False`, adam 0.01). All autonomous/
+input-driven flows computed with **attention ON** (`ff[-1]=1`, incl. "Autonomous") and at **±2** limits.
+
+| sweep | attention | nolick | DPA ep | seeds | dual_dpa | dual_nogo | autonomous flow |
+|---|---|---|---|---|---|---|---|
+| `sweep_subcrit` | trained | 0.5 | 100 | 11 | 0.95 | **0.40** | 2 isolated wells κ1≈−0.8 |
+| `sweep_nonolick` | trained | 0 | 100 | 11 | 0.95 | 0.21 | 2 isolated wells κ1≈−0.8 |
+| `sweep_subcrit_dpa300` | trained | 0.5 | 300 | 11 | ~1.0 | **0.53** | 2 isolated wells |
+| `sweep_frzatt` | **frozen** | 0.5 | 100 | 4 | 1.0 | 0.29 | 2 isolated wells |
+| `sweep_noatt` | **OFF** | 0 | 100 | 3 | 1.0 | **0.00** | **3-attractor ring** (lick well returns) |
+| `sweep_supercrit` (λ0=2.0) | trained | 0.5 | 100 | 4 | ~1.0 | 0.42 | same as subcrit |
+
+**Mechanism (overturns the old mental model).** The two A/B memory wells sit at **κ1≈−0.8 in every
+condition** — attention does NOT "lower" them. What attention does is **destabilise the autonomous
+lick/go attractor**: with attention the top node (κ1≈+1.7) is a *repeller* and only the two no-lick
+wells remain (isolated, no ring); with attention OFF that lick well is a stable *attractor* → the state
+falls into it on nogo trials → **nogo = 0** and the old 270° ring/U is back. So **attention is the
+isolation lever** we used to attribute to `kappa1_reg` (reg is 0 here yet the ring is gone).
+
+**What each knob actually does (by elimination):**
+- **attention = necessary.** OFF ⇒ ring returns, nogo→0. This is THE lever.
+- **attention need not be LEARNED.** `frzatt` (wi attention column frozen at random init via new
+  `freeze_attention_input` flag) still isolates (nogo 0.29) — any fixed tonic break suffices.
+- **nolick ≠ lowering/isolation.** `nnl` (nolick=0) gives the *same* well positions; nolick only buys
+  a modest nogo margin (0.40 vs 0.21).
+- **init criticality ≠ it.** subcritical (λ0=0.8) vs supercritical (λ0=2.0) → identical geometry
+  (self-gains task-locked).
+- **longer DPA helps nogo.** 100→300 DPA epochs: nogo 0.40→0.53, DPA retention cleaner. (At 100 ep DPA
+  never hit stop_loss 0.1 — floored ~0.34 — because the attention-OFF baseline is unstable, see the
+  2026-07-21 baseline note; the residual is the pre-sample κ1 drift, penalised but un-removable.)
+
+**Baseline caveat (unchanged):** attention is on only from stim onset, so the pre-sample window `[0,n_on0)`
+runs attention-off where κ=0 is a supercritical saddle → κ1 drifts (DPA-stage figures). The Dual stage
+pins its baseline (converges <0.1); the DPA stage does not (that residual is real, not a masking bug).
+
+**Code:** `freeze_attention_input` RunConfig flag (freezes the attention wi column in DPA+GNG; Dual
+already freezes all inputs); `use_scheduler=False` (fixed lr — these nets learn better without a
+scheduler); `plot_sweep` XLIM/YLIM → ±2 (all FP scatters/flows/mean-flows). Figures published to the
+localhost gallery under `rnn/<sweep>/`.

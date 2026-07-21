@@ -137,6 +137,7 @@ def generate_gng_trials(
 
     # baseline
     targets[:, :n_on[0]] = 0.0
+    baseline_value = None
 
     # response window: fixed 500 ms after cue-off (n_off[1] = cue off here)
     dt = int(n_off[1]) + int(round(0.5 / timing.dt))
@@ -243,6 +244,7 @@ def generate_dual_trials(
     # baseline
     targets[:, :n_on[0]] = 0.0
     # targets[:, :n_on[1], 1] = 0.0
+    baseline_value = None
 
     # response window: fixed 500 ms after cue-off (n_off[2] = cue off here)
     dt = int(n_off[2]) + int(round(0.5 / timing.dt))
