@@ -440,3 +440,9 @@ publish straight to the localhost figure gallery — see the `figure-gallery` sh
 Earlier this session (`sweep_r2_newtgt`/`sweep_r3_newtgt`, pre-subcritical): the revised rank-3 targets +
 `zero_thresh` lifted rank-3 DPA retention to ~1.0 and recovered nogo on 3/4 seeds (was 0/4); rank-2 held DPA
 1.0 with seed-variable nogo. Superseded as the baseline recipe by the subcritical-λ finding above.
+
+**Response-window `dt` fix (`src/tasks.py`, 2026-07-21):** GNG & Dual expressed the go/nogo response over
+`[cue_off, dt)` with `dt = cue_off + (n_off[-1]−n_on[-1])/2` = *half the last epoch* — the cue in GNG (0.25 s)
+but the test in Dual (0.5 s), so the GNG response was silently half as long. Both now compute a fixed 500 ms
+window explicitly: `dt = cue_off + int(round(0.5/timing.dt))` (robust to the timestep). GNG response widened
+250 → 500 ms; Dual unchanged (still 0.5 s, now explicit).
