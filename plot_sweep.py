@@ -57,6 +57,17 @@ sns.set_context("notebook")
 sns.set_style("ticks")
 plt.rc("axes.spines", top=False, right=False)
 
+def save_fig(fig, out_path, dpi=150):
+    """Save a figure as PNG + SVG (no PDF) so PNGs publish directly to the gallery.
+
+    out_path may carry any extension (legacy call sites pass *.pdf); we swap it
+    for .png and .svg. PNG for the gallery/quick view, SVG for vector editing.
+    """
+    stem = os.path.splitext(out_path)[0]
+    fig.savefig(stem + ".png", bbox_inches="tight", dpi=dpi)
+    fig.savefig(stem + ".svg", bbox_inches="tight")
+
+
 GOLDEN          = (5 ** 0.5 - 1) / 2
 STYLE_COLORS    = {"structured": "#4C72B0", "random": "#DD8452"}
 STAGE_LABELS    = ["After DPA", "After GNG", "After Dual"]
@@ -771,7 +782,7 @@ def summary_accuracy_stages(all_metas, ckpt_dir: str, out_dir: str, device: str,
     fig.suptitle(title or "Accuracy across stages (dual-trial eval)", y=1.02)
     fig.tight_layout(w_pad=2.0)
     out_path = os.path.join(out_dir, "accuracy_stages.pdf")
-    fig.savefig(out_path, bbox_inches="tight")
+    save_fig(fig, out_path)
     print(f"Saved {out_path}")
     plt.close(fig)
 
@@ -908,7 +919,7 @@ def _plot_trialtype_accuracy(data: dict, title: str, out_path: str):
     sns.despine(fig=fig, trim=True)
     fig.suptitle(title, y=1.02)
     fig.tight_layout(w_pad=2.0)
-    fig.savefig(out_path, bbox_inches="tight")
+    save_fig(fig, out_path)
     print(f"Saved {out_path}")
     plt.close(fig)
 
@@ -1036,7 +1047,7 @@ def _render_fp_scatter_by_stage(data, stage, conditions, all_metas, out_path, li
     _fp_legend(fig, all_metas)
     fig.suptitle(f"{stage} ({STAGE_TASK[stage].upper()}) — attractors & slow attractors across seeds",
                  fontsize=10)
-    fig.savefig(out_path, bbox_inches="tight")
+    save_fig(fig, out_path)
     print(f"Saved {out_path}")
     plt.close(fig)
 
@@ -1154,7 +1165,7 @@ def _render_meanflow_by_stage(mflow, scatter_data, stage, conditions, all_metas,
         cb2.ax.tick_params(labelsize=6); cb2.set_ticks([])
     fig.suptitle(f"{stage} ({STAGE_TASK[stage].upper()}) — mean flow (bg = seed agreement) + attractors",
                  fontsize=10)
-    fig.savefig(out_path, bbox_inches="tight")
+    save_fig(fig, out_path)
     print(f"Saved {out_path}")
     plt.close(fig)
 
@@ -1234,7 +1245,7 @@ def summary_avg_trajectories(all_metas: list[RunMeta], ckpt_dir: str,
                 f"{stage_labels[stage]} — {gng_title} (mean across runs)",
             )
             out_path = os.path.join(out_dir, f"traj_{stage}_{gng_key}.pdf")
-            fig.savefig(out_path, bbox_inches="tight")
+            save_fig(fig, out_path)
             print(f"Saved {out_path}")
             plt.close(fig)
 
@@ -1243,7 +1254,7 @@ def summary_avg_trajectories(all_metas: list[RunMeta], ckpt_dir: str,
             f"{stage_labels[stage]} — GNG task (mean across runs)",
         )
         out_path = os.path.join(out_dir, f"traj_{stage}_gng_task.pdf")
-        fig.savefig(out_path, bbox_inches="tight")
+        save_fig(fig, out_path)
         print(f"Saved {out_path}")
         plt.close(fig)
 
@@ -1285,7 +1296,7 @@ def individual_accuracy_stages(meta: RunMeta, out_dir: str):
     fig.suptitle(meta.run_id, fontsize=11)
     fig.tight_layout()
     out_path = os.path.join(out_dir, "accuracy_stages.pdf")
-    fig.savefig(out_path, bbox_inches="tight")
+    save_fig(fig, out_path)
     plt.close(fig)
 
 
@@ -1321,7 +1332,7 @@ def individual_trajectories(meta: RunMeta, ckpt_dir: str, out_dir: str, device: 
                 gng_status, f"{stage_labels[stage]} — {gng_title}",
             )
             out_path = os.path.join(out_dir, f"traj_{stage}_{gng_key}.pdf")
-            fig.savefig(out_path, bbox_inches="tight")
+            save_fig(fig, out_path)
             plt.close(fig)
 
         fig = _plot_gng_traj_figure(
@@ -1329,7 +1340,7 @@ def individual_trajectories(meta: RunMeta, ckpt_dir: str, out_dir: str, device: 
             f"{stage_labels[stage]} — GNG task",
         )
         out_path = os.path.join(out_dir, f"traj_{stage}_gng_task.pdf")
-        fig.savefig(out_path, bbox_inches="tight")
+        save_fig(fig, out_path)
         plt.close(fig)
 
     print(f"  trajectories saved: {out_dir}")
@@ -1390,7 +1401,7 @@ def individual_fp_scatter(meta: RunMeta, ckpt_dir: str, out_dir: str,
                ncol=6, fontsize=6, bbox_to_anchor=(0.5, -0.08), frameon=False)
 
     out_path = os.path.join(scatter_dir, "fp_scatter.pdf")
-    fig.savefig(out_path, bbox_inches="tight")
+    save_fig(fig, out_path)
     print(f"  scatter saved: {out_path}")
     plt.close(fig)
 
@@ -1440,19 +1451,19 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
 
         if task == "dpa":
             inputs, targets = generate_dpa_trials(
-                n_batch, timing, input_size=meta.input_size,
+                n_batch, timing, input_size=meta.input_size, target_rank=meta.rank,
                 noise=meta.noise_sigma(), attention_input=meta.attention_input)
             cnames = None
         elif task == "gng":
             inputs, targets = generate_gng_trials(
-                n_batch, timing, input_size=meta.input_size,
+                n_batch, timing, input_size=meta.input_size, target_rank=meta.rank,
                 noise=meta.noise_sigma(), cue_on_go_input=cue,
                 cue_scale=meta.cue_scale, nogo_target=meta.nogo_target,
                 attention_input=meta.attention_input)
             cnames = None
         else:
             inputs, targets, _, cnames = generate_dual_trials(
-                n_batch, timing, input_size=meta.input_size,
+                n_batch, timing, input_size=meta.input_size, target_rank=meta.rank,
                 noise=meta.noise_sigma(), cue_on_go_input=cue,
                 cue_scale=meta.cue_scale, nogo_target=meta.nogo_target,
                 attention_input=meta.attention_input)
@@ -1484,7 +1495,7 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
         )
         fig.suptitle(f"{meta.run_id} — {stage} ({task.upper()})", y=1.01)
         out_path = os.path.join(flow_dir, f"fp_{stage}.pdf")
-        fig.savefig(out_path, bbox_inches="tight")
+        save_fig(fig, out_path)
         plt.close(fig)
         del model
     print(f"  flow fields saved: {flow_dir}")

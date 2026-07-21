@@ -206,7 +206,7 @@ def render_run(sweep_dir, rid, out_path, conditions, xlim=3.0, n_seeds=11, stage
                  f"(rows = input condition, cols = κ-plane; real 3-D fixed points projected)",
                  fontsize=11, y=1.005)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    for ext in ("pdf", "png"):
+    for ext in ("png", "svg"):
         fig.savefig(f"{out_path}.{ext}", dpi=140, bbox_inches="tight")
     plt.close(fig)
     return total_fps
