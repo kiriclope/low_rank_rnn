@@ -61,6 +61,30 @@ screen -dmS sweep_myrun bash -c "python sweep.py \
     2>&1 | tee results/dual/sweep_myrun/run.log"
 ```
 
+### Screens & logging — the rules (do this every time, don't improvise)
+
+**One detached screen per RANDOM SEED, and one log per seed.** Not one screen for the
+whole sweep, not one consolidated log. This is the `--per_run_screen` mode
+(`sweep.py:_launch_per_run_screens`) — the default way to run sweeps here. Applies to
+`sweep.py` and `nb_sweep/sweep.py` alike.
+
+1. **One screen per seed/run**, round-robin across GPUs, named `sweep_<run_id>` (e.g.
+   `sweep_s3_myrun`). Launch with `--per_run_screen`:
+   ```bash
+   screen -dmS sweep_myrun bash -c "python sweep.py --out_dir results/dual/sweep_myrun \
+       --n_gpus 2 --per_run_screen 2>&1 | tee results/dual/sweep_myrun/launch.log"
+   ```
+   The launcher itself spawns the per-seed screens and exits; each seed runs in its own
+   `sweep_<run_id>` screen.
+2. **One log per seed:** each per-seed screen tees to its OWN `<run_dir>/train.log`
+   (i.e. `results/dual/<sweep>/<run_id>/train.log`) — inside its `bash -c "..."`. There is no
+   shared consolidated `run.log`; do not build one.
+3. **Never run a sweep in the foreground** — it blocks the turn and skips the per-seed screens.
+4. Re-launching is a safe *resume* — finished runs (whose `*_seed<s>.pth` exists) are skipped.
+5. **Monitor / attach / kill:** `screen -ls` · `tail -f <run_dir>/train.log` ·
+   `screen -r sweep_<run_id>` · kill one with `screen -S sweep_<run_id> -X quit`
+   (all: `pkill -f run_sequence`).
+
 **Plot a sweep:**
 ```bash
 LD_PRELOAD=/home/leon/mambaforge/lib/libstdc++.so.6 python plot_sweep.py \
@@ -83,7 +107,7 @@ python rerun_dual.py --sweep_dir results/dual/new --source_dir results/dual/orig
 
 - `input_size` in `results.jsonl` is already post-`__post_init__` (7 if `cue_on_go_input=True`).
 - `--n_workers` is **total** across all GPUs, not per-GPU. Sweet spot: 4–8 per GPU.
-- Always `screen -dmS` with `tee` inside `bash -c "..."` — see [docs/running.md](docs/running.md).
+- Always `screen -dmS` with `tee` inside `bash -c "..."` — see **Screens & logging — the rules** above (and [docs/running.md](docs/running.md)).
 - Default `XLIM/YLIM` is ±1.5 (tanh/erf/lif). Pass `--xlim -5 5` for relu/elu/softplus sweeps.
 
 ## Model quick-reference

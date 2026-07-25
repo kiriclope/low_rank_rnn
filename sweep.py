@@ -168,6 +168,8 @@ class RunConfig:
     go_hinge_thresh: float | None = None  # if set, go response window uses relu(thresh-pred)² instead of MSE
     nogo_hinge_thresh: float = -1.0       # hinge_gng no-lick threshold during the memory delay (0 after cue)
     ramping_gng: bool = False             # cue-driven ramping decision (no delay memory-hold; nogo cancels the cue ramp)
+    windowed_targets: bool = False        # windowed transient decisions: 0.5 s pre-cue hold + short expression window (gng nogo not reset on cue); was `decay_decision`
+    decay_to_zero: bool = True            # within windowed_targets: add explicit decay-back-to-0 targets after the expression window (gng response & pairing). False = express then leave free
     dpa_hinge_thresh: float | None = None # if set, DPA ±1 decision uses squared hinge toward ±thresh (DPA + dual stages)
     dpa_zero_thresh: float = 0.0   # DPA ThresholdLoss dead-zone for ZERO targets (baselines); 0 ⇒ MSE-to-0 (pins baseline)
     hinge_squared:   bool = True   # DPA ThresholdLoss: True=relu(...)² (default), False=linear margin relu(...)
@@ -178,6 +180,7 @@ class RunConfig:
     kappa_gain_target: float | None = None  # CRITICALITY: pin ALL modes' g·λ to this value (two-sided) after each step, ALL stages
     nolick_weight:   float = 0.0   # one-sided no-lick penalty relu(κ₁)² over free decision windows (GNG+Dual)
     hinge_gng:       bool  = False # unified one-sided decision hinge at κ₁=0 (go+nogo & match/nonmatch, all stages)
+    nogo_push_memory: bool = False # Dual: True FORCES the nogo memory to κ₁≤−1 (defeats emergent lowering); False (default) = gentle κ₁≤0, well location left to emerge
 
     # Output
     out_dir: str = "../results/dual/vanilla"
@@ -295,9 +298,19 @@ def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, targ
     pred  = model(X.to(device), y.to(device))[..., -1].cpu()
     names = np.asarray(condition_names).astype(str)
 
+    # pairing expression window: the 1 s right after test-off ([n_off[3], n_off[3]+1s]). Averaging to
+    # END instead diluted the signal across the decay-to-0 / free tail (windowed_targets) → understated
+    # (esp. the decay arm, where match is pulled back toward 0). For non-windowed targets the decision is
+    # held past test-off so this window still captures it.
+    half      = int(round(0.5 / timing.dt))
     dpa_start = int(timing.n_stim_off[3])
-    pred_dpa  = pred[:, dpa_start:].mean(1)
-    dpa_acc   = ((pred_dpa > 0) == (y[:, -1, -1] > 0)).float().mean().item()
+    pred_dpa  = pred[:, dpa_start:dpa_start + 2*half].mean(1)
+    # pairing label from the ground-truth condition (match = A→C or B→D), NOT y[:, -1, -1]: with the
+    # ramp-style pairing target the last timestep is NaN → NaN>0 marks every trial "nonmatch" → 0.5.
+    samp      = np.array([n[0]  for n in names])
+    tst       = np.array([n[-1] for n in names])
+    is_pair   = torch.as_tensor(((samp == "A") & (tst == "C")) | ((samp == "B") & (tst == "D")))
+    dpa_acc   = ((pred_dpa > 0) == is_pair).float().mean().item()
 
     # go/nogo: evaluate κ₁ in the AFTER-CUE target window (where the response target actually
     # lives, [n_off[2], n_off[2]+½·(test−cue2)]), and score each side by whether it goes to its
@@ -307,7 +320,11 @@ def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, targ
     pred_gng  = pred[:, rwd_start:rwd_stop].mean(1)
     is_go     = torch.as_tensor(["_go_"   in n for n in names])
     is_ng     = torch.as_tensor(["_nogo_" in n for n in names])
-    thresh    = nogo_target   # decision boundary = the no-lick target: nogo correct iff it goes to ≤ its target
+    # decision boundary = the go/nogo MIDPOINT (matches _gng_accuracy). "nogo correct" means "not
+    # licking" = κ₁ below the midpoint (go sits at go_target, nogo at ~nogo_target). Thresholding at
+    # the exact nogo_target instead mis-scored a correct nogo whose brief cue-overshoot tipped the
+    # windowed mean just above it (e.g. emergent nolick=0 runs read ~0.2 while behaving correctly).
+    thresh    = (go_target + nogo_target) / 2.0
     go_acc    = (pred_gng[is_go] >  thresh).float().mean().item() if is_go.any() else float("nan")
     nogo_acc  = (pred_gng[is_ng] <= thresh).float().mean().item() if is_ng.any() else float("nan")
     gng_acc   = float(np.nanmean([go_acc, nogo_acc]))
@@ -581,7 +598,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             dpa_freeze_input = sorted(set(dpa_freeze_input) | {config.input_size - 1})
         _stage_header("DPA", config.epochs_dpa, dpa_freeze_input, [])
         t0 = time.time()
-        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input)
+        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -665,7 +682,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                       cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                       nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                       input_scale=config.input_scale, attention_input=config.attention_input,
-                                      ramping_gng=config.ramping_gng)
+                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -708,7 +725,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                             cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                             go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                             input_scale=config.input_scale, attention_input=config.attention_input,
-                                            paired_only=True, ramping_gng=config.ramping_gng)
+                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
         print(f"[{rid}]  data(paired): {list(Xp.shape)} → {list(yp.shape)}", flush=True)
         tlp, vlp     = train_val_split(Xp.to(device), yp.to(device), config.batch_size)
         optp, schedp = _opt_and_sched()
@@ -719,7 +736,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                 aux_weight=config.aux_weight, bl_weight=config.bl_weight,
                 go_hinge_thresh=config.go_hinge_thresh, dpa_hinge_thresh=config.dpa_hinge_thresh,
                 nolick_weight=config.nolick_weight, hinge_gng=config.hinge_gng,
-                nogo_hinge_thresh=config.nogo_hinge_thresh)
+                nogo_hinge_thresh=config.nogo_hinge_thresh,
+                nogo_push_memory=config.nogo_push_memory)
             if config.dual_loss == "separated" else criterion)
         trainer = Optimization(model, tlp, vlp, paired_criterion, optp, schedp,
                                config.grad_clip_norm, num_epochs=config.epochs_dual_paired,
@@ -746,7 +764,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                        nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                        input_scale=config.input_scale, attention_input=config.attention_input,
-                                       ramping_gng=config.ramping_gng)
+                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
     print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
     tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
     opt, sched = _opt_and_sched()
@@ -763,6 +781,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             nolick_weight=config.nolick_weight,
             hinge_gng=config.hinge_gng,
             nogo_hinge_thresh=config.nogo_hinge_thresh,
+            nogo_push_memory=config.nogo_push_memory,
         )
         print(f"[{rid}]  loss=separated"
               f"  dpa_w={config.dpa_weight}  gng_w={config.gng_weight}"
@@ -978,34 +997,22 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                 nonlinearity="tanh", nolick_weight=0.5, decision_lambda=0.5,
                 kappa1_reg_weight=0.0, nogo_hinge_thresh=-1.0, cue_scale=2.0)
 
-    # subcritical memory mode: g·λ0 = 1·0.8 = 0.8 < 1 → 0 stable at baseline.
-    # Longer DPA (300) — at 100 ep DPA floored at ~0.34 (still descending), never hit stop_loss 0.1;
-    # give it room to converge (the κ1 baseline drift is the residual keeping it up).
-    shared_ld = {**shared, "epochs_dpa": 300}
-    for seed in range(11):
-        configs.append(RunConfig(run_id=f"s{seed}_sub", seed=seed, memory_lambda=0.8, **base, **shared_ld))
-
-    # supercritical memory mode: g·λ0 = 1·2.0 = 2.0 > 1 → 0 unstable → baseline drifts
-    for seed in range(4):
-        configs.append(RunConfig(run_id=f"s{seed}_sup", seed=seed, memory_lambda=2.0, **base, **shared))
-
-    # subcritical WITHOUT the one-sided no-lick regularisation (nolick_weight=0) — isolates its effect
-    no_nolick = {**base, "nolick_weight": 0.0}
-    for seed in range(11):
-        configs.append(RunConfig(run_id=f"s{seed}_nnl", seed=seed, memory_lambda=0.8, **no_nolick, **shared))
-
-    # CONTROL: no attention (symmetry-breaker OFF) AND no nolick reg — expect wells to straddle κ1≈0
-    # (both lowering ingredients removed). Short: 3 seeds.
-    no_att        = {**base, "nolick_weight": 0.0}
-    no_att_shared = {**shared, "attention_input": False}
-    for seed in range(3):
-        configs.append(RunConfig(run_id=f"s{seed}_noatt", seed=seed, memory_lambda=0.8, **no_att, **no_att_shared))
-
-    # FROZEN attention: attention ON but its wi column never trained (kept at init) — tests whether the
-    # net needs to LEARN the attention projection or works with a fixed random one. Else = subcritical recipe.
-    for seed in range(4):
-        configs.append(RunConfig(run_id=f"s{seed}_frzatt", seed=seed, memory_lambda=0.8,
-                                 freeze_attention_input=True, **base, **shared))
+    # EMERGENT recipe: the no-lick memory wells must EMERGE from the asymmetric-cue nogo-error
+    # pressure alone — NO explicit κ₁ penalty. So nolick_weight=0 AND nogo_push_memory=False
+    # (gentle nogo κ₁≤0; the well location is left free). attention ON = the symmetry break (not a
+    # directional κ₁ penalty). memory_lambda=0.8 (subcritical), 100/100/100. See ring_lowerplane_log §16.
+    emergent = {**base, "nolick_weight": 0.0}
+    # WINDOWED transient decisions (0.5 s pre-cue hold + short expression window; gng nogo NOT reset on
+    # cue). Fresh DPA→GNG→Dual on the new gng task. Compare decay-back-to-0 ON vs OFF (only difference).
+    # freeze_rank0_dual protects the κ₀ memory through Dual; 100/100/300 (dual still descends past 100).
+    shared_win = {**shared, "freeze_rank0_dual": True, "epochs_dual": 300}
+    for decay in (True, False):
+        tag = "decay" if decay else "nodecay"
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, memory_lambda=0.8,
+                                     nogo_push_memory=False, ramping_gng=True,
+                                     windowed_targets=True, decay_to_zero=decay,
+                                     **emergent, **shared_win))
 
     return configs
 

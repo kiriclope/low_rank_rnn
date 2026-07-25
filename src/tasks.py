@@ -37,9 +37,9 @@ def make_timings(dt: float) -> dict:
     windows / targets never drift apart.
     """
     return {
-        "dpa":  TaskTiming([2.0, 8.0],             [3.0, 9.0],            10.0, dt),
+        "dpa":  TaskTiming([2.0, 8.0],             [3.0, 9.0],            11.0, dt),
         "gng":  TaskTiming([2.0, 4.0],             [3.0, 4.5],             6.0, dt),
-        "dual": TaskTiming([2.0, 4.0, 6.0, 8.0],   [3.0, 5.0, 6.5, 9.0],  10.0, dt),
+        "dual": TaskTiming([2.0, 4.0, 6.0, 8.0],   [3.0, 5.0, 6.5, 9.0],  11.0, dt),
     }
 
 
@@ -52,6 +52,8 @@ def generate_dpa_trials(
     baseline_value: float = 0.5,
     input_scale: float = 1.0,
     attention_input: bool = False,
+    windowed_targets: bool = False,
+    decay_to_zero: bool = True,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -77,17 +79,26 @@ def generate_dpa_trials(
 
     # baseline
     targets[:, :n_on[0], 0] = 0.0 # on kappa 0
+    # no ramping
     targets[:, :n_on[1], -1] = 0.0 # on kappa 1
 
     # memory
     targets[idx_A, n_on[0]:n_on[1], 0] = 1.0
-    targets[idx_B, n_on[0]:n_on[1], 0] = -1.0
-    
-    baseline_value = None
+    targets[idx_B, n_on[0]:n_on[1], 0] = -1.0    
 
     # pairing
-    targets[idx_pair,  n_on[1]:, -1] = 1.0
-    targets[~idx_pair, n_on[1]:, -1] = -1.0
+    if windowed_targets:
+        # express 1 s AFTER test-off (a 1 s plateau — longer window so the match/+1 decision can push
+        # up against the no-lick bias), then optionally decay to 0 (transient decision)
+        half = int(round(0.5 / timing.dt))
+        to   = int(n_off[1])
+        targets[idx_pair,  to:to + 2*half, -1] =  1.0
+        targets[~idx_pair, to:to + 2*half, -1] = -1.0
+        if decay_to_zero:
+            targets[:,     to + 2*half:, -1] = 0.0
+    else:
+        targets[idx_pair,  n_off[1], -1] = 1.0
+        targets[~idx_pair, n_off[1], -1] = -1.0
 
     return inputs, targets
 
@@ -107,6 +118,8 @@ def generate_gng_trials(
     input_scale: float = 1.0,
     attention_input: bool = False,
     ramping_gng: bool = False,
+    windowed_targets: bool = False,
+    decay_to_zero: bool = True,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -137,30 +150,37 @@ def generate_gng_trials(
 
     # baseline
     targets[:, :n_on[0]] = 0.0
-    baseline_value = None
 
-    # response window: fixed 500 ms after cue-off (n_off[1] = cue off here)
-    dt = int(n_off[1]) + int(round(0.5 / timing.dt))
+    half = int(round(0.5 / timing.dt))    # 0.5 s in steps
+    cu   = int(n_on[1])                   # cue ONSET
+    co   = int(n_off[1])                  # cue OFFset
 
-    # ramping
-    if ramping_gng:
-        targets[idx_go,   n_on[1], -1] = 1.0
-        targets[idx_nogo, n_on[1], -1] = -1.0
+    if windowed_targets:
+        # Transient decision. HOLD the go/nogo identity (go=+1 / nogo=−1) for 0.5 s ENDING at the cue
+        # onset, so nogo learns to sit at −1 BEFORE the go-push cue; then a 0.5 s response 0.5 s after
+        # cue-off (go→go_target; nogo NOT reset on cue — held free); then optionally decay to 0.
+        targets[idx_go,   cu - half:cu, 1] =  1.0             # pre-cue hold: 0.5 s before the cue
+        targets[idx_nogo, cu - half:cu, 1] = -1.0
+        targets[idx_go,   co:co + half, 1] = go_target        # response: the 0.5 s right after cue-off
+        # targets[idx_nogo, co:co + half, 1] = nogo_target    # nogo not reset on cue onset
+        if decay_to_zero:
+            targets[:,    co + half:co + 3*half, 1] = 0.0     # decay to 0 over the next 1.0 s
+
+        if target_rank >= 3:
+            targets[idx_go,   co:co + half, 2] = go_target
+            targets[idx_nogo, co:co + half, 2] = nogo_target
     else:
-        # memory
-        targets[idx_go,   n_off[0]:n_on[1], 1] = 1.0 
-        targets[idx_nogo, n_off[0]:n_on[1], 1] = -1.0
-
-
-    # response
-    targets[idx_go,   n_off[1]:dt, 1] = go_target
-    targets[idx_nogo, n_off[1]:dt, 1] = nogo_target
-
-    if target_rank >= 3:
-        targets[idx_go,   n_off[1]:dt, 2] = go_target           # κ2 action: express after the cue
-        targets[idx_nogo, n_off[1]:dt, 2] = nogo_target
-
-    baseline_value = None
+        dt = co + half
+        if ramping_gng:
+            targets[idx_go,   n_on[1], 1] = 1.0
+            targets[idx_nogo, n_on[1], 1] = -1.0
+        else:
+            targets[idx_go,   n_off[0]:n_on[1], 1] = 1.0
+            targets[idx_nogo, n_off[0]:n_on[1], 1] = -1.0
+        targets[idx_nogo, n_off[1]:dt, 1] = nogo_target
+        if target_rank >= 3:
+            targets[idx_go,   n_off[1]:dt, 2] = go_target
+            targets[idx_nogo, n_off[1]:dt, 2] = nogo_target
 
     return inputs, targets
 
@@ -181,6 +201,8 @@ def generate_dual_trials(
     attention_input: bool = False,
     paired_only: bool = False,
     ramping_gng: bool = False,
+    windowed_targets: bool = False,
+    decay_to_zero: bool = True,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -233,6 +255,7 @@ def generate_dual_trials(
     else:
         inputs[idx_go,   n_on[1]:n_off[1], 4] += input_scale
         inputs[idx_nogo, n_on[1]:n_off[1], 5] += input_scale
+
         if cue_on_go_input:
             inputs[idx_gng, n_on[2]:n_off[2], 4] += cue_scale * input_scale
         else:
@@ -243,34 +266,44 @@ def generate_dual_trials(
 
     # baseline
     targets[:, :n_on[0]] = 0.0
-    # targets[:, :n_on[1], 1] = 0.0
-    baseline_value = None
 
-    # response window: fixed 500 ms after cue-off (n_off[2] = cue off here)
-    dt = int(n_off[2]) + int(round(0.5 / timing.dt))
-
-    if ramping_gng:
-        # gng ramping
-        targets[idx_go,   n_on[2], 1] = 1.0
-        targets[idx_nogo, n_on[2], 1] = -1.0        # before cue: ramp till +/- 1
-
-    else:
-        # gng memory
-        targets[idx_go,   n_off[1]:n_on[2], 1] = 1.0
-        targets[idx_nogo, n_off[1]:n_on[2], 1] = -1.0
-
-    # gng rwd
-    targets[idx_go,   n_off[2]:dt, 1] = go_target           # κ1: express the action after the cue
-    targets[idx_nogo, n_off[2]:dt, 1] = nogo_target    
-
-    # gng rwd if rank>2
-    targets[idx_go,   n_off[2]:dt, -1] = go_target
-    targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
-
-    # pairing
+    half = int(round(0.5 / timing.dt))    # 0.5 s in steps
+    cu   = int(n_on[2])                   # cue ONSET
+    co   = int(n_off[2])                  # cue OFFset
+    to   = int(n_off[3])                  # test offset
     idx_pair = (idx_A & idx_C) | (idx_B & idx_D)
-    targets[idx_pair,  n_off[3]:, -1] = 1.0
-    targets[~idx_pair, n_off[3]:, -1] = -1.0
+
+    if windowed_targets:
+        # Transient decisions (express then optionally decay).
+        # go/nogo: HOLD the identity (go=+1 / nogo=−1) for 0.5 s ENDING at the cue onset so nogo sits
+        # at −1 BEFORE the go-push cue (avoids the false lick); a 0.5 s response 0.5 s after cue-off;
+        # then optionally decay to 0.
+        targets[idx_go,   cu - half:cu, 1] =  1.0             # pre-cue hold: 0.5 s before the cue
+        targets[idx_nogo, cu - half:cu, 1] = -1.0
+        targets[idx_go,   co:co + half, 1] = go_target        # response: the 0.5 s right after cue-off
+        targets[idx_nogo, co:co + half, 1] = nogo_target
+        if decay_to_zero:
+            targets[:,    co + half:co + 2*half, 1] = 0.0     # decay to 0 over the next 0.5 s
+        if target_rank >= 3:
+            targets[idx_go,   co:co + half, -1] = go_target
+            targets[idx_nogo, co:co + half, -1] = nogo_target
+        # pairing: 1 s expression right after test-off (longer window so match/+1 can push up against
+        # the no-lick bias), then optionally decay to 0
+        targets[idx_pair,  to:to + 2*half, -1] =  1.0
+        targets[~idx_pair, to:to + 2*half, -1] = -1.0
+        if decay_to_zero:
+            targets[:,     to + 2*half:, -1] = 0.0
+    else:
+        dt = co + half
+        if ramping_gng:
+            targets[idx_go,   n_on[2], 1] = 1.0
+            targets[idx_nogo, n_on[2], 1] = -1.0
+        targets[idx_nogo, n_off[2]:dt, 1] = nogo_target
+        if target_rank >= 3:
+            targets[idx_go,   n_off[2]:dt, -1] = go_target
+            targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
+        targets[idx_pair,  n_off[3], -1] = 1.0
+        targets[~idx_pair, n_off[3], -1] = -1.0
 
     condition_names = np.array([
         f"{s}_{g}_{t}" if g != "none" else f"{s}_{t}"

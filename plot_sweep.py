@@ -364,15 +364,23 @@ def _eval_dual_by_trialtype(model, meta: RunMeta, device: str,
     )
     X, y = X.to(device), y.to(device)
     pred  = model(X, y)[..., -1].cpu()
-    y_cpu = y.cpu()
     names = np.asarray(cnames).astype(str)
 
+    # pairing expression window (1 s after test-off) + gng response window (0.5 s after cue-off) —
+    # NOT to-END, which dilutes across the windowed decay/free tail. Mirrors sweep._dual_accuracy.
+    half      = int(round(0.5 / timing.dt))
     dpa_start = int(timing.n_stim_off[3])
     rwd_start = int(timing.n_stim_off[2])
-    rwd_stop  = int(timing.n_stim_on[3])
+    rwd_stop  = int(timing.n_stim_off[2] + (timing.n_stim_off[3] - timing.n_stim_on[3]) / 2)
 
-    pred_dpa = pred[:, dpa_start:].mean(1)
+    pred_dpa = pred[:, dpa_start:dpa_start + 2*half].mean(1)
     pred_gng = pred[:, rwd_start:rwd_stop].mean(1)
+
+    # pairing label from condition NAMES (match = A→C or B→D), NOT y[:, -1, -1]: with windowed targets
+    # the last timestep is 0 (decay) or NaN (free) → labels every trial nonmatch → chance.
+    samp = np.array([n[0]  for n in names])
+    tst  = np.array([n[-1] for n in names])
+    is_pair = torch.as_tensor(((samp == "A") & (tst == "C")) | ((samp == "B") & (tst == "D")))
 
     is_dpa_t  = torch.as_tensor(["_go_" not in n and "_nogo_" not in n for n in names])
     is_go_t   = torch.as_tensor(["_go_"   in n for n in names])
@@ -381,7 +389,7 @@ def _eval_dual_by_trialtype(model, meta: RunMeta, device: str,
     out = {}
     for mask, key in [(is_dpa_t, "dpa_only"), (is_go_t, "go"), (is_nogo_t, "nogo")]:
         if mask.any():
-            correct = ((pred_dpa[mask] > 0) == (y_cpu[mask, -1, -1] > 0)).float()
+            correct = ((pred_dpa[mask] > 0) == is_pair[mask]).float()
             out[f"{key}_dpa"] = correct.numpy() if per_trial else correct.mean().item()
 
     if is_go_t.any():
@@ -452,8 +460,10 @@ def _make_gng_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None =
     )
     np.random.set_state(rng_state)
     torch.set_rng_state(torch_state)
-    # go trials have decision target == 1.0 after the cue (last non-nan value)
-    is_go = (y[:, -1, -1] > 0.5).numpy()
+    # go trials reach decision target +1 (memory + response); nogo peak at 0 (response) / −1 (memory).
+    # Use nanmax over the whole trial — NOT y[:, -1, -1], whose last timestep is NaN now that the
+    # response window ends 500 ms after the cue (well before the trial end) → would mark ALL trials nogo.
+    is_go = (np.nanmax(y[:, :, -1].numpy(), axis=1) > 0.5)
     return (
         torch.as_tensor(X, dtype=torch.float32),
         torch.as_tensor(y, dtype=torch.float32),
@@ -1178,14 +1188,10 @@ def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
     conditions = _input_conditions("dual", ref.input_size, ref.cue_on_go_input)
     data       = _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds, slow_tol=slow_tol)
 
-    # One figure per STAGE (dpa / naive / expert), panels = input conditions, across-seed scatter.
-    for stage in STAGES:
-        _render_fp_scatter_by_stage(
-            data, stage, conditions, all_metas,
-            os.path.join(out_dir, f"fp_scatter_{stage}.pdf"), lim=lim,
-        )
+    # fp_scatter figures intentionally NOT rendered (Leon's preference) — data still collected
+    # because the mean-flow attractor overlay below reuses it.
 
-    # Companion mean-flow figures: averaged vector field + across-seed agreement + attractor overlay.
+    # Mean-flow figures: averaged vector field + across-seed agreement + attractor overlay.
     # KDE overlay writes to a separate `_kde` filename so it never clobbers the scatter-overlay version.
     suffix = "_kde" if meanflow_overlay == "kde" else ""
     mflow = _collect_mean_flow(all_metas, ckpt_dir, device, conditions, lim=lim)
@@ -1602,13 +1608,9 @@ Examples:
         os.makedirs(sum_dir, exist_ok=True)
 
         if "acc" in want:
-            # Evaluate every checkpoint on DUAL trials ONCE; both accuracy figures
-            # (stages = aggregate, by_trialtype = per type) share it → consistent.
+            # Only accuracy_by_trialtype (Leon's preference — accuracy_stages skipped).
             acc_data = _collect_trialtype_accuracy(all_metas, args.sweep_dir, device)
             run_lbl  = f" — {', '.join(args.run_ids)}" if args.run_ids else " (all runs)"
-            print("\n[summary] accuracy_stages")
-            summary_accuracy_stages(all_metas, args.sweep_dir, sum_dir, device,
-                                    data=acc_data, title=f"Accuracy across stages (dual-trial){run_lbl}")
             print("\n[summary] accuracy_by_trialtype")
             summary_accuracy_by_trialtype(all_metas, args.sweep_dir, sum_dir, device,
                                           data=acc_data,
@@ -1633,16 +1635,14 @@ Examples:
             print(f"\n[individual] {meta.run_id}")
 
             if "acc" in want:
-                individual_accuracy_stages(meta, ind_dir)
+                # Only accuracy_by_trialtype (Leon's preference — accuracy_stages skipped).
                 individual_accuracy_by_trialtype(meta, args.sweep_dir, ind_dir, device)
 
             if "traj" in want:
                 individual_trajectories(meta, args.sweep_dir, ind_dir, device)
 
-            if "scatter" in want:
-                individual_fp_scatter(meta, args.sweep_dir, ind_dir, device,
-                                      n_seeds=args.n_fp_seeds,
-                                      slow_tol=args.slow_tol if args.mark_slow else None)
+            # fp_scatter figures intentionally not rendered (Leon's preference) even when
+            # "scatter" is requested — the mean-flow (summary) is what "scatter" now produces.
 
             if "flow" in want:
                 individual_flow(meta, args.sweep_dir, ind_dir, device,

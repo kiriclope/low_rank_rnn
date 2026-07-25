@@ -433,10 +433,17 @@ class MaskedGNGLoss(nn.Module):
                     th_go   = self.go_hinge_thresh if self.go_hinge_thresh is not None else 1.0
                     nogo_th = torch.where(resp_mask, torch.zeros_like(safe_pred),
                                           torch.full_like(safe_pred, self.nogo_hinge_thresh))
-                    dec_raw = torch.where(safe_tgt > 0,
-                                          torch.relu(th_go - safe_pred) ** 2,
-                                          torch.relu(safe_pred - nogo_th) ** 2)
-                    loss = loss + self.masked_mean(dec_raw, finite)
+                    hinge_raw = torch.where(safe_tgt > 0,
+                                            torch.relu(th_go - safe_pred) ** 2,
+                                            torch.relu(safe_pred - nogo_th) ** 2)
+                    # TWO separate terms, each averaged over its OWN window so neither dilutes the
+                    # other: (1) go/nogo one-sided hinge over the post-sample decision windows;
+                    # (2) pre-sample BASELINE pinned to 0 (MSE-to-0, symmetric), like the
+                    # non-decision channels — NOT folded into the nogo hinge (which would drive κ₁≤−1).
+                    bl_mask    = (t < self.timing.n_stim_on[0].to(device))[None, :]
+                    hinge_loss = self.masked_mean(hinge_raw, finite & ~bl_mask)
+                    bl_loss    = self.masked_mean(safe_pred ** 2, finite & bl_mask)
+                    loss = loss + self.target_weight * hinge_loss + self.zero_weight * bl_loss
                 else:
                     # PURE MSE toward the decision targets (go→+1, nogo→−1 in the delay / 0 after
                     # cue, all set by the task), weighted by zero/target. hinge_gng=False ⇒ no
@@ -506,6 +513,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
         nolick_weight: float = 0.0,
         hinge_gng: bool = False,
         nogo_hinge_thresh: float = -1.0,
+        nogo_push_memory: bool = False,
     ):
         super().__init__()
         self.timing          = timing
@@ -515,6 +523,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
         self.nolick_weight   = nolick_weight
         self.hinge_gng       = hinge_gng
         self.nogo_hinge_thresh = nogo_hinge_thresh
+        self.nogo_push_memory  = nogo_push_memory
         self.dpa_weight      = dpa_weight
         self.gng_weight      = gng_weight
         self.gng_go_weight   = gng_go_weight
@@ -557,20 +566,35 @@ class MaskedMultiTargetDualLoss(nn.Module):
         n_off = self.timing.n_stim_off.to(device)
 
         bl_mask      = finite & (t < n_on[0])[None, :]
-        gng_win_mask = finite & ((t >= n_on[2]) & (t < n_on[3]))[None, :]
+        # Start the gng window at the memory-delay onset (n_off[1]) so the ±1 go/nogo MEMORY
+        # (held at [n_off[1], n_on[2]) while the sample is held at κ₀=±1, no cue input) is scored —
+        # this is where the nogo push-down (κ₁≤−1) lands to lower the memory wells.
+        gng_win_mask = finite & ((t >= n_off[1]) & (t < n_on[3]))[None, :]
         dpa_mask     = finite & (t >= n_off[3])[None, :]
 
         go_mask   = gng_win_mask & (safe_t > 0)   # target = +1 → go
-        nogo_mask = gng_win_mask & (safe_t <= 0)  # target ≤  0 → nogo
+        nogo_mask = gng_win_mask & (safe_t < 0)  # target ≤  0 → nogo
+        nogo_resp_mask = gng_win_mask & (safe_t == 0)  # target ==  0 → nogo
 
         bl_loss = self.masked_mean(self.criterion(safe_p, torch.zeros_like(safe_p)), bl_mask)
+        
         if self.hinge_gng:
             th_go  = self.go_hinge_thresh  if self.go_hinge_thresh  is not None else 1.0
             th_dpa = self.dpa_hinge_thresh if self.dpa_hinge_thresh is not None else th_go
-            # go/nogo: ASYMMETRIC one-sided (fixes the go/nogo collapse) — go → κ₁≥go_hinge_thresh,
-            # nogo → κ₁≤0.
+            # go/nogo: ASYMMETRIC one-sided (fixes the go/nogo collapse) — go → κ₁≥go_hinge_thresh.
             go_loss   = self.masked_mean(torch.relu(th_go - safe_p) ** 2, go_mask)
-            nogo_loss = self.masked_mean(torch.relu( safe_p) ** 2, nogo_mask)
+            # nogo MEMORY (target −1 delay). Default (nogo_push_memory=False) = gentle one-sided
+            # κ₁≤0: the memory is only forbidden from licking, so its no-lick location is left free to
+            # EMERGE from the asymmetric-cue nogo-error pressure. nogo_push_memory=True FORCES κ₁≤−1
+            # (relu(κ₁+th_go)²) — an explicit push-down that reads high nogo but drags the autonomous
+            # memory wells back UP into the lick plane (it supplies an alternative nogo-error route),
+            # so it defeats the emergent lowering. See ring_lowerplane_log §16.
+            if self.nogo_push_memory:
+                nogo_loss = self.masked_mean(torch.relu(safe_p + th_go) ** 2, nogo_mask)
+            else:
+                nogo_loss = self.masked_mean(torch.relu(safe_p) ** 2, nogo_mask)
+            nogo_resp_loss = self.masked_mean(torch.relu(safe_p) ** 2, nogo_resp_mask)
+
             # match/nonmatch: SYMMETRIC ±th margin — identical to the DPA-stage ThresholdLoss, so
             # this decision has the same shape (nonmatch ≤ −th) across DPA and Dual.
             dpa_raw   = torch.where(safe_t > 0, torch.relu(th_dpa - safe_p) ** 2,
@@ -581,8 +605,12 @@ class MaskedMultiTargetDualLoss(nn.Module):
             # hinge_gng=False ⇒ no hinges anywhere (go_hinge_thresh / dpa_hinge_thresh ignored).
             go_loss   = self.masked_mean(self.criterion(safe_p, safe_t), go_mask)
             nogo_loss = self.masked_mean(self.criterion(safe_p, safe_t), nogo_mask)
+
+            nogo_resp_loss = self.masked_mean(self.criterion(safe_p, safe_t), nogo_resp_mask)
+
             dpa_loss  = self.masked_mean(self.criterion(safe_p, safe_t), dpa_mask)
-        gng_loss  = self.gng_go_weight * go_loss + self.gng_nogo_weight * nogo_loss
+
+        gng_loss  = self.gng_go_weight * go_loss + self.gng_nogo_weight * (nogo_loss + nogo_resp_loss)
 
         aux_loss = pred_dec.sum() * 0.0   # zero scalar carrying grad/device/dtype
         for ch in range(C):
@@ -598,7 +626,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
         nolick_loss = pred_dec.sum() * 0.0
         if self.nolick_weight:
             sample_mask = ((t >= n_on[0]) & (t < n_off[0]))[None, :]   # no loss during sample
-            nolick_mask = torch.isfinite(pred_dec) & ~torch.isfinite(tgt_dec) & ~sample_mask
+            nolick_mask = torch.isfinite(pred_dec) & ~torch.isfinite(tgt_dec) & ~sample_mask & ~bl_mask
             nolick_loss = self.masked_mean(torch.relu(pred_dec) ** 2, nolick_mask)
 
         self.last_components = {

@@ -800,3 +800,43 @@ isolation**. Historic "isolation recipes" (kappa1_reg, isolate_clamp) were treat
 
 Figures: `rnn/{sweep_subcrit,sweep_nonolick,sweep_subcrit_dpa300,sweep_frzatt,sweep_noatt}/` in the
 localhost gallery (±2, KDE mean-flows). Full inventory: `docs/experiment_log.md` (2026-07-21).
+
+## 16. Session 2026-07-24 — transient/windowed decisions; the decay-to-0 target hurts pairing convergence
+
+Goal of this thread: decisions that **express then relax to 0** (a lick is transient), with a short pre-cue
+memory hold so nogo learns κ₁=−1 *before* the go-push cue. Implemented as **windowed targets**: 0.5 s
+pre-cue hold → 0.5 s response after cue-off → optional 0.5 s decay to 0; DPA pairing = 1 s expression after
+test-off → optional decay. **GNG nogo no longer reset on cue onset** (holds −1 pre-cue, free through the
+cue, then decays).
+
+### 16a. Flag split
+`decay_decision` → **`windowed_targets`** (the windowing) + new **`decay_to_zero`** (default True) gating
+*only* the decay-to-0 lines. Lets us ablate windowing-with-decay vs windowing-without on an otherwise
+identical recipe.
+
+### 16b. `sweep_win_decay` — decay vs no-decay (8 seeds, everything else identical)
+- **No-decay = clean 4/4** — pairing 1.0, go/nogo 1.0 every seed.
+- **Decay = 2/4** — s1/s3 clean; s0 stuck (val 0.82, pairing 0.59), s2 stuck (val 0.96, pairing collapses
+  on go trials).
+- Mechanism: the decay-to-0 target repeatedly pulls the decision back to 0, which **fights the match
+  decision's need to hold at +1 against the no-lick-biased field** (§15). Without the decay the match can
+  express and stay up long enough to learn the boundary; with it, 2/4 seeds fall into bad minima.
+- go/nogo unaffected either way — nogo (−1/0) and go (+1 briefly) are both compatible with the no-lick
+  bias; only the sustained match/+1 pairing is at odds with it. So **the decay tax lands entirely on the
+  pairing.**
+
+### 16c. Metric artifact fixed (again — same class as prior sessions)
+The pairing was scored by averaging κ-last from test-off to trial **end**; under windowing that spans the
+decay/free tail and dilutes the ±1 signal toward 0, reading ~chance even when the pairing is perfect in its
+window. Fixed to the **expression window** in both `sweep._dual_accuracy` and
+`plot_sweep._eval_dual_by_trialtype` (+ pairing label from condition names, not the NaN/0 last timestep).
+Standing lesson: **always score a windowed target inside its window.**
+
+### 16d. Takeaway
+Transient decisions are fine for these nets **as long as the tail isn't over-constrained.** The decay-to-0
+target is the expensive part (it fights the no-lick-biased match); leaving the post-window free gives the
+same transient behaviour with far better convergence. The residual go-trial-pairing ceiling is the
+shared-κ₁-axis tension (match=+1 competing with the no-lick memory on one axis) → the **rank-3 split**
+(separate κ₂ lick axis) remains the structural fix.
+
+Figures: `rnn/{arm_decay,arm_nodecay}/` (localhost gallery). Inventory: `docs/experiment_log.md` (2026-07-24).

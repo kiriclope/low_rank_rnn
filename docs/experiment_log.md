@@ -489,3 +489,42 @@ pins its baseline (converges <0.1); the DPA stage does not (that residual is rea
 already freezes all inputs); `use_scheduler=False` (fixed lr — these nets learn better without a
 scheduler); `plot_sweep` XLIM/YLIM → ±2 (all FP scatters/flows/mean-flows). Figures published to the
 localhost gallery under `rnn/<sweep>/`.
+
+### ★ Windowed transient decisions — decay vs no-decay ablation (2026-07-24)
+
+Decision targets moved from held plateaus to **windowed transients**: a 0.5 s pre-cue hold (go=+1 /
+nogo=−1, ending *at* cue onset so nogo sits at −1 *before* the go-push cue), a 0.5 s response right after
+cue-off, then an **optional** 0.5 s decay back to 0. DPA pairing (match/nonmatch) expressed for 1 s after
+test-off, then optional decay. **GNG nogo is no longer reset on cue onset** — its response line is dropped,
+so nogo holds −1 pre-cue, is free through the cue, then decays if decay is on.
+
+**Flag split** (`src/tasks.py` all 3 generators + `sweep.py`): the old `decay_decision` param is renamed
+**`windowed_targets`** (the windowed scheme) and a new **`decay_to_zero`** (default True) gates *only* the
+explicit decay-back-to-0 lines (gng response + pairing). So `windowed_targets=True, decay_to_zero=False` =
+express-in-window-then-free.
+
+**`sweep_win_decay`** (8 seeds, fresh DPA→GNG→Dual 100/100/300). Emergent recipe: rank2, N=1024, tanh,
+gain1, `memory_lambda=0.8`, `decision_lambda=0.5`, `cue_scale=2`, attention ON, `nolick_weight=0`,
+`nogo_push_memory=False`, `freeze_rank0_dual=True`, `ramping_gng=True`, `windowed_targets=True`, adam
+fixed lr 0.01, `nogo_target=0`. Two arms differ ONLY in `decay_to_zero`.
+
+| arm | pairing (none trials) | go / nogo | converged |
+|---|---|---|---|
+| **no-decay** (`decay_to_zero=False`) | **1.0 all 4** (s0 go-trial pairing 0.75) | 1.0 / 1.0 | **4/4** |
+| **decay** (`decay_to_zero=True`) | s1,s3 ≈1.0 · s0 0.59 · s2 1.0 (0.5 on go-trials) | 1.0 / 1.0 | **2/4** (s0,s2 stuck) |
+
+**Result:** dropping the decay-to-0 target makes the pairing converge far more reliably. The match
+decision must hold at +1 against the no-lick-biased field; the repeated decay-to-0 target fights that, and
+2/4 decay seeds fall into bad minima (s0 val 0.82; s2 val 0.96, loses pairing specifically on go trials).
+No-decay is clean 4/4. go/nogo is perfect (~1.0) in both arms regardless. (Measured with the correct
+α-scaled `noise_sigma`; raw-noise eval understates badly.)
+
+**Metric fix** (`sweep._dual_accuracy` + `plot_sweep._eval_dual_by_trialtype`): score the pairing in its
+**expression window** `[n_off[3], n_off[3]+1s]`, not averaged to trial end (which dilutes across the
+windowed decay/free tail → understated, esp. the decay arm). Also fixed the plot_sweep pairing **label** to
+come from condition names — it was `y[:,-1,-1]`, which is 0/NaN under windowing → labelled every trial
+nonmatch → chance. go/nogo window tightened to the 0.5 s response window (matches `_dual_accuracy`).
+
+Figures: `rnn/{arm_decay,arm_nodecay}/` in the localhost gallery (accuracy-by-trialtype, trajectories,
+per-stage flows + KDE mean-flows, ±2). Open: reseed the two stuck decay seeds; the go-trial-pairing ceiling
+is the shared-κ₁-axis tension (match=+1 vs no-lick memory) → rank-3 split. See `ring_lowerplane_log.md` §16.
