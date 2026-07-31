@@ -172,8 +172,10 @@ class RunConfig:
     gng_decay_weight:  float = 1.0      # unified loss: weight on the gng decay-to-0 term (independent of gng_weight)
     pair_decay_weight: float = 1.0      # unified loss: weight on the pairing decay-to-0 tail (independent of dpa/pair_weight)
     gng_response:      bool  = False    # windowed targets: re-add the 0.5 s response window after cue-off (go→go_target, nogo→nogo_target); scored by the unified rwd group
+    dual_gng_memory:   bool  = True     # DUAL stage: supervise the go/nogo pre-cue hold (the go/nogo working memory). False = not re-supervised in Dual (must survive on GNG-learned/frozen structure)
     rwd_go_weight:     float = 1.0      # unified loss: weight on the response-window go term (+1 hinge)
     rwd_nogo_weight:   float = 1.0      # unified loss: weight on the response-window nogo term (0→pin; allows go/nogo imbalance after cue)
+    rwd_nogo_onesided: bool  = False    # unified loss: response window scores ONLY the nogo lick penalty relu(κ₁)² (no go +1 hinge, no nogo pin) — go response & no-lick value both free. False = go +1 hinge + nogo pin-to-0
     gng_go_weight:   float = 1.0        # relative weight on go trials within gng_loss
     gng_nogo_weight: float = 1.0        # relative weight on nogo trials within gng_loss
     go_hinge_thresh: float | None = None  # if set, go response window uses relu(thresh-pred)² instead of MSE
@@ -209,8 +211,8 @@ class RunConfig:
                 raise ValueError("attention_input needs the last channel; set rwd=False, go_on_rwd_input=False.")
             self.rwd_gng = False   # prevent GNG reward-feedback writing onto the attention channel
             self.input_size += 1
-        if self.dual_loss not in ("multi", "separated", "threshold"):
-            raise ValueError(f"dual_loss must be 'multi', 'separated', or 'threshold', got {self.dual_loss!r}")
+        if self.dual_loss not in ("multi", "separated", "threshold", "unified"):
+            raise ValueError(f"dual_loss must be 'multi', 'separated', 'threshold', or 'unified', got {self.dual_loss!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -580,6 +582,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                 pair_decay_weight=config.pair_decay_weight,
                 rwd_go_weight=config.rwd_go_weight,
                 rwd_nogo_weight=config.rwd_nogo_weight,
+                rwd_nogo_onesided=config.rwd_nogo_onesided,
                 mem_weight=config.aux_weight, bl_weight=config.bl_weight)
     _half_steps = int(round(0.5 / gng_timing.dt))   # response window length in steps
     if config.dual_loss == "unified":
@@ -782,7 +785,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                             cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                             go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                             input_scale=config.input_scale, attention_input=config.attention_input,
-                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response)
+                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory)
         print(f"[{rid}]  data(paired): {list(Xp.shape)} → {list(yp.shape)}", flush=True)
         tlp, vlp     = train_val_split(Xp.to(device), yp.to(device), config.batch_size)
         optp, schedp = _opt_and_sched()
@@ -831,7 +834,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                        nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                        input_scale=config.input_scale, attention_input=config.attention_input,
-                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response)
+                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory)
     print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
     tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
     opt, sched = _opt_and_sched()
@@ -1071,21 +1074,23 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     # (gentle nogo κ₁≤0; the well location is left free). attention ON = the symmetry break (not a
     # directional κ₁ penalty). memory_lambda=0.8 (subcritical), 100/100/100. See ring_lowerplane_log §16.
     emergent = {**base, "nolick_weight": 0.0}
-    # DECISION-SUBCRITICALITY REG (all stages) on the windowed recipe: transience by DYNAMICS —
-    # w·relu(g·λ₁−1)² keeps the decision mode from ever training supercritical, so κ₁ cannot PARK at a
-    # decision (persistent lick attractor); excursions are input-driven and relax back to 0 on their
-    # own. vs the reg=0 sweep_win_decay baselines: nodecay converged 4/4 but wells lifted to κ₁≈+0.3
-    # (net parked match at +1); decay put wells at κ₁≈−0.73 but converged 2/4. Prediction: nodecay+reg
-    # = decay-arm geometry with nodecay-arm convergence. decay+reg arm tests the composition.
-    shared_win = {**shared, "freeze_rank0_dual": True, "epochs_dual": 300}
-    emergent_reg = {**emergent, "kappa1_reg_weight": 1.0}
-    for decay in (False, True):
-        tag = "regd" if decay else "regnd"
+    # UNIFIED-LOSS feature-isolation ladder (2026-07-31). ONE value-based loss at all 3 stages
+    # (dual_loss="unified"); windowed targets; all weights 1; NO reg. Three arms differ only in the
+    # response window (gng_response) and the decay-to-0 targets (decay_to_zero):
+    #   _base  : gng_response=F, decay=F  — pre-cue hold + pairing only (minimal)
+    #   _rwd   : gng_response=T, decay=F  — + the 0.5 s response window (rwd_go / rwd_nogo terms)
+    #   _decay : gng_response=F, decay=T  — + decay-to-0 (the lower-ring lever), NO rwd
+    # Feature isolation: rwd effect = _rwd vs _base, decay effect = _decay vs _base. Launch each arm
+    # into its OWN dir with --run_filter _base / _rwd / _decay.
+    shared_win = {**shared, "freeze_rank0_dual": True, "epochs_dual": 300, "dual_loss": "unified"}
+    arms = [("base", False, False), ("rwd", True, False), ("decay", False, True)]
+    for tag, rwd, decay in arms:
         for seed in range(4):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, memory_lambda=0.8,
                                      nogo_push_memory=False, ramping_gng=True,
                                      windowed_targets=True, decay_to_zero=decay,
-                                     **emergent_reg, **shared_win))
+                                     gng_response=rwd,
+                                     **emergent, **shared_win))
 
     return configs
 

@@ -208,6 +208,7 @@ def generate_dual_trials(
     windowed_targets: bool = False,
     decay_to_zero: bool = True,
     gng_response: bool = False,
+    gng_memory: bool = True,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -283,8 +284,11 @@ def generate_dual_trials(
         # go/nogo: HOLD the identity (go=+1 / nogo=−1) for 0.5 s ENDING at the cue onset so nogo sits
         # at −1 BEFORE the go-push cue (avoids the false lick); a 0.5 s response 0.5 s after cue-off;
         # then optionally decay to 0.
-        targets[idx_go,   cu - half:cu, 1] =  1.0             # pre-cue hold: 0.5 s before the cue
-        targets[idx_nogo, cu - half:cu, 1] = -1.0
+        if gng_memory:
+            # the go/nogo working memory (pre-cue hold). Optional in Dual: with it off, the go/nogo
+            # identity is NOT re-supervised — it must survive on the GNG-learned (frozen) structure.
+            targets[idx_go,   cu - half:cu, 1] =  1.0         # pre-cue hold: 0.5 s before the cue
+            targets[idx_nogo, cu - half:cu, 1] = -1.0
 
         if gng_response:
             # optional response window (0.5 s after cue-off): go→go_target, nogo→nogo_target(=0).

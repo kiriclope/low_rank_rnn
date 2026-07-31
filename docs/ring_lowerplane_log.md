@@ -879,3 +879,17 @@ Dual nogo pre-cue hold now ≤−1 (was gentle ≤0); pairing class-balanced. **
 the response window as a separate **rwd group** (`rwd_go` +1 hinge / `rwd_nogo` 0-pin, independent
 weights = the go/nogo imbalance knob for suppressing false licks). Targets visualised per trial type in
 `rnn/task_targets/`. Verified against the old losses; not yet run — it's the next objective.
+
+### 17e. UnifiedLoss sweep (RUNNING) + two optional decision knobs
+First UnifiedLoss run: three sweeps (`sweep_uni_{base,rwd,decay}`, 4 seeds, all weights 1, no reg),
+isolating the response window and decay against a minimal base (base = pre-cue hold + pairing only).
+rwd effect = rwd vs base, decay effect = decay vs base; all free of the ≤−1 tail bug. Two new
+default-off knobs added while building it:
+- **`rwd_nogo_onesided`** — response window scores ONLY nogo lick (`relu(κ₁)²`); go response and the
+  nogo no-lick value both free. The one-sided no-lick philosophy applied to the response window (vs
+  pinning nogo to exactly 0). "Only penalise nogo licking, nothing else."
+- **`dual_gng_memory`** (Dual only) — optionally drop the go/nogo pre-cue hold, so the go/nogo working
+  memory is not re-supervised in Dual and must ride the GNG-learned structure. Combined with
+  `gng_response=F` this is the fully-emergent go/nogo case (only the pairing is supervised on κ₁).
+Four independent Dual decision knobs now exist: `dual_gng_memory` · `gng_response`(+`rwd_nogo_onesided`) ·
+`decay_to_zero` · pairing. Score the running sweeps with `scratchpad/wells.py` + expression-window acc.

@@ -579,4 +579,24 @@ channel splits into gng vs pair groups at test onset (`pair_start`).
 - New RunConfig: `gng_decay_weight, pair_decay_weight, gng_response, rwd_go_weight, rwd_nogo_weight`.
 - Full verification battery in-session (equivalences to old losses; each violation → only its component;
   weight routing exact; non-windowed = no-op). Targets figure: `rnn/task_targets/`. Old `dual_loss` modes
-  untouched. **Not yet run** — this is the objective for the next sweep.
+  untouched.
+
+### ★ UnifiedLoss feature-isolation sweep — RUNNING (2026-07-31)
+
+Three sweeps, 4 seeds each, `dual_loss="unified"`, windowed, all weights 1, NO reg, fresh 100/100/300.
+Feature isolation (differ only in the response window + decay):
+- **`sweep_uni_base`**  — `gng_response=F, decay=F` (pre-cue hold + pairing only; the minimal recipe).
+- **`sweep_uni_rwd`**   — `gng_response=T, decay=F` (+ the 0.5 s response window: rwd_go/rwd_nogo terms).
+- **`sweep_uni_decay`** — `gng_response=F, decay=T` (+ decay-to-0, the lower-ring lever, no rwd).
+rwd effect = rwd vs base; decay effect = decay vs base. All free of the ≤−1 tail bug (pinned decays).
+Launched into 3 dirs via `--run_filter _base/_rwd/_decay`. **Score when done** (`scratchpad/wells.py` held
+κ₁, expression-window pairing/go/nogo, per-stage g·λ, unified `dual_loss_components`).
+
+**Two new optional loss/task knobs added this session** (default-off, prior configs byte-identical):
+- **`rwd_nogo_onesided`** (UnifiedLoss): response window scores ONLY the nogo lick penalty `relu(κ₁)²`
+  — NO go +1 hinge, NO nogo pin. go response + nogo no-lick value both free (only "nogo must not lick"
+  is enforced, per the emergent one-sided philosophy). vs default = go +1 hinge + nogo pin-to-0.
+- **`dual_gng_memory`** (task, DUAL only): supervise the go/nogo pre-cue hold or not. False = the go/nogo
+  working memory is NOT re-supervised in Dual (must survive on the GNG-learned structure; note
+  `freeze_rank0_dual` only protects κ₀, so this tests whether κ₁'s go/nogo memory persists on its own).
+Both verified; uncommitted-results status. See `ring_lowerplane_log.md` §17e.

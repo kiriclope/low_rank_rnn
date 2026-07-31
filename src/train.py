@@ -784,6 +784,7 @@ class UnifiedLoss(nn.Module):
                  gng_weight: float = 1.0, pair_weight: float = 1.0,
                  gng_decay_weight: float = 1.0, pair_decay_weight: float = 1.0,
                  rwd_go_weight: float = 1.0, rwd_nogo_weight: float = 1.0,
+                 rwd_nogo_onesided: bool = False,
                  mem_weight: float = 1.0, bl_weight: float = 1.0,
                  nolick_weight: float = 0.0):
         super().__init__()
@@ -798,6 +799,8 @@ class UnifiedLoss(nn.Module):
         self.pair_decay_weight = pair_decay_weight  # group's expression terms
         self.rwd_go_weight   = rwd_go_weight        # response window: go (+1) hinge
         self.rwd_nogo_weight = rwd_nogo_weight      # response window: nogo (0→pin / −1→hinge)
+        self.rwd_nogo_onesided = rwd_nogo_onesided  # nogo response: True → one-sided relu(κ₁)²
+        # (penalise lick only, no-lick value free); False → pin κ₁² (both sides)
         self.mem_weight    = mem_weight
         self.bl_weight     = bl_weight
         self.nolick_weight = nolick_weight
@@ -857,9 +860,17 @@ class UnifiedLoss(nn.Module):
                     rwd_m  = post & ((t >= int(r0)) & (t < int(r1)))[None, :]
                     g_mask = g_mask & ~rwd_m
                     p_mask = p_mask & ~rwd_m
-                    rp, rn, rz = self._class_terms(p, tgt, rwd_m)
-                    comp["rwd_go"]   = rp            # +1 → hinge ≥ thresh
-                    comp["rwd_nogo"] = rn + rz       # −1 → hinge ≤ −thresh; 0 → pin MSE-to-0
+                    if self.rwd_nogo_onesided:
+                        # ONLY penalise nogo licking (κ₁>0) in the response window — NO go +1 hinge,
+                        # NO nogo −1 hinge. go response and the nogo no-lick value are both free.
+                        comp["rwd_go"]   = zero_f
+                        comp["rwd_nogo"] = self.masked_mean(torch.relu(p) ** 2, rwd_m & (tgt == 0))
+                    else:
+                        rgo = self.masked_mean(torch.relu(self.thresh - p) ** 2, rwd_m & (tgt > 0))  # go +1 hinge
+                        rn  = self.masked_mean(torch.relu(p + self.thresh) ** 2, rwd_m & (tgt < 0))  # nogo −1 hinge
+                        rz  = self.masked_mean(p ** 2, rwd_m & (tgt == 0))                            # nogo pin to 0
+                        comp["rwd_go"]   = rgo
+                        comp["rwd_nogo"] = rn + rz
                 gp, gn, gd = self._class_terms(p, tgt, g_mask)
                 pp, pn, pd = self._class_terms(p, tgt, p_mask)
                 comp["gng_pos"], comp["gng_neg"], comp["gng_decay"]    = gp, gn, gd
