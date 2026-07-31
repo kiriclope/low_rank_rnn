@@ -893,3 +893,28 @@ default-off knobs added while building it:
   `gng_response=F` this is the fully-emergent go/nogo case (only the pairing is supervised on κ₁).
 Four independent Dual decision knobs now exist: `dual_gng_memory` · `gng_response`(+`rwd_nogo_onesided`) ·
 `decay_to_zero` · pairing. Score the running sweeps with `scratchpad/wells.py` + expression-window acc.
+
+### 17f. ★ Unified-loss results — "decay lowers the wells" was the ≤−1 tail bug (SUPERSEDES 17a)
+`sweep_uni_{base,rwd,decay}` (unified loss, honest pinned decays, no reg). ALL solve the task
+(pairing 1.0). But the geometry OVERTURNS §17a: with the ≤−1 pairing-tail bug fixed, **decay no longer
+lowers the memory wells.**
+| arm | pairing | go/nogo | held κ₁ (mean, deep-delay 'none' trials) |
+|---|---|---|---|
+| base (hold+pairing) | 1.0 4/4 | 1.0 | +0.14 (straddle 0) |
+| rwd (+response window) | 1.0 4/4 | 1.0 (2/4 spiral, complex eig) | +0.19 (straddle 0) |
+| decay (+decay-to-0) | 1.0 4/4 | **2/4 degraded** | **+0.02** (straddle 0) |
+The OLD decay arm (separated loss, buggy tail) gave κ₁≈**−0.73**; the SAME recipe under the unified loss
+(tail honestly pinned to 0, not shoved to −1) gives **+0.02**. That −0.75 is ENTIRELY the tail semantics
+— i.e. the "decay favours the lower ring" result (§17a, and Leon's observation) was the accidental
+basement-shove doing the lowering, not "return to 0". Under the honest loss NONE of base/rwd/decay lowers
+the wells (all straddle κ₁≈0), and decay additionally COSTS go/nogo (2/4 degrade) for no geometry gain.
+**⇒ no-lick well-lowering needs a real mechanism, not the decay artifact.** Honest candidates left:
+`nolick_weight` on the free windows (kept at 0 so far) or the rank-3 κ₂ split. The reg re-routes (§17b).
+
+### 17g. plot_sweep target-overlay bug (fixed)
+`RunMeta` didn't carry the target-scheme flags (`windowed_targets`/`decay_to_zero`/`gng_response`/
+`dual_gng_memory`/`ramping_gng`), so every trajectory plot built its dashed TARGET overlay with the
+DEFAULT non-windowed scheme — wrong for every windowed run (all `sweep_win_*`/`arm_*`/`sweep_uni_*`
+traj figures until now). Model trajectories, inputs, accuracy, and flows were unaffected (they don't use
+the overlay). Fixed: flags added to `RunMeta` + `_load_sweep_meta`, threaded into all four trajectory
+generators. `sweep_uni_*` traj figures regenerated + republished.

@@ -148,6 +148,12 @@ class RunMeta:
     fixed_weight_scale: float = 0.8
     fixed_weight_orthogonalize: bool = True
     fixed_weight_sparsity: float = 1.0
+    # target-scheme flags (so the trajectory target OVERLAY matches what the run trained on)
+    ramping_gng:      bool = False
+    windowed_targets: bool = False
+    decay_to_zero:    bool = True
+    gng_response:     bool = False
+    dual_gng_memory:  bool = True
 
     @property
     def alpha(self) -> float:
@@ -224,6 +230,11 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             fixed_weight_scale = float(cfg.get("fixed_weight_scale", 0.8)),
             fixed_weight_orthogonalize = bool(cfg.get("fixed_weight_orthogonalize", True)),
             fixed_weight_sparsity = float(cfg.get("fixed_weight_sparsity", 1.0)),
+            ramping_gng      = bool(cfg.get("ramping_gng", False)),
+            windowed_targets = bool(cfg.get("windowed_targets", False)),
+            decay_to_zero    = bool(cfg.get("decay_to_zero", True)),
+            gng_response     = bool(cfg.get("gng_response", False)),
+            dual_gng_memory  = bool(cfg.get("dual_gng_memory", True)),
         ))
     return rows
 
@@ -457,6 +468,8 @@ def _make_gng_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None =
         noise=n_sigma, target_rank=ref_meta.rank, cue_on_go_input=ref_meta.cue_on_go_input,
         cue_scale=ref_meta.cue_scale, nogo_target=ref_meta.nogo_target,
         attention_input=ref_meta.attention_input,
+        ramping_gng=ref_meta.ramping_gng, windowed_targets=ref_meta.windowed_targets,
+        decay_to_zero=ref_meta.decay_to_zero, gng_response=ref_meta.gng_response,
     )
     np.random.set_state(rng_state)
     torch.set_rng_state(torch_state)
@@ -485,6 +498,9 @@ def _make_dual_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None 
         noise=n_sigma, target_rank=ref_meta.rank, cue_on_go_input=ref_meta.cue_on_go_input,
         cue_scale=ref_meta.cue_scale, nogo_target=ref_meta.nogo_target,
         attention_input=ref_meta.attention_input,
+        ramping_gng=ref_meta.ramping_gng, windowed_targets=ref_meta.windowed_targets,
+        decay_to_zero=ref_meta.decay_to_zero, gng_response=ref_meta.gng_response,
+        gng_memory=ref_meta.dual_gng_memory,
     )
     np.random.set_state(rng_state)
     torch.set_rng_state(torch_state)
@@ -1458,21 +1474,27 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
         if task == "dpa":
             inputs, targets = generate_dpa_trials(
                 n_batch, timing, input_size=meta.input_size, target_rank=meta.rank,
-                noise=meta.noise_sigma(), attention_input=meta.attention_input)
+                noise=meta.noise_sigma(), attention_input=meta.attention_input,
+                windowed_targets=meta.windowed_targets, decay_to_zero=meta.decay_to_zero)
             cnames = None
         elif task == "gng":
             inputs, targets = generate_gng_trials(
                 n_batch, timing, input_size=meta.input_size, target_rank=meta.rank,
                 noise=meta.noise_sigma(), cue_on_go_input=cue,
                 cue_scale=meta.cue_scale, nogo_target=meta.nogo_target,
-                attention_input=meta.attention_input)
+                attention_input=meta.attention_input,
+                ramping_gng=meta.ramping_gng, windowed_targets=meta.windowed_targets,
+                decay_to_zero=meta.decay_to_zero, gng_response=meta.gng_response)
             cnames = None
         else:
             inputs, targets, _, cnames = generate_dual_trials(
                 n_batch, timing, input_size=meta.input_size, target_rank=meta.rank,
                 noise=meta.noise_sigma(), cue_on_go_input=cue,
                 cue_scale=meta.cue_scale, nogo_target=meta.nogo_target,
-                attention_input=meta.attention_input)
+                attention_input=meta.attention_input,
+                ramping_gng=meta.ramping_gng, windowed_targets=meta.windowed_targets,
+                decay_to_zero=meta.decay_to_zero, gng_response=meta.gng_response,
+                gng_memory=meta.dual_gng_memory)
 
         inputs_t  = torch.as_tensor(inputs,  dtype=torch.float32)
         targets_t = torch.as_tensor(targets, dtype=torch.float32)

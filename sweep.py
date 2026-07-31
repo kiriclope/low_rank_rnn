@@ -1092,6 +1092,23 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                      gng_response=rwd,
                                      **emergent, **shared_win))
 
+    # NO-GNG-MEMORY-in-Dual ladder (2026-07-31): dual_gng_memory=False → the go/nogo pre-cue hold is
+    # NOT re-supervised in Dual (κ₁ go/nogo memory must ride the GNG-learned structure; freeze_rank0
+    # only protects κ₀). All unified, all weights 1, no reg, decay OFF. Vary the response window:
+    #   _nmnr  : no rwd              (gng_response=F) — go/nogo fully emergent in Dual (only pairing on κ₁)
+    #   _nmrwd : rwd, pin nogo→0     (gng_response=T, rwd_nogo_onesided=F)
+    #   _nm1s  : rwd, nogo lick-only (gng_response=T, rwd_nogo_onesided=T)
+    # Launch each into its own dir with --run_filter _nmnr / _nmrwd / _nm1s.
+    nm_arms = [("nmnr", False, False), ("nmrwd", True, False), ("nm1s", True, True)]
+    for tag, rwd, onesided in nm_arms:
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, memory_lambda=0.8,
+                                     nogo_push_memory=False, ramping_gng=True,
+                                     windowed_targets=True, decay_to_zero=False,
+                                     dual_gng_memory=False,
+                                     gng_response=rwd, rwd_nogo_onesided=onesided,
+                                     **emergent, **shared_win))
+
     return configs
 
 

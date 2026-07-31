@@ -600,3 +600,20 @@ Launched into 3 dirs via `--run_filter _base/_rwd/_decay`. **Score when done** (
   working memory is NOT re-supervised in Dual (must survive on the GNG-learned structure; note
   `freeze_rank0_dual` only protects κ₀, so this tests whether κ₁'s go/nogo memory persists on its own).
 Both verified; uncommitted-results status. See `ring_lowerplane_log.md` §17e.
+
+### ★ Unified-loss ladder RESULTS + "decay lowers wells" was the tail bug (2026-07-31)
+
+`sweep_uni_{base,rwd,decay}` all solve the task (pairing 1.0, 4/4). Geometry (held κ₁, deep-delay 'none'):
+base +0.14 · rwd +0.19 (2/4 spiral) · **decay +0.02** (2/4 go/nogo degrade). **The old buggy decay arm
+gave κ₁≈−0.73; the same recipe under the unified loss (pinned tail, not the ≤−1 shove) gives +0.02** — the
+−0.75 was ENTIRELY the ≤−1 pairing-tail bug. So "decay favours the lower ring" was the accidental
+basement-shove, not honest return-to-0. Under the clean loss none of the arms lowers the wells (all
+straddle 0); decay costs go/nogo for no geometry. Next honest lowering lever = `nolick_weight` or rank-3.
+Figures `rnn/sweep_uni_{base,rwd,decay}/`. Detail: `ring_lowerplane_log.md` §17f.
+
+- **NO-MEMORY ladder** `sweep_uni_nomem_{norwd,rwd,1s}` (4 seeds, `dual_gng_memory=False`, decay off,
+  differ in response window: none / pin / one-sided) — done, scoring pending. Tests whether κ₁'s go/nogo
+  memory survives Dual on the GNG-learned structure without re-supervision.
+- **plot_sweep target-overlay bug fixed (§17g):** `RunMeta` now carries the target-scheme flags so
+  trajectory dashed-target overlays match the trained scheme (were defaulting to non-windowed → wrong on
+  EVERY windowed-run traj figure). Flows/accuracy unaffected. `sweep_uni_*` traj regenerated.
