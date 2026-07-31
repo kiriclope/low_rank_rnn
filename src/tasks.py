@@ -120,6 +120,7 @@ def generate_gng_trials(
     ramping_gng: bool = False,
     windowed_targets: bool = False,
     decay_to_zero: bool = True,
+    gng_response: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -161,8 +162,11 @@ def generate_gng_trials(
         # cue-off (go→go_target; nogo NOT reset on cue — held free); then optionally decay to 0.
         targets[idx_go,   cu - half:cu, 1] =  1.0             # pre-cue hold: 0.5 s before the cue
         targets[idx_nogo, cu - half:cu, 1] = -1.0
-        targets[idx_go,   co:co + half, 1] = go_target        # response: the 0.5 s right after cue-off
-        # targets[idx_nogo, co:co + half, 1] = nogo_target    # nogo not reset on cue onset
+        if gng_response:
+            # optional response window (0.5 s after cue-off): go→go_target, nogo→nogo_target(=0).
+            # Scored by the UnifiedLoss rwd group (rwd_go/rwd_nogo, separately weighted).
+            targets[idx_go,   co:co + half, 1] = go_target
+            targets[idx_nogo, co:co + half, 1] = nogo_target
         if decay_to_zero:
             targets[:,    co + half:co + 3*half, 1] = 0.0     # decay to 0 over the next 1.0 s
 
@@ -203,6 +207,7 @@ def generate_dual_trials(
     ramping_gng: bool = False,
     windowed_targets: bool = False,
     decay_to_zero: bool = True,
+    gng_response: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -280,17 +285,25 @@ def generate_dual_trials(
         # then optionally decay to 0.
         targets[idx_go,   cu - half:cu, 1] =  1.0             # pre-cue hold: 0.5 s before the cue
         targets[idx_nogo, cu - half:cu, 1] = -1.0
-        targets[idx_go,   co:co + half, 1] = go_target        # response: the 0.5 s right after cue-off
-        targets[idx_nogo, co:co + half, 1] = nogo_target
+
+        if gng_response:
+            # optional response window (0.5 s after cue-off): go→go_target, nogo→nogo_target(=0).
+            # Scored by the UnifiedLoss rwd group (rwd_go/rwd_nogo, separately weighted).
+            targets[idx_go,   co:co + half, 1] = go_target
+            targets[idx_nogo, co:co + half, 1] = nogo_target
+
         if decay_to_zero:
-            targets[:,    co + half:co + 2*half, 1] = 0.0     # decay to 0 over the next 0.5 s
+            targets[:,    co + half:co + 3*half, 1] = 0.0     # decay to 0 over the next 1 s
+
         if target_rank >= 3:
             targets[idx_go,   co:co + half, -1] = go_target
             targets[idx_nogo, co:co + half, -1] = nogo_target
+
         # pairing: 1 s expression right after test-off (longer window so match/+1 can push up against
         # the no-lick bias), then optionally decay to 0
         targets[idx_pair,  to:to + 2*half, -1] =  1.0
         targets[~idx_pair, to:to + 2*half, -1] = -1.0
+
         if decay_to_zero:
             targets[:,     to + 2*half:, -1] = 0.0
     else:

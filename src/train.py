@@ -390,6 +390,7 @@ class MaskedGNGLoss(nn.Module):
         nolick_weight: float = 0.0,
         hinge_gng: bool = False,
         nogo_hinge_thresh: float = -1.0,
+        pin_decay_zeros: bool = False,
     ):
         super().__init__()
         self.timing            = timing
@@ -401,6 +402,7 @@ class MaskedGNGLoss(nn.Module):
         self.nolick_weight     = nolick_weight
         self.hinge_gng         = hinge_gng
         self.nogo_hinge_thresh = nogo_hinge_thresh   # memory-window nogo hinge; 0 after cue
+        self.pin_decay_zeros   = pin_decay_zeros     # windowed decay: zero targets → MSE-to-0 (pin), not one-sided
 
     @staticmethod
     def masked_mean(loss, mask):
@@ -441,7 +443,16 @@ class MaskedGNGLoss(nn.Module):
                     # (2) pre-sample BASELINE pinned to 0 (MSE-to-0, symmetric), like the
                     # non-decision channels — NOT folded into the nogo hinge (which would drive κ₁≤−1).
                     bl_mask    = (t < self.timing.n_stim_on[0].to(device))[None, :]
-                    hinge_loss = self.masked_mean(hinge_raw, finite & ~bl_mask)
+                    if self.pin_decay_zeros:
+                        # Windowed decay: post-baseline ZERO targets (the decay-to-0 window) are
+                        # PINNED (MSE-to-0, symmetric), not the one-sided nogo hinge — "decay" means
+                        # return to 0, not "anywhere ≤0". Its OWN masked_mean; the pre-sample
+                        # baseline keeps its separate term below (no interference).
+                        pin_mask   = finite & ~bl_mask & (safe_tgt == 0)
+                        hinge_loss = (self.masked_mean(hinge_raw, finite & ~bl_mask & (safe_tgt != 0))
+                                      + self.masked_mean(self.criterion(safe_pred, torch.zeros_like(safe_pred)), pin_mask))
+                    else:
+                        hinge_loss = self.masked_mean(hinge_raw, finite & ~bl_mask)
                     bl_loss    = self.masked_mean(safe_pred ** 2, finite & bl_mask)
                     loss = loss + self.target_weight * hinge_loss + self.zero_weight * bl_loss
                 else:
@@ -514,6 +525,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
         hinge_gng: bool = False,
         nogo_hinge_thresh: float = -1.0,
         nogo_push_memory: bool = False,
+        pin_decay_zeros: bool = False,
     ):
         super().__init__()
         self.timing          = timing
@@ -524,6 +536,7 @@ class MaskedMultiTargetDualLoss(nn.Module):
         self.hinge_gng       = hinge_gng
         self.nogo_hinge_thresh = nogo_hinge_thresh
         self.nogo_push_memory  = nogo_push_memory
+        self.pin_decay_zeros = pin_decay_zeros   # windowed decay: zero targets → MSE-to-0 (pin), not one-sided/nonmatch
         self.dpa_weight      = dpa_weight
         self.gng_weight      = gng_weight
         self.gng_go_weight   = gng_go_weight
@@ -593,13 +606,28 @@ class MaskedMultiTargetDualLoss(nn.Module):
                 nogo_loss = self.masked_mean(torch.relu(safe_p + th_go) ** 2, nogo_mask)
             else:
                 nogo_loss = self.masked_mean(torch.relu(safe_p) ** 2, nogo_mask)
-            nogo_resp_loss = self.masked_mean(torch.relu(safe_p) ** 2, nogo_resp_mask)
+            if self.pin_decay_zeros:
+                # Windowed decay: the gng decay-to-0 window is PINNED (MSE-to-0), not one-sided —
+                # "decay" means return to 0. (Pre-sample baseline has its own bl term; gng_win_mask
+                # starts at n_off[1] so there is no overlap/interference.)
+                nogo_resp_loss = self.masked_mean(self.criterion(safe_p, torch.zeros_like(safe_p)), nogo_resp_mask)
+            else:
+                nogo_resp_loss = self.masked_mean(torch.relu(safe_p) ** 2, nogo_resp_mask)
 
             # match/nonmatch: SYMMETRIC ±th margin — identical to the DPA-stage ThresholdLoss, so
-            # this decision has the same shape (nonmatch ≤ −th) across DPA and Dual.
+            # this decision has the same shape (nonmatch ≤ −th) across DPA and Dual. ZERO targets
+            # (the pairing decay-to-0 tail) are split OUT of the binary hinge — they used to fall
+            # into the nonmatch branch (relu(p+th)² ⇒ trained as κ₁ ≤ −1, a hard shove down on
+            # every trial-end). Pinned (MSE-to-0) under pin_decay_zeros, else gentle one-sided ≤0.
+            dpa_tgt_mask  = dpa_mask & (safe_t != 0)
+            dpa_zero_mask = dpa_mask & (safe_t == 0)
             dpa_raw   = torch.where(safe_t > 0, torch.relu(th_dpa - safe_p) ** 2,
                                     torch.relu(safe_p + th_dpa) ** 2)
-            dpa_loss  = self.masked_mean(dpa_raw, dpa_mask)
+            if self.pin_decay_zeros:
+                dpa_zero_loss = self.masked_mean(self.criterion(safe_p, torch.zeros_like(safe_p)), dpa_zero_mask)
+            else:
+                dpa_zero_loss = self.masked_mean(torch.relu(safe_p) ** 2, dpa_zero_mask)
+            dpa_loss  = self.masked_mean(dpa_raw, dpa_tgt_mask) + dpa_zero_loss
         else:
             # PURE MSE toward the decision targets (go→+1, nogo→0, match/nonmatch→±1).
             # hinge_gng=False ⇒ no hinges anywhere (go_hinge_thresh / dpa_hinge_thresh ignored).
@@ -712,3 +740,150 @@ class ThresholdLoss(nn.Module):
             loss = loss + self.forward_channel(
                 y_pred[..., ch].clone(), y[..., ch].clone())
         return loss
+
+
+class UnifiedLoss(nn.Module):
+    """ONE loss for all three stages (DPA / GNG / Dual). The task semantics live entirely in
+    the TARGETS (src/tasks.py windows); the loss just enforces the value classes:
+
+        +1  → one-sided hinge  relu(thresh − p)²   (beyond +1 free)
+        −1  → one-sided hinge  relu(p + thresh)²   (beyond −1 free)
+         0  → pin              p²  (MSE-to-0)
+        NaN → free             (optional nolick: relu(p)² on free decision windows)
+
+    Every term is averaged over its OWN mask (short expression windows are never diluted by
+    long tails). Timing knowledge is deliberately minimal — exactly two splits:
+      • pre-sample BASELINE (t < n_on[0], target 0): its own pinned term `bl`, SEPARATE from
+        the decay zeros;
+      • the DECISION channel splits at `pair_start` into a GNG group (go/nogo: pre-cue hold +
+        decay) and a PAIR group (match/nonmatch expression + decay), each with separate
+        per-class terms — separate gradient normalisation and separate diagnostics.
+        pair_start=None → single GNG group (the GNG stage). For DPA use the test onset
+        (everything decision-side is pairing); for Dual use n_on[3].
+
+    Component values are exposed in .last_components after each forward:
+        bl · gng_pos/gng_neg/gng_decay · rwd_go/rwd_nogo · pair_pos/pair_neg/pair_decay ·
+        mem_pos/mem_neg/mem_decay (non-decision channels, summed) · nolick
+
+    Weights: gng_weight (pre-cue holds), gng_decay_weight, rwd_go_weight/rwd_nogo_weight
+    (optional response window, see below), pair_weight (match/nonmatch expression),
+    pair_decay_weight, mem_weight, bl_weight, nolick_weight — the decay terms are fully
+    independent of their group's expression terms.
+
+    rwd group (optional): pass `rwd_window=(start, stop)` — the response window right after
+    cue-off. Decision-channel targets inside it are pulled OUT of the gng group into two
+    separately-weighted terms: rwd_go = the +1 targets (hinge ≥ thresh) and rwd_nogo = the
+    0/−1 targets (0 → pin MSE-to-0, −1 → hinge ≤ −thresh). This allows a go/nogo imbalance
+    after the cue (e.g. up-weight nogo-to-zero against false licks). With no targets in the
+    window (gng_response=False task flag) both terms are 0 and the group is inert.
+    """
+
+    def __init__(self, timing: TaskTiming, thresh: float = 1.0, readout_index: int = -1,
+                 pair_start: int | None = None,
+                 rwd_window: tuple[int, int] | None = None,
+                 gng_weight: float = 1.0, pair_weight: float = 1.0,
+                 gng_decay_weight: float = 1.0, pair_decay_weight: float = 1.0,
+                 rwd_go_weight: float = 1.0, rwd_nogo_weight: float = 1.0,
+                 mem_weight: float = 1.0, bl_weight: float = 1.0,
+                 nolick_weight: float = 0.0):
+        super().__init__()
+        self.timing        = timing
+        self.thresh        = thresh
+        self.readout_index = readout_index
+        self.pair_start    = pair_start
+        self.rwd_window    = rwd_window
+        self.gng_weight    = gng_weight
+        self.pair_weight   = pair_weight
+        self.gng_decay_weight  = gng_decay_weight   # decay terms fully independent of their
+        self.pair_decay_weight = pair_decay_weight  # group's expression terms
+        self.rwd_go_weight   = rwd_go_weight        # response window: go (+1) hinge
+        self.rwd_nogo_weight = rwd_nogo_weight      # response window: nogo (0→pin / −1→hinge)
+        self.mem_weight    = mem_weight
+        self.bl_weight     = bl_weight
+        self.nolick_weight = nolick_weight
+        self.last_components: dict[str, float] = {}
+
+    @staticmethod
+    def masked_mean(loss: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        mask = mask.to(dtype=loss.dtype)
+        return (loss * mask).sum() / mask.sum().clamp_min(1.0)
+
+    def _class_terms(self, p, tgt, mask):
+        """(pos, neg, decay) — each its own masked_mean over `mask` ∩ its value class."""
+        pos = self.masked_mean(torch.relu(self.thresh - p) ** 2, mask & (tgt > 0))
+        neg = self.masked_mean(torch.relu(p + self.thresh) ** 2, mask & (tgt < 0))
+        dec = self.masked_mean(p ** 2,                           mask & (tgt == 0))
+        return pos, neg, dec
+
+    def forward(self, y_pred: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        B, T, C = y.shape
+        device  = y.device
+        dec_ch  = self.readout_index % C
+        t       = torch.arange(T, device=device)
+        pre     = (t < int(self.timing.n_stim_on[0]))[None, :]
+
+        zero_f  = y_pred.sum() * 0.0            # 0-scalar carrying grad/device/dtype
+        comp: dict[str, torch.Tensor] = {
+            k: zero_f for k in ("gng_pos", "gng_neg", "gng_decay",
+                                "rwd_go", "rwd_nogo",
+                                "pair_pos", "pair_neg", "pair_decay",
+                                "mem_pos", "mem_neg", "mem_decay", "nolick")}
+        bl_loss = zero_f
+
+        for ch in range(C):
+            pred   = y_pred[..., ch]
+            target = y[..., ch]
+            finite = torch.isfinite(pred) & torch.isfinite(target)
+            tgt    = torch.where(finite, target, torch.zeros_like(target))
+            p      = torch.where(finite, pred,   torch.zeros_like(pred))
+
+            # pre-sample baseline: pinned term, SEPARATE from decay — per-channel mean (its own
+            # mask), summed across channels like every other term
+            blm     = finite & pre & (tgt == 0)
+            bl_loss = bl_loss + self.masked_mean(p ** 2, blm)
+
+            post = finite & ~pre
+            if ch == dec_ch:
+                if self.pair_start is None:
+                    g_mask = post
+                    p_mask = torch.zeros_like(post)
+                else:
+                    after  = (t >= int(self.pair_start))[None, :]
+                    g_mask = post & ~after
+                    p_mask = post & after
+                if self.rwd_window is not None:
+                    # response window: its OWN go/nogo terms, carved OUT of the gng group
+                    r0, r1 = self.rwd_window
+                    rwd_m  = post & ((t >= int(r0)) & (t < int(r1)))[None, :]
+                    g_mask = g_mask & ~rwd_m
+                    p_mask = p_mask & ~rwd_m
+                    rp, rn, rz = self._class_terms(p, tgt, rwd_m)
+                    comp["rwd_go"]   = rp            # +1 → hinge ≥ thresh
+                    comp["rwd_nogo"] = rn + rz       # −1 → hinge ≤ −thresh; 0 → pin MSE-to-0
+                gp, gn, gd = self._class_terms(p, tgt, g_mask)
+                pp, pn, pd = self._class_terms(p, tgt, p_mask)
+                comp["gng_pos"], comp["gng_neg"], comp["gng_decay"]    = gp, gn, gd
+                comp["pair_pos"], comp["pair_neg"], comp["pair_decay"] = pp, pn, pd
+                if self.nolick_weight:
+                    freem = torch.isfinite(pred) & ~torch.isfinite(target) & ~pre
+                    pfree = torch.where(freem, pred, torch.zeros_like(pred))
+                    comp["nolick"] = self.masked_mean(torch.relu(pfree) ** 2, freem)
+            else:
+                mp, mn, md = self._class_terms(p, tgt, post)
+                comp["mem_pos"]   = comp["mem_pos"]   + mp
+                comp["mem_neg"]   = comp["mem_neg"]   + mn
+                comp["mem_decay"] = comp["mem_decay"] + md
+
+        total = (self.bl_weight   * bl_loss
+                 + self.gng_weight        * (comp["gng_pos"] + comp["gng_neg"])
+                 + self.gng_decay_weight  * comp["gng_decay"]
+                 + self.rwd_go_weight     * comp["rwd_go"]
+                 + self.rwd_nogo_weight   * comp["rwd_nogo"]
+                 + self.pair_weight       * (comp["pair_pos"] + comp["pair_neg"])
+                 + self.pair_decay_weight * comp["pair_decay"]
+                 + self.mem_weight  * (comp["mem_pos"] + comp["mem_neg"] + comp["mem_decay"])
+                 + self.nolick_weight * comp["nolick"])
+
+        self.last_components = {"bl": float(bl_loss.detach()),
+                                **{k: float(v.detach()) for k, v in comp.items()}}
+        return total

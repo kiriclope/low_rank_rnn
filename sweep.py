@@ -36,7 +36,7 @@ import torch.optim as optim
 
 from src.tasks import TaskTiming, make_timings, generate_dpa_trials, generate_gng_trials, generate_dual_trials
 from src.models import LowRankModel, EILowRankModel, EISTPModel
-from src.train  import Optimization, MaskedMultiTargetLoss, MaskedGNGLoss, MaskedMultiTargetDualLoss, ThresholdLoss, train_val_split
+from src.train  import Optimization, MaskedMultiTargetLoss, MaskedGNGLoss, MaskedMultiTargetDualLoss, ThresholdLoss, UnifiedLoss, train_val_split
 from src.init   import init_dpa_internal_readout_prepost
 
 
@@ -153,29 +153,40 @@ class RunConfig:
     dpa_ckpt: str | None = None  # path to existing DPA checkpoint; skips DPA training if set
     gng_ckpt: str | None = None  # path to existing GNG (naive) checkpoint; skips DPA+GNG if set
 
-    # Dual-stage loss selection
+    # Loss selection
     #   "multi"      → MaskedMultiTargetLoss (default; MSE toward ±1/0, all stages identical)
     #   "separated"  → MaskedMultiTargetDualLoss (MSE, split DPA/GNG components)
     #   "threshold"  → ThresholdLoss (squared hinge; zero loss once pred is on correct
     #                  side of thresh; dpa/gng/aux/bl weights ignored)
-    # The dpa/gng/aux/bl weights below apply only when dual_loss == "separated".
+    #   "unified"    → UnifiedLoss at ALL THREE stages: value-based classes (+1/−1 one-sided
+    #                  hinges beyond ±thresh, 0 → pin MSE-to-0, NaN free). Baseline is its own
+    #                  pinned term (separate from decay); the decision channel splits into
+    #                  SEPARATE gng (go/nogo) and pair (match/nonmatch) terms at the test onset,
+    #                  and the two decay terms are separately weighted (gng/pair_decay_weight).
+    #                  Weights map: gng_weight, dpa_weight→pair, aux_weight→mem, bl_weight, nolick.
+    # The dpa/gng/aux/bl weights below apply when dual_loss ∈ {"separated","unified"}.
     dual_loss:  str   = "multi"
     loss_thresh: float = 0.5    # threshold for dual_loss == "threshold"
     dpa_weight:      float = 1.0
     gng_weight:      float = 1.0
+    gng_decay_weight:  float = 1.0      # unified loss: weight on the gng decay-to-0 term (independent of gng_weight)
+    pair_decay_weight: float = 1.0      # unified loss: weight on the pairing decay-to-0 tail (independent of dpa/pair_weight)
+    gng_response:      bool  = False    # windowed targets: re-add the 0.5 s response window after cue-off (go→go_target, nogo→nogo_target); scored by the unified rwd group
+    rwd_go_weight:     float = 1.0      # unified loss: weight on the response-window go term (+1 hinge)
+    rwd_nogo_weight:   float = 1.0      # unified loss: weight on the response-window nogo term (0→pin; allows go/nogo imbalance after cue)
     gng_go_weight:   float = 1.0        # relative weight on go trials within gng_loss
     gng_nogo_weight: float = 1.0        # relative weight on nogo trials within gng_loss
     go_hinge_thresh: float | None = None  # if set, go response window uses relu(thresh-pred)² instead of MSE
     nogo_hinge_thresh: float = -1.0       # hinge_gng no-lick threshold during the memory delay (0 after cue)
     ramping_gng: bool = False             # cue-driven ramping decision (no delay memory-hold; nogo cancels the cue ramp)
     windowed_targets: bool = False        # windowed transient decisions: 0.5 s pre-cue hold + short expression window (gng nogo not reset on cue); was `decay_decision`
-    decay_to_zero: bool = True            # within windowed_targets: add explicit decay-back-to-0 targets after the expression window (gng response & pairing). False = express then leave free
+    decay_to_zero: bool = True            # within windowed_targets: add explicit decay-back-to-0 targets after the expression window (gng response & pairing). False = express then leave free. Decay zeros are PINNED (MSE-to-0) at all stages (pin_decay_zeros in the GNG/Dual losses; DPA ThresholdLoss pins via dpa_zero_thresh=0) — pre-sample baseline keeps its own separate term
     dpa_hinge_thresh: float | None = None # if set, DPA ±1 decision uses squared hinge toward ±thresh (DPA + dual stages)
     dpa_zero_thresh: float = 0.0   # DPA ThresholdLoss dead-zone for ZERO targets (baselines); 0 ⇒ MSE-to-0 (pins baseline)
     hinge_squared:   bool = True   # DPA ThresholdLoss: True=relu(...)² (default), False=linear margin relu(...)
     aux_weight:      float = 1.0   # weight on the memory (non-decision) channels
     bl_weight:       float = 1.0   # weight on the pre-sample baseline term
-    kappa1_reg_weight: float = 0.0  # penalise gain*n1^T m1/N > 1 during Dual: weight*relu(λ₁-1)²
+    kappa1_reg_weight: float = 0.0  # decision-subcriticality reg, ALL stages (DPA/GNG/Dual): weight*relu(gain·n_dec^T m_dec/N − 1)² — keeps decisions transient (no parking)
     kappa1_clamp:    float | None = None  # HARD constraint: rescale m1,n1 so g·λ₁ ≤ this after each Dual step (vs. soft reg)
     kappa_gain_target: float | None = None  # CRITICALITY: pin ALL modes' g·λ to this value (two-sided) after each step, ALL stages
     nolick_weight:   float = 0.0   # one-sided no-lick penalty relu(κ₁)² over free decision windows (GNG+Dual)
@@ -334,6 +345,23 @@ def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, targ
 # ---------------------------------------------------------------------------
 # Single run
 # ---------------------------------------------------------------------------
+
+def _kappa1_regularizer(config: "RunConfig", model):
+    """Soft decision-subcriticality reg: w·relu(g·λ_dec − 1)², λ_dec = n_decᵀm_dec/N (last low-rank
+    column = κ₁ rank-2 / κ₂ rank-3). Applied at ALL stages (DPA/GNG/Dual) so the decision mode never
+    trains supercritical — a supercritical decision self-gain is what lets κ₁ PARK at a decision
+    (persistent lick attractor) instead of expressing transiently and relaxing back to 0."""
+    if config.kappa1_reg_weight <= 0.0:
+        return None
+    _w    = config.kappa1_reg_weight
+    _gain = float(model.gain) if torch.is_tensor(model.gain) else float(model.gain)
+    _dec  = config.rank - 1
+    def reg(m, _w=_w, _gain=_gain, _dec=_dec):
+        N     = m.m.shape[0]
+        lam_d = _gain * (m.n[:, _dec] @ m.m[:, _dec]) / N   # gain * n_dec^T m_dec / N
+        return _w * torch.relu(lam_d - 1.0) ** 2
+    return reg
+
 
 def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                wandb_project: str | None = None) -> dict:
@@ -536,13 +564,34 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     dpa_criterion = (ThresholdLoss(thresh=_dpa_th, squared=config.hinge_squared,
                                    zero_thresh=config.dpa_zero_thresh)
                      if config.hinge_gng else criterion)
+    pin_decay = config.windowed_targets and config.decay_to_zero   # decay windows → MSE-to-0 (pin), all stages
     gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
                                    go_hinge_thresh=config.go_hinge_thresh,
                                    nolick_weight=0.0,  # nolick is DUAL-ONLY (GNG delay is fully
                                    # targeted go+1/nogo−1, so nolick there only hits the cue window)
                                    hinge_gng=config.hinge_gng,
-                                   nogo_hinge_thresh=config.nogo_hinge_thresh)
+                                   nogo_hinge_thresh=config.nogo_hinge_thresh,
+                                   pin_decay_zeros=pin_decay)
                      if config.nogo_target == 0.0 else criterion)
+    # UnifiedLoss params (used at all stage sites when dual_loss == "unified")
+    _uth = config.go_hinge_thresh if config.go_hinge_thresh is not None else 1.0
+    _uw  = dict(gng_weight=config.gng_weight, pair_weight=config.dpa_weight,
+                gng_decay_weight=config.gng_decay_weight,
+                pair_decay_weight=config.pair_decay_weight,
+                rwd_go_weight=config.rwd_go_weight,
+                rwd_nogo_weight=config.rwd_nogo_weight,
+                mem_weight=config.aux_weight, bl_weight=config.bl_weight)
+    _half_steps = int(round(0.5 / gng_timing.dt))   # response window length in steps
+    if config.dual_loss == "unified":
+        # ONE value-based loss at all three stages (targets carry the semantics). Baseline is its
+        # own pinned term; the decision channel splits into separate gng/pair terms at test onset.
+        dpa_criterion = UnifiedLoss(dpa_timing, thresh=_uth,
+                                    pair_start=int(dpa_timing.n_stim_on[1]), **_uw)
+        gng_criterion = UnifiedLoss(gng_timing, thresh=_uth, pair_start=None,
+                                    rwd_window=(int(gng_timing.n_stim_off[1]),
+                                                int(gng_timing.n_stim_off[1]) + _half_steps), **_uw)
+        print(f"[{rid}]  loss=unified (ALL stages): ±1→one-sided hinge(th={_uth}), 0→pin, NaN→free"
+              f"  [bl | gng | pair split @ test-on]", flush=True)
     losses    = {}
     _global_step = [0]   # mutable so the nested helper can increment it
 
@@ -603,14 +652,18 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
         model.noise = model_noise_sigma
-        dpa_regularizer = None
+        dpa_regularizer = _kappa1_regularizer(config, model)
+        if dpa_regularizer is not None:
+            print(f"[{rid}]  decision-subcriticality reg (DPA): w={config.kappa1_reg_weight}·relu(g·λ{config.rank-1}−1)²", flush=True)
         if config.rwd and config.rwd_align_weight > 0.0:
             _w = config.rwd_align_weight
-            def dpa_regularizer(m, _w=_w):
+            _k1reg = dpa_regularizer
+            def dpa_regularizer(m, _w=_w, _k1reg=_k1reg):
                 wi_rwd = m.wi.weight[:, -1]
                 n1     = m.n[:, 1]
                 cos    = torch.dot(wi_rwd, n1) / (wi_rwd.norm() * n1.norm()).clamp_min(1e-8)
-                return _w * (1.0 - cos)
+                align  = _w * (1.0 - cos)
+                return align + (_k1reg(m) if _k1reg is not None else 0.0)
 
         trainer    = Optimization(model, tl, vl, dpa_criterion, opt, sched,
                                   config.grad_clip_norm, num_epochs=config.epochs_dpa,
@@ -682,17 +735,21 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                       cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                       nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                       input_scale=config.input_scale, attention_input=config.attention_input,
-                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
+                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
         model.noise = model_noise_sigma
         model.rwd   = config.rwd_gng   # optionally disable reward during GNG training
+        gng_regularizer = _kappa1_regularizer(config, model)
+        if gng_regularizer is not None:
+            print(f"[{rid}]  decision-subcriticality reg (GNG): w={config.kappa1_reg_weight}·relu(g·λ{config.rank-1}−1)²", flush=True)
         trainer    = Optimization(model, tl, vl, gng_criterion, opt, sched,
                                   config.grad_clip_norm, num_epochs=config.epochs_gng,
                                   freeze_low_rank_cols=[0],
                                   freeze_input_dims=gng_freeze_input,
                                   stop_loss=config.stop_loss,
+                                  regularizer=gng_regularizer,
                                   kappa_gain_target=config.kappa_gain_target,
                                   verbose=True)
         train_l, val_l, _ = trainer.fit()
@@ -725,25 +782,35 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                             cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                             go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                             input_scale=config.input_scale, attention_input=config.attention_input,
-                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
+                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response)
         print(f"[{rid}]  data(paired): {list(Xp.shape)} → {list(yp.shape)}", flush=True)
         tlp, vlp     = train_val_split(Xp.to(device), yp.to(device), config.batch_size)
         optp, schedp = _opt_and_sched()
         model.noise  = model_noise_sigma
-        paired_criterion = (MaskedMultiTargetDualLoss(
+        if config.dual_loss == "unified":
+            paired_criterion = UnifiedLoss(dual_timing, thresh=_uth,
+                                           pair_start=int(dual_timing.n_stim_on[3]),
+                                           rwd_window=(int(dual_timing.n_stim_off[2]),
+                                                       int(dual_timing.n_stim_off[2]) + _half_steps),
+                                           nolick_weight=config.nolick_weight, **_uw)
+        elif config.dual_loss == "separated":
+            paired_criterion = MaskedMultiTargetDualLoss(
                 timing=dual_timing, dpa_weight=config.dpa_weight, gng_weight=config.gng_weight,
                 gng_go_weight=config.gng_go_weight, gng_nogo_weight=config.gng_nogo_weight,
                 aux_weight=config.aux_weight, bl_weight=config.bl_weight,
                 go_hinge_thresh=config.go_hinge_thresh, dpa_hinge_thresh=config.dpa_hinge_thresh,
                 nolick_weight=config.nolick_weight, hinge_gng=config.hinge_gng,
                 nogo_hinge_thresh=config.nogo_hinge_thresh,
-                nogo_push_memory=config.nogo_push_memory)
-            if config.dual_loss == "separated" else criterion)
+                nogo_push_memory=config.nogo_push_memory,
+                pin_decay_zeros=pin_decay)
+        else:
+            paired_criterion = criterion
         trainer = Optimization(model, tlp, vlp, paired_criterion, optp, schedp,
                                config.grad_clip_norm, num_epochs=config.epochs_dual_paired,
                                freeze_low_rank_cols=dual_mem_freeze,
                                freeze_input_dims=paired_freeze_input,
                                stop_loss=config.stop_loss,
+                               regularizer=_kappa1_regularizer(config, model),
                                kappa1_clamp=config.kappa1_clamp,
                                kappa_gain_target=config.kappa_gain_target,
                                verbose=True)
@@ -764,13 +831,21 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                        nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                        input_scale=config.input_scale, attention_input=config.attention_input,
-                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
+                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response)
     print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
     tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
     opt, sched = _opt_and_sched()
     model.noise = model_noise_sigma
 
-    if config.dual_loss == "separated":
+    if config.dual_loss == "unified":
+        dual_criterion = UnifiedLoss(dual_timing, thresh=_uth,
+                                     pair_start=int(dual_timing.n_stim_on[3]),
+                                     rwd_window=(int(dual_timing.n_stim_off[2]),
+                                                 int(dual_timing.n_stim_off[2]) + _half_steps),
+                                     nolick_weight=config.nolick_weight, **_uw)
+        print(f"[{rid}]  loss=unified  gng_w={config.gng_weight}  pair_w={config.dpa_weight}"
+              f"  nolick_w={config.nolick_weight}", flush=True)
+    elif config.dual_loss == "separated":
         dual_criterion = MaskedMultiTargetDualLoss(
             timing=dual_timing,
             dpa_weight=config.dpa_weight, gng_weight=config.gng_weight,
@@ -782,6 +857,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             hinge_gng=config.hinge_gng,
             nogo_hinge_thresh=config.nogo_hinge_thresh,
             nogo_push_memory=config.nogo_push_memory,
+            pin_decay_zeros=pin_decay,
         )
         print(f"[{rid}]  loss=separated"
               f"  dpa_w={config.dpa_weight}  gng_w={config.gng_weight}"
@@ -797,16 +873,9 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
 
     dual_freeze_rank0 = dual_mem_freeze
 
-    dual_regularizer = None
-    if config.kappa1_reg_weight > 0.0:
-        _w   = config.kappa1_reg_weight
-        _gain = float(model.gain) if torch.is_tensor(model.gain) else float(model.gain)
-        _dec = config.rank - 1        # ACTION/decision mode = last low-rank column (κ1 rank-2, κ2 rank-3)
-        def dual_regularizer(m, _w=_w, _gain=_gain, _dec=_dec):
-            N      = m.m.shape[0]
-            lam_d  = _gain * (m.n[:, _dec] @ m.m[:, _dec]) / N   # gain * n_dec^T m_dec / N
-            return _w * torch.relu(lam_d - 1.0) ** 2
-        print(f"[{rid}]  action regularizer: weight={_w}  penalises gain·λ{_dec} > 1", flush=True)
+    dual_regularizer = _kappa1_regularizer(config, model)
+    if dual_regularizer is not None:
+        print(f"[{rid}]  decision-subcriticality reg (Dual): w={config.kappa1_reg_weight}·relu(g·λ{config.rank-1}−1)²", flush=True)
 
     trainer    = Optimization(model, tl, vl, dual_criterion, opt, sched,
                               config.grad_clip_norm, num_epochs=config.epochs_dual,
@@ -821,7 +890,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         print(f"[{rid}]  κ₁ hard clamp: g·λ₁ ≤ {config.kappa1_clamp} after each Dual step", flush=True)
 
     train_l, val_l, _ = trainer.fit()
-    dual_loss_components = (dict(dual_criterion.last_components) if config.dual_loss == "separated" else None)
+    dual_loss_components = (dict(dual_criterion.last_components) if config.dual_loss in ("separated", "unified") else None)
     if dual_loss_components:
         print(f"[{rid}]  loss components: "
               f"{ {k: round(v, 4) for k, v in dual_loss_components.items()} }", flush=True)
@@ -1002,17 +1071,21 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     # (gentle nogo κ₁≤0; the well location is left free). attention ON = the symmetry break (not a
     # directional κ₁ penalty). memory_lambda=0.8 (subcritical), 100/100/100. See ring_lowerplane_log §16.
     emergent = {**base, "nolick_weight": 0.0}
-    # WINDOWED transient decisions (0.5 s pre-cue hold + short expression window; gng nogo NOT reset on
-    # cue). Fresh DPA→GNG→Dual on the new gng task. Compare decay-back-to-0 ON vs OFF (only difference).
-    # freeze_rank0_dual protects the κ₀ memory through Dual; 100/100/300 (dual still descends past 100).
+    # DECISION-SUBCRITICALITY REG (all stages) on the windowed recipe: transience by DYNAMICS —
+    # w·relu(g·λ₁−1)² keeps the decision mode from ever training supercritical, so κ₁ cannot PARK at a
+    # decision (persistent lick attractor); excursions are input-driven and relax back to 0 on their
+    # own. vs the reg=0 sweep_win_decay baselines: nodecay converged 4/4 but wells lifted to κ₁≈+0.3
+    # (net parked match at +1); decay put wells at κ₁≈−0.73 but converged 2/4. Prediction: nodecay+reg
+    # = decay-arm geometry with nodecay-arm convergence. decay+reg arm tests the composition.
     shared_win = {**shared, "freeze_rank0_dual": True, "epochs_dual": 300}
-    for decay in (True, False):
-        tag = "decay" if decay else "nodecay"
+    emergent_reg = {**emergent, "kappa1_reg_weight": 1.0}
+    for decay in (False, True):
+        tag = "regd" if decay else "regnd"
         for seed in range(4):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, memory_lambda=0.8,
                                      nogo_push_memory=False, ramping_gng=True,
                                      windowed_targets=True, decay_to_zero=decay,
-                                     **emergent, **shared_win))
+                                     **emergent_reg, **shared_win))
 
     return configs
 

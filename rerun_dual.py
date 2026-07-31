@@ -113,6 +113,7 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
             aux_weight=config.aux_weight, bl_weight=config.bl_weight,
             go_hinge_thresh=config.go_hinge_thresh,
             nogo_push_memory=config.nogo_push_memory,
+            pin_decay_zeros=config.windowed_targets and config.decay_to_zero,
         )
         print(f"[{rid}]  loss=separated"
               f"  go_w={config.gng_go_weight}  nogo_w={config.gng_nogo_weight}"

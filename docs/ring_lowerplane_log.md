@@ -840,3 +840,42 @@ shared-κ₁-axis tension (match=+1 competing with the no-lick memory on one axi
 (separate κ₂ lick axis) remains the structural fix.
 
 Figures: `rnn/{arm_decay,arm_nodecay}/` (localhost gallery). Inventory: `docs/experiment_log.md` (2026-07-24).
+
+## 17. Session 2026-07-25/31 — decay = the lower-ring lever; all-stage reg; the unified loss
+
+### 17a. Decay favours the lower ring (measured)
+`scratchpad/wells.py` (drive-and-release A/B on 'none' trials, κ₁ in the deep delay): the **decay arm
+holds both memory wells at κ₁≈−0.73 (4/4 seeds); the no-decay arm lifts them to +0.30 (0/4)**. The
+decay-to-0 target is what pushes the memory onto the no-lick arc — it forbids κ₁ resting anywhere but 0
+after the window, so the only stable structure left (attention already killed the lick node, §15) is the
+two no-lick memory wells. The convergence tax (§16) and this geometry benefit are the SAME constraint.
+
+### 17b. All-stage decision reg — constrains the mechanism, not the incentive
+`sweep_win_reg`: `kappa1_reg_weight=1` at all stages (`w·relu(g·λ_dec−1)²`). It reliably pins the
+decision self-gain g·λ_dec≈1.1 — but **the network re-routes**: with a free tail, parking a decision is
+loss-free, so the job that used to sit in the decision mode moves into the MEMORY mode (its g·λ grows to
+2.1–2.7) → nodecay+reg wells lift even higher (+0.70). decay+reg fixes pairing convergence (marginal
+decision can't build the lick attractor that fought the decay → match 1.0 on all 4 seeds, incl. the
+reg-0 stuck seeds) but flattens the wells to ≈0 and destabilises go/nogo per-seed (spiral eigenvalues).
+**Lesson (a new form of §14 task-locking): a reg constrains a mechanism; the task pressure re-emerges
+through whatever mode is still free.** No arm dominates — decay=geometry lever, reg=pairing lever.
+
+### 17c. The ≤−1 pairing-tail bug (fixed)
+The Dual pairing decay-to-0 zeros fell into the match/nonmatch hinge's else branch → trained as
+**κ₁≤−1**, a hard basement shove every trial-end, not "return to 0". Explains why decay tails parked at
+−1 and part of "decay favours the lower plane" (a painted push, philosophically like `nogo_push_memory`
+which we keep OFF). Fixed via `pin_decay_zeros` — all decay zeros pinned to 0 (MSE), all stages, baseline
+kept separate. **Every decay-arm geometry number above predates this fix and is contaminated.**
+
+### 17d. ★ One loss for three stages — `UnifiedLoss`
+The three stage losses existed to carry task semantics in TIME MASKS. Windowed+pinned targets moved all
+semantics into the target VALUES, so one value-based loss now covers DPA/GNG/Dual: **+1→one-sided hinge
+(overshoot free) · −1→hinge · 0→pin (MSE-to-0) · NaN→free**. This is ThresholdLoss generalised, with
+per-class/per-group separate means (no short-window dilution) and independent weights:
+`bl` (own timing split, SEPARATE from decay) · `gng_pos/neg` · `gng_decay` · `rwd_go/rwd_nogo` ·
+`pair_pos/neg` · `pair_decay` · `mem` · `nolick`; decision channel splits gng-vs-pair at test onset.
+The zero-branch bug family is now impossible by construction (±1/0/NaN exhaustive). Intended changes:
+Dual nogo pre-cue hold now ≤−1 (was gentle ≤0); pairing class-balanced. **`gng_response`** flag re-adds
+the response window as a separate **rwd group** (`rwd_go` +1 hinge / `rwd_nogo` 0-pin, independent
+weights = the go/nogo imbalance knob for suppressing false licks). Targets visualised per trial type in
+`rnn/task_targets/`. Verified against the old losses; not yet run — it's the next objective.

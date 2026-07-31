@@ -528,3 +528,55 @@ nonmatch → chance. go/nogo window tightened to the 0.5 s response window (matc
 Figures: `rnn/{arm_decay,arm_nodecay}/` in the localhost gallery (accuracy-by-trialtype, trajectories,
 per-stage flows + KDE mean-flows, ±2). Open: reseed the two stuck decay seeds; the go-trial-pairing ceiling
 is the shared-κ₁-axis tension (match=+1 vs no-lick memory) → rank-3 split. See `ring_lowerplane_log.md` §16.
+
+### ★ Decay favours the lower ring; all-stage decision reg (2026-07-25)
+
+**Held-well measurement** (`scratchpad/wells.py`: drive-and-release A/B on 'none' trials, κ₁ read in the
+deep delay [7,8]s) on `sweep_win_decay`: the **decay arm puts BOTH memory wells in the no-lick plane
+(mean κ₁ −0.73, 4/4 seeds), the no-decay arm lifts them (mean +0.30, 0/4)**. So the decay-to-0 target is
+the geometry lever — it forbids κ₁ from resting anywhere but 0 after the window, so the only stable
+structure left is the two no-lick memory wells. Convergence cost and geometry benefit are two faces of
+one constraint.
+
+**`sweep_win_reg`** (8 seeds) = windowed recipe + **decision-subcriticality reg at ALL stages**
+(`kappa1_reg_weight=1`, `w·relu(g·λ_dec−1)²`, new `_kappa1_regularizer` factory applied DPA/GNG/dual-
+paired/Dual). Two arms `regnd` (nodecay) / `regd` (decay).
+- **regnd**: converged 4/4 (fastest yet) but wells lifted WORSE (κ₁≈+0.70). The reg pinned g·λ_dec≈1.1,
+  but the network re-routed the parking into the **memory mode** (its g·λ grew to ~2.1–2.7) → wells
+  even higher. nogo degraded (0.70–0.96). *Lesson: reg constrains a mechanism, not the incentive — with
+  a free tail, parking is loss-free and the task re-routes it (§14 task-locking, new form).*
+- **regd**: reg **fixed the pairing convergence** — match/nonmatch 1.0 on all 4 seeds (incl. the seeds
+  that stuck at reg 0), because the marginal decision mode can't build the lick attractor that fought the
+  decay. But the failure moved to go/nogo (s0 go 0.43, s2 nogo 0.50; two seeds went complex-eigenvalue
+  spiral 1.7±0.5j), and wells flattened to ≈0 (reg also weakens the κ₁-tilted well structure). Tail
+  parked near −1 (the ≤−1 pairing-tail bug, below), not 0.
+- **★ Loss bug found (fixed):** the Dual pairing decay-to-0 zeros fell into the match/nonmatch hinge's
+  `else` branch → trained as **κ₁ ≤ −1** (a hard basement shove on every trial-end), NOT "return to 0".
+  New `pin_decay_zeros` (auto = `windowed_targets & decay_to_zero`) pins ALL decay zeros to 0 (MSE),
+  gng + pairing, all stages; baseline keeps its own separate term. `dual_dpa`/geometry from every decay
+  arm above is contaminated by this — rerun needed.
+- **No arm dominates**: decay = geometry lever, reg = pairing-convergence lever, but reg flattens wells +
+  destabilises go/nogo per-seed. Figures `rnn/{arm_regnd,arm_regd}/`. See `ring_lowerplane_log.md` §17.
+
+### ★ UnifiedLoss — one value-based loss for all three stages (2026-07-25/31)
+
+Replaced the three stage-specific losses with a single `UnifiedLoss` (`dual_loss="unified"`). Semantics
+live in the TARGETS (`tasks.py` windows); the loss only enforces value classes: **+1→one-sided hinge
+`relu(1−p)²` (overshoot free) · −1→`relu(p+1)²` · 0→pin `p²` (MSE-to-0) · NaN→free** (+optional nolick).
+Kills the whole family of "zeros fall into the wrong branch" bugs by construction. Separately-weighted,
+separately-logged terms, each its own masked_mean (short windows never diluted):
+`bl` (pre-sample only, its own timing split — SEPARATE from decay) · `gng_pos/gng_neg` (pre-cue holds) ·
+`gng_decay` · `rwd_go/rwd_nogo` · `pair_pos/pair_neg` · `pair_decay` · `mem_*` · `nolick`. The decision
+channel splits into gng vs pair groups at test onset (`pair_start`).
+- **Intended semantic changes vs the old losses** (verified, all else identical): Dual pre-cue **nogo
+  hold now enforces ≤−1** (old gentle ≤0); match/nonmatch and go-holds now class-balanced (separate
+  pos/neg means → pairing effectively 2× weight; `dpa_weight=0.5` restores old balance).
+- **`gng_response` task flag** (default False) re-adds the 0.5 s response window after cue-off
+  (go→go_target, nogo→0), scored by the **rwd group** carved out of gng: `rwd_go` (+1 hinge) and
+  `rwd_nogo` (0→pin, both-sided) with independent weights → a **go/nogo imbalance knob** (e.g.
+  `rwd_nogo_weight=2` to make the not-lick stick against false licks). GNG decay aligned to 1.0 s in the
+  dual generator (matched the 3*half GNG-stage edit).
+- New RunConfig: `gng_decay_weight, pair_decay_weight, gng_response, rwd_go_weight, rwd_nogo_weight`.
+- Full verification battery in-session (equivalences to old losses; each violation → only its component;
+  weight routing exact; non-windowed = no-op). Targets figure: `rnn/task_targets/`. Old `dual_loss` modes
+  untouched. **Not yet run** — this is the objective for the next sweep.
