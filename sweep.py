@@ -1109,6 +1109,40 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                      gng_response=rwd, rwd_nogo_onesided=onesided,
                                      **emergent, **shared_win))
 
+    # ★ First HONEST well-lowering attempt (2026-07-31): the clean nmrwd base (no pre-cue memory, pin
+    # response, 4/4) + a one-sided no-lick penalty `nolick_weight·relu(κ₁)²` over the FREE decision
+    # windows (Dual stages; sample+baseline excluded). Penalise lick only, κ₁<0 free → lowering must
+    # EMERGE (no painted value), vs the decay artifact (§17f) and the reg re-routing (§17b). --run_filter _nlk.
+    emergent_nolick = {**emergent, "nolick_weight": 0.5}
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_nlk", seed=seed, memory_lambda=0.8,
+                                 nogo_push_memory=False, ramping_gng=True,
+                                 windowed_targets=True, decay_to_zero=False,
+                                 dual_gng_memory=False,
+                                 gng_response=True, rwd_nogo_onesided=False,
+                                 **emergent_nolick, **shared_win))
+
+    # ★ UNFREEZE κ₀ in Dual (2026-07-31): freeze_rank0_dual=False so the memory mode m0,n0 is trainable
+    # during Dual → the lowering pressure can finally RELOCATE the well (its κ₁ is set by the frozen-
+    # until-now memory coupling). Safe now that the ≤−1 tail bug is gone; the pairing (must read the
+    # sample 6 s later) is the implicit memory-retention pressure. Completes the freeze×pressure 2×2 vs
+    # the frozen controls (nmrwd done, nlk running). nmrwd base. --run_filter _ufnr / _ufnl.
+    shared_unfrozen = {**shared_win, "freeze_rank0_dual": False}
+    for seed in range(4):   # unfreeze, NO nolick — does memory survive on the pairing alone?
+        configs.append(RunConfig(run_id=f"s{seed}_ufnr", seed=seed, memory_lambda=0.8,
+                                 nogo_push_memory=False, ramping_gng=True,
+                                 windowed_targets=True, decay_to_zero=False,
+                                 dual_gng_memory=False,
+                                 gng_response=True, rwd_nogo_onesided=False,
+                                 **emergent, **shared_unfrozen))
+    for seed in range(4):   # unfreeze + nolick — the lowering candidate (DOF × directional pressure)
+        configs.append(RunConfig(run_id=f"s{seed}_ufnl", seed=seed, memory_lambda=0.8,
+                                 nogo_push_memory=False, ramping_gng=True,
+                                 windowed_targets=True, decay_to_zero=False,
+                                 dual_gng_memory=False,
+                                 gng_response=True, rwd_nogo_onesided=False,
+                                 **emergent_nolick, **shared_unfrozen))
+
     return configs
 
 

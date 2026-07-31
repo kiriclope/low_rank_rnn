@@ -918,3 +918,28 @@ DEFAULT non-windowed scheme — wrong for every windowed run (all `sweep_win_*`/
 traj figures until now). Model trajectories, inputs, accuracy, and flows were unaffected (they don't use
 the overlay). Fixed: flags added to `RunMeta` + `_load_sweep_meta`, threaded into all four trajectory
 generators. `sweep_uni_*` traj figures regenerated + republished.
+
+### 17h. ★★ First HONEST well-lowering: nolick during retention; freeze×pressure 2×2
+Chasing an *intrinsic* lowering (rwd imbalance had NO effect — it's a behavioural knob on the post-cue
+decision, not the memory well; decay was the ≤−1 bug §17f; reg re-routes §17b). The well is the κ₀
+sample-memory attractor — its κ₁ is a FIELD property, so only a pressure on the HELD state during the
+delay can move it. That pressure = **`nolick_weight·relu(κ₁)²` over the free decision windows** (Dual
+stages, sample+baseline excluded — the sample exclusion added to UnifiedLoss to avoid the go-lick-ramp
+floor). One-sided (κ₁<0 free) ⇒ lowering must EMERGE, no painted value.
+
+**2×2 (nmrwd base: no pre-cue memory, pin response; unified loss; held κ₁ on deep-delay 'none' trials):**
+| | freeze κ₀ | unfreeze κ₀ |
+|---|---|---|
+| **no nolick** | +0.06 (0/4 both<0) | +0.09 (1/4) |
+| **nolick 0.5** | **−0.15 (3/4)** | **−0.16 (4/4)** |
+
+- **nolick lowers the wells honestly**: +0.06 → −0.15, task PERFECT (pairing/go/nogo 1.0, 4/4). First
+  non-artifact lowering. Confirms the mechanism: *sustained "don't lick while remembering" pressure
+  tilts the held memory into the no-lick plane* — even with κ₀ frozen (it reshapes how κ₁ reads κ₀).
+- **Unfreezing κ₀ is SAFE** (retention survives on the pairing alone: κ₀ A–B sep ~2.4, pairing 1.0 — the
+  freeze was NOT load-bearing under the clean loss; the pairing-must-read-the-sample IS the memory
+  pressure). But it did NOT amplify lowering (−0.16≈−0.15) — only made it CONSISTENT (4/4 vs 3/4).
+- **⇒ the lowering magnitude is capped by the nolick PRESSURE (w=0.5), not the frozen DOF.** The nolick
+  residual never→0 (~0.15) = genuine tension with the field's tendency to keep κ₁ up. To lower more,
+  raise `nolick_weight` (dose-response) — the next lever. Modest so far (−0.15, not the old −0.8).
+Figures `rnn/sweep_uni_{nolick,unfrozen_nonolick,unfrozen_nolick}/`.

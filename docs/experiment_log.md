@@ -617,3 +617,14 @@ Figures `rnn/sweep_uni_{base,rwd,decay}/`. Detail: `ring_lowerplane_log.md` §17
 - **plot_sweep target-overlay bug fixed (§17g):** `RunMeta` now carries the target-scheme flags so
   trajectory dashed-target overlays match the trained scheme (were defaulting to non-windowed → wrong on
   EVERY windowed-run traj figure). Flows/accuracy unaffected. `sweep_uni_*` traj regenerated.
+
+### ★★ First honest well-lowering: nolick + freeze×pressure 2×2 (2026-07-31)
+
+Nolick (`nolick_weight·relu(κ₁)²` over free Dual decision windows, sample+baseline excluded) on the clean
+nmrwd base. **2×2 held-κ₁** (deep-delay 'none' trials): frozen/no-nolick +0.06 · frozen/nolick **−0.15
+(3/4 both<0)** · unfrozen/no-nolick +0.09 · unfrozen/nolick **−0.16 (4/4)**. All 16 runs task-perfect
+(pairing/go/nogo 1.0). **nolick lowers the wells honestly** (no artifact, emergent) — the first intrinsic
+lowering; mechanism = sustained no-lick pressure during retention. **Unfreezing κ₀ is safe** (retention
+survives on the pairing alone, κ₀ sep ~2.4) but doesn't amplify (−0.16≈−0.15), only makes it consistent
+(4/4). ⇒ magnitude capped by nolick weight (0.5), not the DOF; raise nolick for dose-response. Modest
+(−0.15 vs old −0.8). Figures `rnn/sweep_uni_{nolick,unfrozen_nonolick,unfrozen_nolick}/`. Detail §17h.

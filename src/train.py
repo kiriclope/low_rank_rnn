@@ -876,7 +876,11 @@ class UnifiedLoss(nn.Module):
                 comp["gng_pos"], comp["gng_neg"], comp["gng_decay"]    = gp, gn, gd
                 comp["pair_pos"], comp["pair_neg"], comp["pair_decay"] = pp, pn, pd
                 if self.nolick_weight:
-                    freem = torch.isfinite(pred) & ~torch.isfinite(target) & ~pre
+                    # one-sided lick penalty relu(κ₁)² over FREE (NaN) decision windows; exclude the
+                    # pre-sample baseline AND the sample window (the go lick-ramp floor lives there).
+                    sample = ((t >= int(self.timing.n_stim_on[0])) &
+                              (t <  int(self.timing.n_stim_off[0])))[None, :]
+                    freem = torch.isfinite(pred) & ~torch.isfinite(target) & ~pre & ~sample
                     pfree = torch.where(freem, pred, torch.zeros_like(pred))
                     comp["nolick"] = self.masked_mean(torch.relu(pfree) ** 2, freem)
             else:
