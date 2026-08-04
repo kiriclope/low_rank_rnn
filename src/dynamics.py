@@ -430,7 +430,11 @@ def find_all_fixed_points(model, xlim, ylim, ff_input, n_seeds=41,
 
 
 def classify_fixed_points(model, fixed_points, ff_input, eig_tol=1e-5,
-                          marginal_tol=1e-2, slow_tol=None):
+                          marginal_tol=2e-3, slow_tol=None):
+    # marginal_tol default 2e-3 (was 1e-2): the loose band mislabeled genuine but SLOW attractors
+    # (map |λ|≈0.99 — shallow subcritical wells, non-saturating φ like relu/softplus) as "marginal",
+    # so they were dropped/faint in the flow plots and excluded from well stats. 2e-3 still catches
+    # true line/ring manifolds (|λ|=1.000) but keeps slow point attractors as attractor/slow. §18.
     """Classify roots of the κ-plane map by the discrete-map Jacobian spectrum.
 
     A near-unit eigenvalue (|λ|-1| <= marginal_tol) means the point lies on a
@@ -741,6 +745,143 @@ def _reduce_marginals(pts, labels, mem_thresh=0.6, keep_thresh=0.3):
     return pts[keep], labels[keep]
 
 
+def _flow_panel_cache(model, spec, input_size, effective_x, xlim, ylim, n_grid, *,
+                      attention_input=False, attention_scale=1.0,
+                      use_sim_field=False, sim_n_warmup=0,
+                      field_input_noise=0.0, field_noise_K=16, field_noise_seed=0,
+                      include_beta_in_field=False, n_fp_seeds=41, slow_tol=None,
+                      input_threshold=0.35, inactive_atol=0.35):
+    """Field + fixed points for ONE frozen-input panel `spec`. Returns (cache, finite-speed-flat).
+    Factored out of plot_task_flow_fields so the single-stage plotter and the stacked multi-stage
+    plotter compute panels identically."""
+    device = _model_device(model)
+    dtype  = _model_dtype(model)
+    ff_input = make_input(input_size, active_dims=spec["dims"], value=spec.get("value", 1.0),
+                          device=device, dtype=dtype)
+    if attention_input:   # tonic attention (last channel) ON during the whole task
+        ff_input[-1] = attention_scale
+    if use_sim_field:
+        K1, K2, U, V, speed = sim_kappa_field(
+            model, ff_input, xlim=xlim, ylim=ylim, n_grid=n_grid, n_warmup=sim_n_warmup)
+        fixed_points, fixed_residuals = find_sim_fixed_points(
+            model, ff_input, xlim=xlim, ylim=ylim, n_seeds=n_fp_seeds,
+            n_warmup=sim_n_warmup, residual_tol=1e-5, merge_tol=5e-2)
+        fp_labels, fp_eigvals = classify_sim_fixed_points(
+            model, fixed_points, ff_input, n_warmup=sim_n_warmup, slow_tol=slow_tol)
+    else:
+        ff_field = ff_input
+        if field_input_noise and field_input_noise > 0.0:
+            gen = torch.Generator(device=device).manual_seed(int(field_noise_seed))
+            nz  = field_input_noise * torch.randn(int(field_noise_K), input_size,
+                                                  generator=gen, device=device, dtype=dtype)
+            ff_field = ff_input[None, :] + nz   # (K, input_size) → noise-averaged field/FPs
+        K1, K2, U, V, speed, params, ff_input_np = make_vector_field_grid(
+            model, ff_input=ff_field, xlim=xlim, ylim=ylim, n_grid=n_grid,
+            include_beta=include_beta_in_field)
+        fixed_points, fixed_residuals = find_all_fixed_points(
+            model, xlim=xlim, ylim=ylim, ff_input=ff_field,
+            n_seeds=n_fp_seeds, residual_tol=1e-8, merge_tol=5e-2)
+        fp_labels, fp_eigvals = classify_fixed_points(model, fixed_points, ff_input=ff_field, slow_tol=slow_tol)
+    panel_mask = _canonical_input_mask(
+        effective_x, dims=spec["dims"], threshold=input_threshold, atol_inactive=inactive_atol)
+    cache = dict(
+        spec=spec, ff_input=ff_input,
+        K1=K1, K2=K2, U=U, V=V, speed=speed,
+        fixed_points=fixed_points, fixed_residuals=fixed_residuals,
+        fp_labels=fp_labels, fp_eigvals=fp_eigvals,
+        panel_mask=panel_mask.detach().cpu().numpy(),
+    )
+    return cache, speed[np.isfinite(speed)].reshape(-1)
+
+
+def _render_flow_panel(ax, cache, *, speed_vmax, sim_scattered, kappa_traj, cond_idx, colors,
+                       xlim, ylim, model, show_slow_manifold=False, slow_manifold_thresh=0.12,
+                       show_single_trials=False, max_single_trials=12,
+                       max_autonomous_conditions=None):
+    """Draw ONE flow panel (speed heatmap + streamlines + fixed points + condition trajectories)
+    into `ax`. Returns the pcolormesh handle (for a shared colorbar). Factored out of
+    plot_task_flow_fields; behaviour is byte-identical to the original inline loop."""
+    spec = cache["spec"]
+    K1, K2, U, V, speed = cache["K1"], cache["K2"], cache["U"], cache["V"], cache["speed"]
+
+    hm = ax.pcolormesh(K1, K2, speed, shading="auto", cmap="magma",
+                       vmax=speed_vmax, rasterized=True, zorder=0)
+    if sim_scattered:
+        ax.quiver(K1, K2, U, V, color="white", alpha=0.7,
+                  scale=None, scale_units="xy", angles="xy", zorder=2)
+    else:
+        ax.streamplot(K1[0, :], K2[:, 0], U, V, color="white", density=1.05,
+                      linewidth=0.70, arrowsize=0.80, zorder=2)
+
+    fps_draw, labels_draw = cache["fixed_points"], cache["fp_labels"]
+    if spec["name"] == "Autonomous" and len(labels_draw):
+        fps_draw, labels_draw = _reduce_marginals(fps_draw, labels_draw)
+
+    for label, marker in [("attractor","o"),("slow_attractor","o"),("marginal","s"),
+                          ("saddle","x"),("repeller","^"),("nonhyperbolic","D")]:
+        if len(labels_draw) == 0: continue
+        mask = labels_draw == label
+        if not np.any(mask): continue
+        pts = fps_draw[mask]
+        if label == "saddle":
+            ax.scatter(pts[:, 0], pts[:, 1], s=60, marker="x", color="cyan", linewidths=1.5, zorder=10, label=label)
+        elif label == "marginal":
+            ax.scatter(pts[:, 0], pts[:, 1], s=55, marker="s", facecolors="none",
+                       edgecolors="gold", linewidths=1.6, zorder=10, label=label)
+        elif label == "slow_attractor":
+            ax.scatter(pts[:, 0], pts[:, 1], s=62, marker="o", facecolors="none",
+                       edgecolors="orange", linewidths=1.8, zorder=10, label=label)
+        else:
+            ax.scatter(pts[:, 0], pts[:, 1], s=60, marker=marker,
+                       facecolors="cyan" if label == "attractor" else "none",
+                       edgecolors="cyan", linewidths=1.1, zorder=10, label=label)
+
+    conds      = [] if spec["dims"] is None else list(spec["conds"])
+    panel_mask = cache["panel_mask"]
+
+    if spec["name"] == "Autonomous" and max_autonomous_conditions is not None:
+        conds = conds[:max_autonomous_conditions]
+
+    for cond in conds:
+        if cond not in cond_idx: continue
+        idx = cond_idx[cond].detach().cpu().numpy()
+        if len(idx) == 0: continue
+
+        cond_mask = panel_mask[idx].mean(axis=0) > 0.5
+        segments  = _segments_from_mask(cond_mask, min_len=2)
+        if not segments: continue
+
+        traj_mean = kappa_traj[idx].mean(axis=0)
+        color     = colors.get(cond, "tab:gray")
+
+        for seg_slice in segments:
+            seg = traj_mean[seg_slice, :2]
+            if seg.shape[0] < 2: continue
+
+            if show_single_trials:
+                for i in idx[:max_single_trials]:
+                    seg_i = kappa_traj[i, seg_slice, :2]
+                    ax.plot(seg_i[:, 0], seg_i[:, 1], color=color, lw=0.7, alpha=0.12, zorder=4)
+
+            ax.plot(seg[:, 0], seg[:, 1], color=color, lw=2.7, alpha=0.95, zorder=6, label=cond)
+            add_time_arrows(ax, seg, times=default_arrow_times(seg.shape[0], 4, 3),
+                            color=color, arrow_step=3, mutation_scale=13, lw=1.5, alpha=0.95, zorder=8)
+            ax.scatter(seg[0, 0],  seg[0, 1],  marker="o", s=38, color=color, edgecolors="white", linewidths=0.6, zorder=9)
+            ax.scatter(seg[-1, 0], seg[-1, 1], marker="X", s=46, color=color, edgecolors="white", linewidths=0.6, zorder=9)
+
+    if show_slow_manifold:
+        mpts, mvel, _ = trace_slow_manifold(
+            model, cache["ff_input"], xlim, ylim, vel_thresh=slow_manifold_thresh)
+        if len(mpts) > 0:
+            ax.scatter(mpts[:, 0], mpts[:, 1], c=mvel, cmap="spring", s=14,
+                       vmin=0.0, vmax=slow_manifold_thresh, zorder=11,
+                       edgecolors="none", label="slow manifold")
+
+    ax.set_xlim(xlim); ax.set_ylim(ylim)
+    ax.set_aspect("equal", adjustable="box")
+    return hm
+
+
 def plot_task_flow_fields(
     model, inputs, timing, task,
     targets=None, condition_names=None, dual_mode="conditions",
@@ -752,7 +893,7 @@ def plot_task_flow_fields(
     cue_on_go_input=False, cue_scale=1.0,
     use_sim_field=False, sim_n_warmup=0, slow_tol=None,
     show_slow_manifold=False, slow_manifold_thresh=0.12,
-    attention_input=False,
+    attention_input=False, attention_scale=1.0,
     field_input_noise=0.0, field_noise_K=16, field_noise_seed=0,
 ):
     """Generic low-rank phase portrait for DPA, GNG, and Dual tasks.
@@ -814,51 +955,16 @@ def plot_task_flow_fields(
 
     caches, all_speeds = [], []
     for spec in specs:
-        ff_input = make_input(input_size, active_dims=spec["dims"], value=spec.get("value", 1.0), device=device, dtype=dtype)
-        if attention_input:   # tonic attention (last channel) is ON during the whole task,
-            ff_input[-1] = 1.0   # incl. the "Autonomous" (attention-on baseline) panel → makes origin a fixed point
-
-        if use_sim_field:
-            K1, K2, U, V, speed = sim_kappa_field(
-                model, ff_input, xlim=xlim, ylim=ylim, n_grid=n_grid,
-                n_warmup=sim_n_warmup,
-            )
-            fixed_points, fixed_residuals = find_sim_fixed_points(
-                model, ff_input, xlim=xlim, ylim=ylim,
-                n_seeds=n_fp_seeds, n_warmup=sim_n_warmup,
-                residual_tol=1e-5, merge_tol=5e-2,
-            )
-            fp_labels, fp_eigvals = classify_sim_fixed_points(
-                model, fixed_points, ff_input, n_warmup=sim_n_warmup, slow_tol=slow_tol,
-            )
-        else:
-            ff_field = ff_input
-            if field_input_noise and field_input_noise > 0.0:
-                gen = torch.Generator(device=device).manual_seed(int(field_noise_seed))
-                nz  = field_input_noise * torch.randn(int(field_noise_K), input_size,
-                                                      generator=gen, device=device, dtype=dtype)
-                ff_field = ff_input[None, :] + nz   # (K, input_size) → noise-averaged field/FPs
-            K1, K2, U, V, speed, params, ff_input_np = make_vector_field_grid(
-                model, ff_input=ff_field, xlim=xlim, ylim=ylim, n_grid=n_grid,
-                include_beta=include_beta_in_field,
-            )
-            fixed_points, fixed_residuals = find_all_fixed_points(
-                model, xlim=xlim, ylim=ylim, ff_input=ff_field,
-                n_seeds=n_fp_seeds, residual_tol=1e-8, merge_tol=5e-2,
-            )
-            fp_labels, fp_eigvals = classify_fixed_points(model, fixed_points, ff_input=ff_field, slow_tol=slow_tol)
-
-        panel_mask = _canonical_input_mask(
-            effective_x, dims=spec["dims"], threshold=input_threshold, atol_inactive=inactive_atol
+        cache, sp = _flow_panel_cache(
+            model, spec, input_size, effective_x, xlim, ylim, n_grid,
+            attention_input=attention_input, attention_scale=attention_scale,
+            use_sim_field=use_sim_field, sim_n_warmup=sim_n_warmup,
+            field_input_noise=field_input_noise, field_noise_K=field_noise_K,
+            field_noise_seed=field_noise_seed, include_beta_in_field=include_beta_in_field,
+            n_fp_seeds=n_fp_seeds, slow_tol=slow_tol,
+            input_threshold=input_threshold, inactive_atol=inactive_atol,
         )
-        caches.append(dict(
-            spec=spec, ff_input=ff_input,
-            K1=K1, K2=K2, U=U, V=V, speed=speed,
-            fixed_points=fixed_points, fixed_residuals=fixed_residuals,
-            fp_labels=fp_labels, fp_eigvals=fp_eigvals,
-            panel_mask=panel_mask.detach().cpu().numpy(),
-        ))
-        all_speeds.append(speed[np.isfinite(speed)].reshape(-1))
+        caches.append(cache); all_speeds.append(sp)
 
     speed_vmax = np.percentile(np.concatenate(all_speeds), speed_percentile)
 
@@ -881,89 +987,15 @@ def plot_task_flow_fields(
     last_hm = None
 
     for ax, cache in zip(axes, caches):
-        spec = cache["spec"]
-        K1, K2, U, V, speed = cache["K1"], cache["K2"], cache["U"], cache["V"], cache["speed"]
-
-        last_hm = ax.pcolormesh(K1, K2, speed, shading="auto", cmap="magma",
-                                vmax=speed_vmax, rasterized=True, zorder=0)
-        if sim_scattered:
-            # Warmed-up sim field: K1/K2 are scattered → quiver
-            ax.quiver(K1, K2, U, V, color="white", alpha=0.7,
-                      scale=None, scale_units="xy", angles="xy", zorder=2)
-        else:
-            ax.streamplot(K1[0, :], K2[:, 0], U, V, color="white", density=1.05,
-                          linewidth=0.70, arrowsize=0.80, zorder=2)
-
-        fps_draw, labels_draw = cache["fixed_points"], cache["fp_labels"]
-        if spec["name"] == "Autonomous" and len(labels_draw):
-            fps_draw, labels_draw = _reduce_marginals(fps_draw, labels_draw)
-
-        for label, marker in [("attractor","o"),("slow_attractor","o"),("marginal","s"),
-                              ("saddle","x"),("repeller","^"),("nonhyperbolic","D")]:
-            if len(labels_draw) == 0: continue
-            mask = labels_draw == label
-            if not np.any(mask): continue
-            pts = fps_draw[mask]
-            if label == "saddle":
-                ax.scatter(pts[:, 0], pts[:, 1], s=60, marker="x", color="cyan", linewidths=1.5, zorder=10, label=label)
-            elif label == "marginal":
-                # near-unit eigenvalue → point on a line/ring (marginal) manifold
-                ax.scatter(pts[:, 0], pts[:, 1], s=55, marker="s", facecolors="none",
-                           edgecolors="gold", linewidths=1.6, zorder=10, label=label)
-            elif label == "slow_attractor":
-                # genuine but shallow attractor on a soft slow ring (1-max|λ| <= slow_tol)
-                ax.scatter(pts[:, 0], pts[:, 1], s=62, marker="o", facecolors="none",
-                           edgecolors="orange", linewidths=1.8, zorder=10, label=label)
-            else:
-                ax.scatter(pts[:, 0], pts[:, 1], s=60, marker=marker,
-                           facecolors="cyan" if label == "attractor" else "none",
-                           edgecolors="cyan", linewidths=1.1, zorder=10, label=label)
-
-        conds       = [] if spec["dims"] is None else list(spec["conds"])
-        panel_mask  = cache["panel_mask"]
-
-        if spec["name"] == "Autonomous" and max_autonomous_conditions is not None:
-            conds = conds[:max_autonomous_conditions]
-
-        for cond in conds:
-            if cond not in cond_idx: continue
-            idx = cond_idx[cond].detach().cpu().numpy()
-            if len(idx) == 0: continue
-
-            cond_mask = panel_mask[idx].mean(axis=0) > 0.5
-            segments  = _segments_from_mask(cond_mask, min_len=2)
-            if not segments: continue
-
-            traj_mean = kappa_traj[idx].mean(axis=0)
-            color     = colors.get(cond, "tab:gray")
-
-            for seg_slice in segments:
-                seg = traj_mean[seg_slice, :2]
-                if seg.shape[0] < 2: continue
-
-                if show_single_trials:
-                    for i in idx[:max_single_trials]:
-                        seg_i = kappa_traj[i, seg_slice, :2]
-                        ax.plot(seg_i[:, 0], seg_i[:, 1], color=color, lw=0.7, alpha=0.12, zorder=4)
-
-                ax.plot(seg[:, 0], seg[:, 1], color=color, lw=2.7, alpha=0.95, zorder=6, label=cond)
-                add_time_arrows(ax, seg, times=default_arrow_times(seg.shape[0], 4, 3),
-                                color=color, arrow_step=3, mutation_scale=13, lw=1.5, alpha=0.95, zorder=8)
-                ax.scatter(seg[0, 0],  seg[0, 1],  marker="o", s=38, color=color, edgecolors="white", linewidths=0.6, zorder=9)
-                ax.scatter(seg[-1, 0], seg[-1, 1], marker="X", s=46, color=color, edgecolors="white", linewidths=0.6, zorder=9)
-
-        if show_slow_manifold:
-            mpts, mvel, _ = trace_slow_manifold(
-                model, cache["ff_input"], xlim, ylim, vel_thresh=slow_manifold_thresh,
-            )
-            if len(mpts) > 0:
-                ax.scatter(mpts[:, 0], mpts[:, 1], c=mvel, cmap="spring", s=14,
-                           vmin=0.0, vmax=slow_manifold_thresh, zorder=11,
-                           edgecolors="none", label="slow manifold")
-
-        ax.set_title(spec["name"])
-        ax.set_xlim(xlim); ax.set_ylim(ylim)
-        ax.set_aspect("equal", adjustable="box")
+        last_hm = _render_flow_panel(
+            ax, cache, speed_vmax=speed_vmax, sim_scattered=sim_scattered,
+            kappa_traj=kappa_traj, cond_idx=cond_idx, colors=colors,
+            xlim=xlim, ylim=ylim, model=model,
+            show_slow_manifold=show_slow_manifold, slow_manifold_thresh=slow_manifold_thresh,
+            show_single_trials=show_single_trials, max_single_trials=max_single_trials,
+            max_autonomous_conditions=max_autonomous_conditions,
+        )
+        ax.set_title(cache["spec"]["name"])
         ax.set_xlabel(r"$\kappa_0$")
 
     axes[0].set_ylabel(r"$\kappa_1$")
@@ -995,6 +1027,146 @@ def plot_task_flow_fields(
         "condition_indices": cond_idx, "condition_meta": meta,
         "panel_specs": specs, "caches": caches,
     }
+
+
+# Canonical panel columns for the stacked multi-stage portrait: the Dual 8-condition layout, used
+# for EVERY stage row so all rows have the same panels. Each entry is a frozen-input clamp (which
+# input channels are held on) that is valid for ANY stage's model — the field only depends on the
+# model + clamp, not on which task the model was trained on. A stage overlays its OWN task
+# trajectories only where that condition exists in its trials (via per-stage `conds`).
+def _canonical_flow_panels(cue_on_go_input=False, cue_scale=1.0):
+    cue_dims = [4] if cue_on_go_input else [6]
+    cue_val  = cue_scale if cue_on_go_input else 1.0
+    return [
+        dict(name="Autonomous", dims=None,     value=1.0),
+        dict(name="A",          dims=[0],      value=1.0),
+        dict(name="B",          dims=[1],      value=1.0),
+        dict(name="Go",         dims=[4],      value=1.0),
+        dict(name="NoGo",       dims=[5],      value=1.0),
+        dict(name="Cue",        dims=cue_dims, value=cue_val),
+        dict(name="C",          dims=[2],      value=1.0),
+        dict(name="D",          dims=[3],      value=1.0),
+    ]
+
+
+def plot_stage_stacked_flow(
+    stages, *, cue_on_go_input=False, cue_scale=1.0,
+    attention_input=False, attention_scale=1.0,
+    xlim=None, ylim=None, n_grid=151, n_grid_per_unit=None,
+    n_fp_seeds=41, slow_tol=None, use_sim_field=False, sim_n_warmup=0,
+    field_input_noise=0.0, figsize_per_panel=3.6, speed_percentile=98,
+    include_beta_in_field=False, show_slow_manifold=False, slow_manifold_thresh=0.12,
+    dual_mode="conditions", input_threshold=0.35, inactive_atol=0.35, suptitle=None,
+):
+    """Stacked κ-plane flow portrait: ONE ROW per training stage (e.g. dpa / naive / expert), all
+    rows sharing the SAME canonical panel columns (the Dual 8-condition layout) and the SAME κ
+    limits + speed colour scale. Reading a column top→bottom shows how that field/well evolves
+    across stages. Each row overlays its own stage's task trajectories where that condition exists.
+
+    `stages` is a list of dicts, each: {label, task, timing, model, inputs, targets (opt),
+    condition_names (opt)}. `inputs`/`targets` are that stage's task trials (arrays or tensors)."""
+    if model_missing := [i for i, s in enumerate(stages) if s.get("model") is None]:
+        raise ValueError(f"stages {model_missing} missing a model")
+
+    CANON = _canonical_flow_panels(cue_on_go_input, cue_scale)
+    n_panels = len(CANON)
+
+    # ---- per-stage: trajectories, condition indices, per-stage specs (canonical + own conds) ----
+    rows, all_traj = [], []
+    for st in stages:
+        model = st["model"]; model.eval()
+        task  = st["task"].lower(); timing = st["timing"]
+        inputs  = torch.as_tensor(st["inputs"],  dtype=torch.float32)
+        targets = None if st.get("targets") is None else torch.as_tensor(st["targets"], dtype=torch.float32)
+        input_size = inputs.shape[-1]
+        with torch.no_grad():
+            readouts, rates, rec_inputs, effective_x = run_low_rank_with_effective_inputs(
+                model, inputs, targets=targets)
+        kappa_traj = project_rec_inputs_to_kappa(model, rec_inputs).detach().cpu().numpy()
+        all_traj.append(kappa_traj[..., :2].reshape(-1, 2))
+        cond_idx, meta = condition_indices_for_task(
+            inputs.detach().cpu(), timing=timing, task=task,
+            condition_names=st.get("condition_names"), dual_mode=dual_mode)
+        native   = flow_specs_for_task(timing=timing, task=task, input_size=input_size,
+                                       cond_idx=cond_idx, meta=meta, dual_mode=dual_mode,
+                                       cue_on_go_input=cue_on_go_input, cue_scale=cue_scale)
+        cond_map = {s["name"]: list(s.get("conds", [])) for s in native}
+        specs    = [dict(name=c["name"], dims=c["dims"], value=c["value"],
+                         conds=cond_map.get(c["name"], [])) for c in CANON]
+        rows.append(dict(model=model, task=task, label=st["label"], input_size=input_size,
+                         kappa_traj=kappa_traj, effective_x=effective_x,
+                         cond_idx=cond_idx, colors=_condition_colors(cond_idx.keys()), specs=specs))
+
+    # ---- common κ limits across ALL stages (symmetric, full range + pad, floored at ±1.5) ----
+    cat = np.concatenate(all_traj, axis=0)
+    if xlim is None:
+        r0 = max(float(np.nanmax(np.abs(cat[:, 0]))) * 1.25, 1.5); xlim = (-r0, r0)
+    if ylim is None:
+        r1 = max(float(np.nanmax(np.abs(cat[:, 1]))) * 1.25, 1.5); ylim = (-r1, r1)
+    if n_grid_per_unit is not None:
+        n_grid = min(int(round(n_grid_per_unit * (xlim[1] - xlim[0]))), 401)
+
+    # ---- fields + fixed points for every (stage row × canonical panel); global speed scale ----
+    all_speeds = []
+    for row in rows:
+        row["caches"] = []
+        for spec in row["specs"]:
+            cache, sp = _flow_panel_cache(
+                row["model"], spec, row["input_size"], row["effective_x"], xlim, ylim, n_grid,
+                attention_input=attention_input, attention_scale=attention_scale,
+                use_sim_field=use_sim_field, sim_n_warmup=sim_n_warmup,
+                field_input_noise=field_input_noise, include_beta_in_field=include_beta_in_field,
+                n_fp_seeds=n_fp_seeds, slow_tol=slow_tol,
+                input_threshold=input_threshold, inactive_atol=inactive_atol)
+            row["caches"].append(cache); all_speeds.append(sp)
+    speed_vmax = np.percentile(np.concatenate(all_speeds), speed_percentile)
+
+    # ---- render the n_rows × n_panels grid (shared axes, one colourbar spanning all rows) ----
+    n_rows = len(rows)
+    sim_scattered = use_sim_field and sim_n_warmup > 0
+    fig = plt.figure(figsize=(n_panels * figsize_per_panel + 0.6, n_rows * figsize_per_panel + 0.3),
+                     constrained_layout=False)
+    fig.set_layout_engine("none")
+    gs = fig.add_gridspec(n_rows, n_panels + 1, width_ratios=[1.0] * n_panels + [0.05],
+                          left=0.05, right=0.95, bottom=0.06, top=0.90, wspace=0.12, hspace=0.20)
+    ax00, last_hm = None, None
+    for r, row in enumerate(rows):
+        row_axes = []
+        for c, cache in enumerate(row["caches"]):
+            ax = (fig.add_subplot(gs[r, c]) if ax00 is None
+                  else fig.add_subplot(gs[r, c], sharex=ax00, sharey=ax00))
+            if ax00 is None: ax00 = ax
+            row_axes.append(ax)
+            last_hm = _render_flow_panel(
+                ax, cache, speed_vmax=speed_vmax, sim_scattered=sim_scattered,
+                kappa_traj=row["kappa_traj"], cond_idx=row["cond_idx"], colors=row["colors"],
+                xlim=xlim, ylim=ylim, model=row["model"],
+                show_slow_manifold=show_slow_manifold, slow_manifold_thresh=slow_manifold_thresh)
+            if r == 0:
+                ax.set_title(cache["spec"]["name"])
+            if r == n_rows - 1:
+                ax.set_xlabel(r"$\kappa_0$")
+            if c == 0:
+                ax.set_ylabel(f"{row['label']} ({row['task'].upper()})\n" + r"$\kappa_1$")
+        # per-row legend (conditions differ by stage) on the row's Autonomous panel
+        handles, labels_list = [], []
+        for ax in row_axes:
+            h, l = ax.get_legend_handles_labels(); handles += h; labels_list += l
+        uniq = dict(zip(labels_list, handles))
+        if uniq:
+            leg = row_axes[0].legend(uniq.values(), uniq.keys(), frameon=False, fontsize=7,
+                                     loc="lower right", handlelength=1.1)
+            for _t in leg.get_texts(): _t.set_color("white")
+
+    cax  = fig.add_subplot(gs[:, -1])
+    cbar = fig.colorbar(last_hm, cax=cax)
+    cbar.set_label(r"$\beta\|\Psi(\kappa;x)-\kappa\|$" if include_beta_in_field
+                   else (r"$\|\Delta\kappa\|$ (simulation)" if use_sim_field
+                         else r"$\|\Psi(\kappa;x)-\kappa\|$"))
+    if suptitle:
+        fig.suptitle(suptitle, y=0.965)
+    fig.set_layout_engine("none")
+    return fig, rows
 
 
 # ---------------------------------------------------------------------------
@@ -1126,7 +1298,7 @@ def find_sim_fixed_points(model, ff_input, xlim, ylim, n_seeds=21, n_warmup=0,
 
 
 def classify_sim_fixed_points(model, fixed_points, ff_input, n_warmup=0,
-                               eig_tol=1e-5, eps=1e-4, marginal_tol=1e-2, slow_tol=None):
+                               eig_tol=1e-5, eps=1e-4, marginal_tol=2e-3, slow_tol=None):  # §18: was 1e-2
     """
     Classify fixed points using a numerical Jacobian of the simulation-based map.
 

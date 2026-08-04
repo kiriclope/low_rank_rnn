@@ -943,3 +943,150 @@ floor). One-sided (κ₁<0 free) ⇒ lowering must EMERGE, no painted value.
   residual never→0 (~0.15) = genuine tension with the field's tendency to keep κ₁ up. To lower more,
   raise `nolick_weight` (dose-response) — the next lever. Modest so far (−0.15, not the old −0.8).
 Figures `rnn/sweep_uni_{nolick,unfrozen_nonolick,unfrozen_nolick}/`.
+
+### 18. ★★ An FP-classifier bug hid a real result — relu lowers the wells (2026-08-03)
+
+Hunting a **structural** (not painted) well-lowering lever, we tried rectifying nonlinearities on the
+clean base (unified loss, unfrozen κ₀, `attention_gated`, nmrwd = `dual_gng_memory=False`, **no
+nolick**, `memory_lambda=0.8`, structured init, 100/100/300): `sweep_relu_cap` (relu ×4),
+`sweep_softplus_sp` (softplus ×4), plus the tanh L1-pin sweep `sweep_nogo_pin`
+(`rwd_nogo_l1=True`, w∈{0.1,1.0}, ×4). First reads said relu/softplus form a *continuous/marginal*
+memory manifold at κ₁≈0 (0/4 bistable) — a dead end. **That was a measurement bug**, and the truth is
+the opposite.
+
+**The bug (two parts).** (1) `classify_fixed_points` tags any FP with a discrete-map eigenvalue within
+`marginal_tol=1e-2` of the unit circle as "marginal", and `wells.py`/the plots drop those. Shallow
+subcritical & non-saturating wells are genuine but **SLOW** attractors (map |λ|≈0.99) → mislabeled
+marginal. (2) The analytic root-finder searches the global `XLIM=±2` box, but non-saturating φ put the
+wells at κ₀≈±5–25 → it misses them or lands on a nearby saddle. `--auto_xlim` widens only the flow
+axes, not the FP-search box.
+
+**Ground truth = grid-sim** (forward-integrate a κ-grid, cluster settled endpoints — no Newton, no
+derivative, no eigenvalue knife-edge, so relu's Heaviside kink is a non-issue): the grid collapses to
+**two tight discrete points** per seed (σ≈0.05–0.1, same order as tanh) = genuine bistable wells.
+
+**Result (autonomous, attention-on FPs; grid-sim for relu/softplus, analytic+fixed-tol for tanh):**
+| φ / arm | task | bistable A&B | well κ₁ | frac<0 |
+|---|---|---|---|---|
+| **relu** | 4/4 | 2/4 clean (2 asym-basin) | **−0.29** | **6/6** |
+| softplus | 3/4 | 3/4 | −0.63 | 4/6 |
+| tanh, L1 pin w=0.1 | 4/4 | 4/4 | +0.29 | 0/8 |
+| tanh, L1 pin **w=1.0** | 4/4 | 4/4 | **−0.18** | 5/8 |
+
+- **relu is the first STRUCTURAL lowering**: discrete bistable wells, **every one below the no-lick
+  line** (κ₁≈−0.29), task perfect, **no nolick / no painted κ₁** — the non-saturating rectifier's
+  intrinsic even (|x|) curvature tilts the field down emergently. softplus goes the same way (messier,
+  huge κ).
+- The bug also **corrupted the pin-sweep conclusion**: `pinng10L1` (strong L1 pin) is actually **4/4
+  bistable, wells mostly <0 (−0.18)**, not "1/4, memory degraded". "Strong pin degrades memory" and
+  "rectifiers give continuous wells" were the *same* artifact.
+
+**Fixes.** `wells.py`: non-saturating φ → grid-sim ground truth (adaptive κ-box; tanh/erf keep analytic
+with `marginal_tol=2e-3`), plus a marginal-well κ₁ stat. The classification default itself
+(`classify_fixed_points` / `classify_sim_fixed_points`, dynamics.py) is lowered **1e-2 → 2e-3** — that's
+what fixes the FLOW figures, whose FP overlay is a THIRD call site (`plot_task_flow_fields`) using the
+default; before it, the flow plots showed the slow wells as faint "marginal" squares (or dropped them
+via `_reduce_marginals`) instead of filled attractor dots. `plot_sweep` also passes `MARGINAL_TOL=2e-3`
+at its two scatter call sites; re-render relu/softplus with wide `--xlim` (search box = plot box). The
+analytic path is exact and recoverable — at 25 seeds + the tol fix, `s0_relu`'s wells come back correct
+(matches grid-sim); the residual fragility is sparse seeding over wide κ + relu's non-smooth φ′ (tuning,
+not fundamental), and the analytic finder is still needed for the plots (it finds saddles; the sim only
+finds attractors). Figures `rnn/sweep_{relu_cap,softplus_sp,nogo_pin}/`.
+
+### 19. Attention amplitude fails; relu's landscape is bad (2026-08-04)
+
+**Attention is the symmetry-breaker, but amplitude is not a lever.** The odd-φ "wells forbidden below 0"
+argument (§ theory §3) assumes `b⊥n`; but attention is clamped ON in the autonomous field, so `b_attn`
+sits in the readout plane and breaks the odd symmetry (theory §8 route 1). Decomposed on the trained
+nets, the well κ₁ = **attention-direct** term `⟨n₁,φ(g·b_attn)⟩/N` (tanh: −0.13, DOWN) vs the
+**memory-modulated even coupling** `⟨n₁·φ''(g·b_attn)·m₀²⟩` (tanh: +0.17, UP). A fixed-weight scan
+suggested scaling attention flips the net-even negative at ~2.5–3×. **But retraining refutes it**
+(`sweep_wellpush` wp_attn1/2/3, `attention_scale` knob added to `_attn_window`): wells at +0.07/+0.02/
+**+0.17** — *higher*, not lower. The trainable attention weight `wᵢ[:,−1]` re-optimizes to neutralize
+the bias (theory §8 route-1 caveat, confirmed); the fixed-weight de-risk froze exactly that weight.
+
+**relu's low wells sit on a BAD landscape** (Leon): κ₀≈±3–6 (softplus ±10–25), only 2/4 clean-bistable
+(the rest asymmetric-basin), and theory §5 spiraling (~15% of the plane, relu never saturates). So the
+§18 relu −0.29 is a low well on a degenerate/blown-up/spiraling landscape — not a real solution.
+`wp_lifsc` (bounded rectifier) → +0.30 (UP): **non-negativity alone isn't enough**; relu's
+*unboundedness* is what shifts down, and that is exactly what wrecks the landscape. `wp_reludeep`
+(relu λ₀=3) diverged (κ→10¹², 3/4 task-fail). ⇒ clean landscape (needs saturation) and wells-below-0
+(needs unbounded rectification) were mutually exclusive across everything. Figures `rnn/sweep_wellpush/`.
+
+### 20. ★★ lif (Gaussian CDF) + decision-readout DC — clean landscape, and the well BIFURCATES down (2026-08-04)
+
+**The transfer function φ = ½[1+erf(x/√2)] (Gaussian CDF = `lif`)** is non-negative **and** saturating —
+the "saturating directional break" the tension needed. Being non-negative, baseline firing φ(0)=½ makes
+the RESTING decision κ₁ = φ(0)·⟨n₁⟩ = ½⟨n₁⟩, so `½[1+erf] = ½ + ½erf` ⇒ `Ψ₁ = ½⟨n₁⟩ + ½·(erf field)` —
+a clean DC shift by the **mean of the decision readout** `⟨n₁⟩`, on a compact saturating landscape.
+New init knob **`decision_readout_mean`** (`init.py`: add DC to `n₁` after install; sets ⟨n₁⟩ exactly,
+leaves λ₁ untouched since m₁ is zero-mean). Toy (n=M, no attention/baseline): wells shift to ½⟨n₁⟩,
+amplified by feedback.
+
+`sweep_lifdc` (lif, gain 2, λ₀=3 supercritical since φ'(0)≈0.4, `decision_readout_mean ∈ {0,−0.3,−0.6,
+−1.0}`, clean base, no nolick, 4 seeds):
+- **Landscape SOLVED** — compact bistable wells at κ₀≈±1, no relu blowup, no spiral; **task-perfect**
+  (dual_dpa≈1, go/nogo=1) at every DC. lif is a viable clean φ and the memory holds.
+- **The DC works, but by BIFURCATION not translation.** As ⟨n₁⟩→negative each sample memory splits
+  into an UP (κ₁≈+0.5) and a DOWN (κ₁≈−0.6) attractor. At `lifdc10` (⟨n₁⟩ init −1.0 → trained −0.75)
+  **all 4 seeds show 4 wells: 2 up + 2 down**, down wells at **κ₁≈−0.58** (≈½⟨n₁⟩ amplified, both
+  samples). Monotone: down wells appear/multiply as ⟨n₁⟩ drops. So the mechanism **creates memory wells
+  in the no-lick plane** — closer than anything prior. Remaining: kill the UP copies (GOAL "all wells
+  down" still 0/4). Also: the baseline-pin (pre-sample κ₁=0) **erodes** ⟨n₁⟩ (init −0.3/−0.6/−1.0 →
+  trained −0.06/−0.31/−0.75), fighting the DC — a lever to protect.
+
+**`wells.py` had a TWO-WELL bug that hid all of the above.** `_side_well` picked one attractor per κ₀
+sign (outermost |κ₀|) and averaged A with B — so a 4-well (2up/2down) structure collapsed to 2, and an
+up-well averaged with a down-well read as a meaningless ≈+0.08. This mis-reported the well locations
+repeatedly. **Fixed:** `wells.py` now lists EVERY memory-well attractor (|κ₀| large) with (κ₀,κ₁), tallies
+up/down, and reports the GOAL metric "ALL memory wells down / seed"; the grid-sim path clusters all
+attractors too (no per-side split). Earlier sweeps (relu, attn, softplus) should be re-checked with it.
+Figures `rnn/sweep_lifdc/`.
+
+### 21. ★★ A DPA-metric bug hid convergence; the DC×attention 2×2; and why the nogo-hinge never pushes the wells (2026-08-05)
+
+**★ The `dpa≈0.50` in every windowed run was a METRIC BUG, not under-training.** `_dpa_accuracy`/
+`_dpa_accuracy_by_type` (`sweep.py`) regenerated DPA trials **without** `windowed_targets`/`decay_to_zero`
+and read the target at the LAST timestep `y[:,-1,-1]` — which is 0/NaN once the windowed decision decays.
+So `pair`/`unpair` masks were empty (**pair=nan**) and `overall` collapsed to ~0.50 for **every**
+`windowed_targets` run. DPA was actually always solving: probe on the DPA-stage ckpt gives match κ₁=**+0.43**
+vs nonmatch **−0.46** (Δ=0.89), memory κ₀ held ≈0.73. **Fixed** via a shared `_dpa_score()` that reads the
+SUPERVISED decision window (post-test steps where the ±1 target is set); re-scored runs show **dpa=1.0**.
+This retroactively corrects every "task-perfect" claim above — they reported the buggy 0.50, not true DPA.
+
+**The DC × attention 2×2** (all lif, gain 2, λ₀=3, one-sided nogo, windowed, DPA 250 ep). Autonomous wells:
+
+| cell | sweep | wells | down-κ₁ | all-down | g·λ₁ |
+|---|---|---|---|---|---|
+| **DC + attn** | `sweep_os_ep` | 4 (2 deep-dn + 2 ≈0) | **−0.67** | 3/4 | 9.4 |
+| DC only (no attn) | `sweep_noattn` | erratic, collapses to 1 well | −1.03 | 1/4 | 11.9 |
+| attn only (no DC) | `sweep_nodc` | clean 2-well | −0.09 | 3/4 | 11.0 |
+| neither | `sweep_nodc_noattn` | straddles 0 | −0.08 | 1/4 | 10.8 |
+
+**Verdict: the DC does the DEEP lowering** (structural coordinate shift ½⟨n₁⟩, unopposed); **attention
+STABILIZES the two-sided A/B memory** (without it the deep-DC push collapses the memory to one side). Both
+needed. Decision is supercritical (g·λ₁≈9–12) in every cell — the DC works by shifting the whole bistable
+structure down, not by changing criticality. More DPA epochs deepened DC+attn vs the original run (−0.45→−0.67).
+
+**freeze-attention-in-GNG is now DEFAULT** (`sweep.py` `gng_freeze_input` adds the attention channel when
+`attention_input`): attention is a DPA-learned tonic **context** input → trained in DPA, frozen GNG+Dual, like
+the DPA dims. A/B test `sweep_nodc_afrz` vs `sweep_nodc`: small deepening **−0.09→−0.14**, within seed noise —
+confirms GNG was diluting the push, but the attention push is inherently small.
+
+**★ Why the `gng_response` nogo-hinge does NOT push the wells** (corrects three of my wrong assumptions —
+the response cue IS shared across go/nogo `tasks.py:290`, noise IS always on `:271`, and the response window
+IS cue-off `co:co+half`, co=cue-offset). The real reason: **the loss is indifferent to well depth below 0** —
+κ₁=0 already means "no lick", so nothing rewards a nogo well at −0.5 vs 0. The **only** below-0 pressure is the
+**noise-robustness margin** (avoid noise-driven false licks); the attn-only wells sit at −0.09 ≈ the input-noise
+scale (0.093), i.e. exactly one noise-width. The one-sided **never-lick collapse** (go=0) removes even that.
+The DC supplies depth for free. Emergent levers under test: **(a)** raise input noise (bigger margin → deeper
+wells) — `sweep_noise` (`nzA`, noise 0.5/0.75); **(b)** **go-preserving one-sided** (new `rwd_keep_go_hinge`:
+keep the go +1 hinge so go MUST lick → under the shared cue the nogo memory must sit below the lick line) —
+`nzB`, queued after (a).
+
+**Also this session:** `gng_criterion` is always TWO-sided (`rwd_nogo_onesided` only relaxes Dual, via
+`_uw_gng`) so one-sided can't collapse the go-memory in GNG; `stop_loss` 0.02→**0.05** (0.02 overtrains Dual
+to ~300 ep for no gain; DPA converges well above it); `plot_sweep`/`dynamics` now emit **STACKED 3-row
+(dpa/naive/expert) flow portraits** (`plot_stage_stacked_flow`) + stacked summary mean-flow
+(`_render_meanflow_stacked`) — same panel columns, shared κ-limits + speed scale, so a column reads top→bottom
+as DPA→GNG→Dual. Figures `rnn/sweep_{os_ep,noattn,nodc,nodc_noattn,nodc_afrz}/`.

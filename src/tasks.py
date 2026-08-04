@@ -43,6 +43,24 @@ def make_timings(dt: float) -> dict:
     }
 
 
+def _attn_window(inputs, timing, input_scale, gated, attention_scale=1.0):
+    """Add the tonic attention/context input on the LAST channel.
+    gated=False (default): on from the first-stim ONSET to trial end (the original behaviour).
+    gated=True: on ONLY over the RETENTION DELAY — from the first-stim OFFSET (n_off[0]) to the
+    last-stim ONSET (n_on[-1]), i.e. exactly while the sample memory is held. Off during encoding
+    (sample) and off once the probe arrives (test in DPA/Dual, cue in GNG) — a pure working-memory
+    maintenance signal, released by the probe.
+    attention_scale multiplies the tonic value (default 1.0 = input_scale): the amplitude of the
+    readout-plane symmetry-breaking bias b_attn, i.e. the lever that pushes the memory wells' κ₁ down
+    (attention-direct term ⟨n₁,φ(g·b_attn)⟩/N). See ring_lowerplane_log §19."""
+    n_on, n_off = timing.n_stim_on, timing.n_stim_off
+    val = attention_scale * input_scale
+    if gated:
+        inputs[:, int(n_off[0]):int(n_on[-1]), -1] += val
+    else:
+        inputs[:, n_on[0]:, -1] += val
+
+
 def generate_dpa_trials(
     n_trials: int,
     timing: TaskTiming,
@@ -52,6 +70,8 @@ def generate_dpa_trials(
     baseline_value: float = 0.5,
     input_scale: float = 1.0,
     attention_input: bool = False,
+    attention_gated: bool = False,
+    attention_scale: float = 1.0,
     windowed_targets: bool = False,
     decay_to_zero: bool = True,
 ):
@@ -63,7 +83,7 @@ def generate_dpa_trials(
     targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
 
     if attention_input:   # tonic attentional/context input on the LAST channel,
-        inputs[:, n_on[0]:, -1] += input_scale
+        _attn_window(inputs, timing, input_scale, attention_gated, attention_scale=attention_scale)
 
     idx_A = torch.rand(n_trials) > 0.5
     idx_B = ~idx_A
@@ -117,6 +137,8 @@ def generate_gng_trials(
     go_on_rwd_input: bool = False,
     input_scale: float = 1.0,
     attention_input: bool = False,
+    attention_gated: bool = False,
+    attention_scale: float = 1.0,
     ramping_gng: bool = False,
     windowed_targets: bool = False,
     decay_to_zero: bool = True,
@@ -129,8 +151,8 @@ def generate_gng_trials(
     inputs = noise * torch.randn(n_trials, n_steps, input_size)
     targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
 
-    if attention_input:   # tonic attention on the LAST channel, =1 from first stim onset
-        inputs[:, n_on[0]:, -1] += input_scale
+    if attention_input:   # tonic attention on the LAST channel
+        _attn_window(inputs, timing, input_scale, attention_gated, attention_scale=attention_scale)
 
     idx_go   = torch.rand(n_trials) > 0.5
     idx_nogo = ~idx_go
@@ -203,6 +225,8 @@ def generate_dual_trials(
     go_on_rwd_input: bool = False,
     input_scale: float = 1.0,
     attention_input: bool = False,
+    attention_gated: bool = False,
+    attention_scale: float = 1.0,
     paired_only: bool = False,
     ramping_gng: bool = False,
     windowed_targets: bool = False,
@@ -247,8 +271,8 @@ def generate_dual_trials(
     inputs  = noise * torch.randn(n_trials, n_steps, input_size)
     targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
 
-    if attention_input:   # tonic attention on the LAST channel, =1 from first stim onset
-        inputs[:, n_on[0]:, -1] += input_scale
+    if attention_input:   # tonic attention on the LAST channel
+        _attn_window(inputs, timing, input_scale, attention_gated, attention_scale=attention_scale)
 
     inputs[idx_A,    n_on[0]:n_off[0], 0] += input_scale
     inputs[idx_B,    n_on[0]:n_off[0], 1] += input_scale

@@ -78,7 +78,8 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
     def _eval(label):
         model.noise = 0.0
         dpa = _dpa_accuracy_by_type(model, dpa_timing, config.input_size, noise=noise, device=device,
-                                    target_rank=config.target_rank)
+                                    target_rank=config.target_rank,
+                                    windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
         gng = _gng_accuracy_by_type(model, gng_timing, config.input_size, noise=noise, device=device,
                                     target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                     cue_scale=config.cue_scale, nogo_target=config.nogo_target,

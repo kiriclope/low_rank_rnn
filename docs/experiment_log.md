@@ -628,3 +628,64 @@ lowering; mechanism = sustained no-lick pressure during retention. **Unfreezing 
 survives on the pairing alone, κ₀ sep ~2.4) but doesn't amplify (−0.16≈−0.15), only makes it consistent
 (4/4). ⇒ magnitude capped by nolick weight (0.5), not the DOF; raise nolick for dose-response. Modest
 (−0.15 vs old −0.8). Figures `rnn/sweep_uni_{nolick,unfrozen_nonolick,unfrozen_nolick}/`. Detail §17h.
+
+### ★★ Rectifier probe → relu lowers the wells; FP-classifier bug (2026-08-03)
+
+`sweep_relu_cap` (relu ×4), `sweep_softplus_sp` (softplus ×4), `sweep_nogo_pin` (tanh, L1 nogo-pin
+`rwd_nogo_l1=True` w∈{0.1,1.0}, ×4). Base = unified loss, unfrozen κ₀, `attention_gated`, nmrwd
+(`dual_gng_memory=False`), **no nolick**, `memory_lambda=0.8`, structured init, 100/100/300. New knob
+`rwd_nogo_l1` (nogo pin form: `|κ₁|` L1 vs `κ₁²` L2).
+
+- **FP-classifier bug**: `classify_fixed_points` (`marginal_tol=1e-2`) mislabels genuine SLOW attractors
+  (map |λ|≈0.99) as "marginal" → `wells.py`/plots drop them; and the analytic finder's `XLIM=±2` box
+  misses non-saturating wells (κ₀≈±5–25). Fixed: `wells.py` routes non-saturating φ → grid-sim ground
+  truth; `marginal_tol=2e-3` in `wells.py` + `plot_sweep` (`MARGINAL_TOL`); re-render with wide `--xlim`.
+  This bug had also mis-scored several earlier reads. Detail: `ring_lowerplane_log.md` §18.
+- **relu**: task 4/4; autonomous wells discrete, **all κ₁<0** (mean −0.29, 6/6), 2/4 clean-bistable (2
+  asymmetric basins). **First structural (nonlinearity) lowering** — no nolick / no painted target;
+  the rectifier's even curvature tilts the field below the no-lick line emergently.
+- **softplus**: task 3/4 (s1 failed); wells mostly <0 (mean −0.63, 4/6), κ₀ huge (±10–25).
+- **tanh L1 pin**: w=0.1 → +0.29 (4/4 bistable, 0/8<0); **w=1.0 → −0.18** (4/4 bistable, 5/8<0). Strong
+  pin lowers (mostly) WITHOUT degrading memory — earlier "1/4 degraded" was the classifier bug.
+- Figures `rnn/sweep_{relu_cap,softplus_sp,nogo_pin}/`.
+
+### Attention amplitude fails; relu landscape bad; lif+DC bifurcates the well down (2026-08-04)
+
+New knobs: `attention_scale` (tasks.py `_attn_window`), `decision_readout_mean` (init.py: DC on n₁).
+
+- **`sweep_wellpush`** (`--run_filter wp`): tanh × `attention_scale` 1/2/3 + lif_sc + relu deep-mem.
+  **Attention amplitude does NOT lower** the wells on retraining (wells +0.07/+0.02/+0.17) — the
+  trainable attention weight neutralizes the bias. **relu's low wells are a BAD landscape** (κ₀±3–6,
+  2/4 bistable, spiral); `lif_sc` (bounded) → +0.30 (non-negativity alone insufficient); `reludeep`
+  diverged. Clean-landscape and below-0 were mutually exclusive. Detail: `ring_lowerplane_log.md` §19.
+- **`sweep_lifdc`** (`--run_filter lifdc`): **lif** (Gaussian CDF, φ(0)=½), gain 2, λ₀=3, sweep
+  `decision_readout_mean ∈ {0,−0.3,−0.6,−1.0}`, clean base, no nolick, 4 seeds. **Landscape SOLVED**:
+  compact bistable wells κ₀≈±1, no relu blowup/spiral, task-perfect (dual_dpa≈1, go/nogo=1). The DC
+  works by **bifurcation**: each sample splits into up+down attractors; at ⟨n₁⟩ init −1.0 (trained
+  −0.75) **all 4 seeds have 4 wells (2 up + 2 down), down wells at κ₁≈−0.58**. Creates no-lick-plane
+  memory wells (closer); remaining = kill the up copies. Baseline-pin erodes ⟨n₁⟩. Detail: §20.
+- **`wells.py` fixed**: was hard-coded to TWO wells (`_side_well`, one per κ₀ sign, averaged A&B) →
+  collapsed the 4-well (2up/2down) structure and mis-averaged up+down into a meaningless number
+  (the source of repeated wrong well-location claims). Now lists EVERY memory-well attractor with
+  (κ₀,κ₁), up/down tally, and an "all-wells-down / seed" GOAL metric. Figures `rnn/sweep_{wellpush,lifdc}/`.
+
+### DPA-metric bug fixed; DC×attention 2×2; the noise-margin mechanism (2026-08-05)
+
+**★ DPA-accuracy bug:** `_dpa_accuracy*` regenerated DPA trials without `windowed_targets`/`decay` and read
+the LAST-timestep target (0/NaN after decay) → `pair=nan`, `overall≈0.50` for **every** windowed run. DPA
+was always solving (probe Δ(match−nonmatch)=0.89). Fixed via `_dpa_score()` (scores the supervised decision
+window) → re-scored **dpa=1.0**. All prior "task-perfect" numbers reported this bug, not true DPA.
+
+- **2×2 DC × attention** (lif, gain2, λ₀=3, one-sided, windowed, 250 DPA ep; all fixed-eval dpa≈1.0, go=0
+  under one-sided): `sweep_os_ep` (DC+attn) wells **κ₁≈−0.67, 3/4 all-down** — best; `sweep_noattn` (DC only)
+  **erratic, memory collapses to 1 well**, 1/4; `sweep_nodc` (attn only) clean 2-well but shallow **−0.09**,
+  3/4; `sweep_nodc_noattn` (neither) straddles 0, 1/4. g·λ₁≈9–12 (supercritical) everywhere. **DC = deep
+  lowering; attention = stabilizes the two-sided memory; both needed.** Detail §21.
+- **`sweep_nodc_afrz`**: freeze-attention-in-GNG now DEFAULT (train attention in DPA, freeze GNG+Dual). Small
+  deepening −0.09→−0.14 vs `sweep_nodc` (attention free), within seed noise.
+- **`sweep_noise`** (`--run_filter nzA`, noise 0.5/0.75, DC=0, attn on, `stop_loss=0.05`): testing the
+  noise-robustness-margin lever — the ONLY below-0 pressure (wells ≈−0.09 ≈ input-noise scale). Then `nzB`
+  (go-preserving one-sided, new `rwd_keep_go_hinge`). *Running.*
+- **Infra**: `stop_loss` 0.02→0.05 (0.02 overtrains Dual); `gng_criterion` kept two-sided (`_uw_gng`);
+  STACKED 3-row flow portraits (`plot_stage_stacked_flow` + `_render_meanflow_stacked`). Figures
+  `rnn/sweep_{os_ep,noattn,nodc,nodc_noattn,nodc_afrz}/`.

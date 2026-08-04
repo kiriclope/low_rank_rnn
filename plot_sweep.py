@@ -44,7 +44,7 @@ import torch
 from analyze import load_results
 from src.dynamics import (
     find_all_fixed_points, classify_fixed_points, make_input,
-    plot_task_flow_fields, _reduce_marginals,
+    plot_task_flow_fields, plot_stage_stacked_flow, _reduce_marginals,
     low_rank_numpy_params, low_rank_field_np,
 )
 from src.models import LowRankModel, EILowRankModel, EISTPModel
@@ -76,6 +76,11 @@ STAGE_X         = np.arange(3)
 STAGE_TASK      = {"dpa": "dpa", "naive": "gng", "expert": "dual"}
 CONDITION_COLS  = ("tab:blue", "tab:orange")
 XLIM = YLIM     = (-2.0, 2.0)
+# Fixed-point classification: tag a point "marginal" only when a map-eigenvalue is within this of
+# the unit circle. The dynamics default (1e-2) mislabels genuine but SLOW attractors (|λ|≈0.99 —
+# shallow subcritical wells, non-saturating φ) as marginal and drops them; 2e-3 keeps those as
+# attractor/slow while still catching true line/ring manifolds (|λ|=1.000). See ring_lowerplane_log §18.
+MARGINAL_TOL    = 2e-3
 
 # ── Central color config ──────────────────────────────────────────────────────
 # Each entry: (primary, light_shade).  Used by trajectories, accuracy plots,
@@ -119,6 +124,8 @@ class RunMeta:
     cue_scale:      float = 1.0
     nogo_target:    float = 0.0
     attention_input: bool = False
+    attention_gated: bool = False
+    attention_scale: float = 1.0
     tau:            float = 0.3
     dt_base:        float = 0.03
     tau_rec_frac:   float = 0.75
@@ -201,6 +208,8 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             cue_scale       = float(cfg.get("cue_scale", 1.0)),
             nogo_target     = float(cfg.get("nogo_target", 0.0)),
             attention_input = bool(cfg.get("attention_input", False)),
+            attention_gated = bool(cfg.get("attention_gated", False)),
+            attention_scale = float(cfg.get("attention_scale", 1.0)),
             tau             = float(cfg.get("tau", 0.3)),
             dt_base         = float(cfg.get("dt_base", 0.03)),
             tau_rec_frac    = float(cfg.get("tau_rec_frac", 0.75)),
@@ -371,7 +380,7 @@ def _eval_dual_by_trialtype(model, meta: RunMeta, device: str,
         n_trials, timing=timing, input_size=meta.input_size,
         noise=meta.noise_sigma(), target_rank=meta.rank,
         cue_on_go_input=meta.cue_on_go_input, cue_scale=meta.cue_scale,
-        nogo_target=meta.nogo_target, attention_input=meta.attention_input,
+        nogo_target=meta.nogo_target, attention_input=meta.attention_input, attention_gated=meta.attention_gated, attention_scale=meta.attention_scale,
     )
     X, y = X.to(device), y.to(device)
     pred  = model(X, y)[..., -1].cpu()
@@ -422,7 +431,7 @@ def _eval_gng_by_trialtype(model, meta: RunMeta, device: str,
         n_trials, timing=timing, input_size=meta.input_size,
         noise=meta.noise_sigma(), target_rank=meta.rank,
         cue_on_go_input=meta.cue_on_go_input, cue_scale=meta.cue_scale,
-        nogo_target=meta.nogo_target, attention_input=meta.attention_input,
+        nogo_target=meta.nogo_target, attention_input=meta.attention_input, attention_gated=meta.attention_gated, attention_scale=meta.attention_scale,
     )
     X, y = X.to(device), y.to(device)
     pred  = model(X, y)[..., -1].cpu()
@@ -467,7 +476,7 @@ def _make_gng_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None =
         n_batch, timing=timing, input_size=ref_meta.input_size,
         noise=n_sigma, target_rank=ref_meta.rank, cue_on_go_input=ref_meta.cue_on_go_input,
         cue_scale=ref_meta.cue_scale, nogo_target=ref_meta.nogo_target,
-        attention_input=ref_meta.attention_input,
+        attention_input=ref_meta.attention_input, attention_gated=ref_meta.attention_gated, attention_scale=ref_meta.attention_scale,
         ramping_gng=ref_meta.ramping_gng, windowed_targets=ref_meta.windowed_targets,
         decay_to_zero=ref_meta.decay_to_zero, gng_response=ref_meta.gng_response,
     )
@@ -497,7 +506,7 @@ def _make_dual_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None 
         n_batch, timing=timing, input_size=ref_meta.input_size,
         noise=n_sigma, target_rank=ref_meta.rank, cue_on_go_input=ref_meta.cue_on_go_input,
         cue_scale=ref_meta.cue_scale, nogo_target=ref_meta.nogo_target,
-        attention_input=ref_meta.attention_input,
+        attention_input=ref_meta.attention_input, attention_gated=ref_meta.attention_gated, attention_scale=ref_meta.attention_scale,
         ramping_gng=ref_meta.ramping_gng, windowed_targets=ref_meta.windowed_targets,
         decay_to_zero=ref_meta.decay_to_zero, gng_response=ref_meta.gng_response,
         gng_memory=ref_meta.dual_gng_memory,
@@ -517,7 +526,8 @@ def _make_dual_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None 
 
 def _fps_for_task(model, input_size: int, task: str, device: str,
                   cue_on_go_input: bool, n_seeds: int = 21, slow_tol=None,
-                  attention_input: bool = False) -> list:
+                  attention_input: bool = False, attention_gated: bool = False,
+                  attention_scale: float = 1.0) -> list:
     """[(label, color, marker, fps_array, stabs_array), ...]"""
     dtype  = next(model.parameters()).dtype
     conds  = _input_conditions(task, input_size, cue_on_go_input)
@@ -526,10 +536,11 @@ def _fps_for_task(model, input_size: int, task: str, device: str,
         ff       = make_input(input_size, active_dims=dims, value=1.0,
                               device=device, dtype=dtype)
         if attention_input:   # tonic attention ON in every condition incl. autonomous (matches the flow)
-            ff[-1] = 1.0
+            ff[-1] = attention_scale
         fps, _   = find_all_fixed_points(model, xlim=XLIM, ylim=YLIM, ff_input=ff,
                                          n_seeds=n_seeds, residual_tol=1e-8, merge_tol=5e-2)
-        stabs, _ = classify_fixed_points(model, fps, ff_input=ff, slow_tol=slow_tol)
+        stabs, _ = classify_fixed_points(model, fps, ff_input=ff,
+                                         marginal_tol=MARGINAL_TOL, slow_tol=slow_tol)
         result.append((label, color, marker, fps, stabs))
     return result
 
@@ -1046,10 +1057,11 @@ def _collect_fp_scatter(all_metas, ckpt_dir, device, conditions, n_seeds, slow_t
                     ff = make_input(meta.input_size, active_dims=dims, value=1.0,
                                     device=device, dtype=dtype)
                     if meta.attention_input:   # attention ON incl. autonomous (matches the flow)
-                        ff[-1] = 1.0
+                        ff[-1] = meta.attention_scale
                     fps, _   = find_all_fixed_points(model, xlim=XLIM, ylim=YLIM, ff_input=ff,
                                                      n_seeds=n_seeds, residual_tol=1e-8, merge_tol=5e-2)
-                    stabs, _ = classify_fixed_points(model, fps, ff_input=ff, slow_tol=slow_tol)
+                    stabs, _ = classify_fixed_points(model, fps, ff_input=ff,
+                                                     marginal_tol=MARGINAL_TOL, slow_tol=slow_tol)
                     if label == "Autonomous":   # collapse slow-manifold marginals to slow attractors
                         fps, stabs = _reduce_marginals(np.asarray(fps), np.asarray(stabs))
                     data[label][stage].append((meta.init_style, fps, stabs))
@@ -1096,7 +1108,7 @@ def _collect_mean_flow(all_metas, ckpt_dir, device, conditions, lim, grid_n=56):
             for lbl, dims, _c, _m in conditions:
                 ff = make_input(meta.input_size, active_dims=dims, value=1.0, device=device, dtype=dtype)
                 if meta.attention_input:
-                    ff[-1] = 1.0
+                    ff[-1] = meta.attention_scale
                 F = low_rank_field_np(p, kap, ff_input=ff.detach().cpu().numpy())
                 acc[lbl][stage]["d0"].append(F[..., 0]); acc[lbl][stage]["d1"].append(F[..., 1])
             del model
@@ -1196,6 +1208,59 @@ def _render_meanflow_by_stage(mflow, scatter_data, stage, conditions, all_metas,
     plt.close(fig)
 
 
+def _render_meanflow_stacked(mflow, scatter_data, conditions, all_metas, out_path, lim,
+                             overlay="scatter"):
+    """Stacked version of _render_meanflow_by_stage: ONE figure, 3 ROWS (dpa/naive/expert) × N
+    condition columns (identical panels every row). Background darkness = across-seed flow
+    agreement; white streamlines = across-seed MEAN field; attractors/slow-attractors from every
+    seed overlaid. A column read top→bottom shows how the mean field + wells evolve through
+    training, on shared κ limits + a shared agreement scale."""
+    conds = list(conditions)
+    ncol, nrow = len(conds), len(STAGES)
+    fig, axes = plt.subplots(nrow, ncol, figsize=(ncol * 2.15 + 0.4, nrow * 2.7 + 0.3),
+                             constrained_layout=True, sharex=True, sharey=True, squeeze=False)
+    hm = kde_hm = None
+    for r, stage in enumerate(STAGES):
+        for c, (lbl, _d, _c, _m) in enumerate(conds):
+            ax = axes[r][c]
+            m  = mflow[lbl][stage]
+            if m is not None:
+                hm = ax.pcolormesh(m["K0"], m["K1"], m["R"], cmap="Greys", vmin=0.0, vmax=1.0,
+                                   shading="auto", zorder=0, rasterized=True)
+                ax.streamplot(m["K0"][0, :], m["K1"][:, 0], m["d0"], m["d1"], color="white",
+                              density=1.0, linewidth=0.6, arrowsize=0.7, zorder=2)
+            cs = None
+            if overlay == "kde":
+                pts = [(fp[0], fp[1]) for init_style, fps, stabs in scatter_data[lbl][stage]
+                       for fp, st in zip(fps, stabs) if st in ("attractor", "slow_attractor")]
+                cs = _kde_density_overlay(ax, pts, lim)
+                if cs is not None:
+                    kde_hm = cs
+            if cs is None:   # scatter (default, or KDE fallback for too-few points)
+                for init_style, fps, stabs in scatter_data[lbl][stage]:
+                    _draw_fp_points(ax, init_style, fps, stabs, only=("attractor", "slow_attractor"))
+            ax.axhline(0, color="lightgray", lw=0.7, zorder=0)
+            ax.axvline(0, color="lightgray", lw=0.7, zorder=0)
+            ax.set_xlim(lim); ax.set_ylim(lim); ax.set_aspect("equal", adjustable="box")
+            if r == 0:            ax.set_title(lbl, fontsize=9)
+            if r == nrow - 1:     ax.set_xlabel(r"$\kappa_0$", fontsize=9)
+            if c == 0:            ax.set_ylabel(f"{stage} ({STAGE_TASK[stage].upper()})\n" + r"$\kappa_1$",
+                                               fontsize=9)
+    _fp_legend(fig, all_metas, kde=(overlay == "kde"))
+    if hm is not None:
+        cb = fig.colorbar(hm, ax=list(axes.ravel()), fraction=0.010, pad=0.01)
+        cb.set_label("across-seed flow agreement", fontsize=7); cb.ax.tick_params(labelsize=6)
+    if kde_hm is not None:
+        cb2 = fig.colorbar(kde_hm, ax=list(axes.ravel()), fraction=0.010, pad=0.02)
+        cb2.set_label("attractor density (KDE)", fontsize=7)
+        cb2.ax.tick_params(labelsize=6); cb2.set_ticks([])
+    fig.suptitle("mean flow (bg = across-seed agreement) + attractors — rows: dpa / naive / expert",
+                 fontsize=11)
+    save_fig(fig, out_path)
+    print(f"Saved {out_path}")
+    plt.close(fig)
+
+
 def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
                         out_dir: str, device: str, n_seeds: int = 21, slow_tol=None,
                         meanflow_overlay: str = "scatter"):
@@ -1211,12 +1276,11 @@ def summary_fp_scatters(all_metas: list[RunMeta], ckpt_dir: str,
     # KDE overlay writes to a separate `_kde` filename so it never clobbers the scatter-overlay version.
     suffix = "_kde" if meanflow_overlay == "kde" else ""
     mflow = _collect_mean_flow(all_metas, ckpt_dir, device, conditions, lim=lim)
-    for stage in STAGES:
-        _render_meanflow_by_stage(
-            mflow, data, stage, conditions, all_metas,
-            os.path.join(out_dir, f"fp_meanflow_{stage}{suffix}.pdf"), lim=lim,
-            overlay=meanflow_overlay,
-        )
+    _render_meanflow_stacked(
+        mflow, data, conditions, all_metas,
+        os.path.join(out_dir, f"fp_meanflow_stages{suffix}.pdf"), lim=lim,
+        overlay=meanflow_overlay,
+    )
 
 
 # --- 5. Average trajectories (κ vs time), grouped by init_style ---
@@ -1388,7 +1452,7 @@ def individual_fp_scatter(meta: RunMeta, ckpt_dir: str, out_dir: str,
                                               _input_conditions(task, meta.input_size, cue), device)
         else:
             fp_data = _fps_for_task(model, meta.input_size, task, device, cue, n_seeds, slow_tol=slow_tol,
-                                    attention_input=meta.attention_input)
+                                    attention_input=meta.attention_input, attention_gated=meta.attention_gated, attention_scale=meta.attention_scale)
         del model
 
         ax.axhline(0, color="lightgray", lw=0.7, zorder=0)
@@ -1460,6 +1524,10 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
         print(f"  flow fields (ei_flow/eistp sim) saved: {flow_dir}")
         return
 
+    # Collect all three stages, then render ONE stacked portrait: rows = dpa/naive/expert, every row
+    # sharing the SAME canonical (Dual 8-condition) panel columns + κ limits + speed scale, so a
+    # column read top→bottom shows how that field/well evolves across training.
+    stages = []
     for stage, task in stage_task.items():
         ckpt = os.path.join(ckpt_dir, meta.run_id, f"{stage}_{meta.run_id}.pth")
         if not os.path.exists(ckpt):
@@ -1471,62 +1539,63 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
         model.eval()
         timing = TIMINGS[task]
 
+        cnames = None
         if task == "dpa":
             inputs, targets = generate_dpa_trials(
                 n_batch, timing, input_size=meta.input_size, target_rank=meta.rank,
-                noise=meta.noise_sigma(), attention_input=meta.attention_input,
+                noise=meta.noise_sigma(), attention_input=meta.attention_input, attention_gated=meta.attention_gated, attention_scale=meta.attention_scale,
                 windowed_targets=meta.windowed_targets, decay_to_zero=meta.decay_to_zero)
-            cnames = None
         elif task == "gng":
             inputs, targets = generate_gng_trials(
                 n_batch, timing, input_size=meta.input_size, target_rank=meta.rank,
                 noise=meta.noise_sigma(), cue_on_go_input=cue,
                 cue_scale=meta.cue_scale, nogo_target=meta.nogo_target,
-                attention_input=meta.attention_input,
+                attention_input=meta.attention_input, attention_gated=meta.attention_gated, attention_scale=meta.attention_scale,
                 ramping_gng=meta.ramping_gng, windowed_targets=meta.windowed_targets,
                 decay_to_zero=meta.decay_to_zero, gng_response=meta.gng_response)
-            cnames = None
         else:
             inputs, targets, _, cnames = generate_dual_trials(
                 n_batch, timing, input_size=meta.input_size, target_rank=meta.rank,
                 noise=meta.noise_sigma(), cue_on_go_input=cue,
                 cue_scale=meta.cue_scale, nogo_target=meta.nogo_target,
-                attention_input=meta.attention_input,
+                attention_input=meta.attention_input, attention_gated=meta.attention_gated, attention_scale=meta.attention_scale,
                 ramping_gng=meta.ramping_gng, windowed_targets=meta.windowed_targets,
                 decay_to_zero=meta.decay_to_zero, gng_response=meta.gng_response,
                 gng_memory=meta.dual_gng_memory)
 
-        inputs_t  = torch.as_tensor(inputs,  dtype=torch.float32)
-        targets_t = torch.as_tensor(targets, dtype=torch.float32)
+        stages.append(dict(label=stage, task=task, timing=timing, model=model,
+                           inputs=inputs, targets=targets, condition_names=cnames))
 
-        # When auto_xlim, scale grid density to match default ±1.5/151 spacing.
-        # n_grid_per_unit = 151 / 3.0 ≈ 50.3; capped at 401 to stay fast.
-        n_grid_per_unit = (n_grid / 3.0) if auto_xlim else None
-        fig, _, _ = plot_task_flow_fields(
-            model, inputs_t, timing, task,
-            targets         = targets_t,
-            condition_names = cnames,
-            n_fp_seeds      = n_fp_seeds,
-            cue_on_go_input = cue,
-            cue_scale       = meta.cue_scale,
-            attention_input = meta.attention_input,
-            field_input_noise = meta.noise_sigma() if field_input_noise else 0.0,
-            xlim            = None if auto_xlim else XLIM,
-            ylim            = None if auto_xlim else YLIM,
-            n_grid          = n_grid,
-            n_grid_per_unit = n_grid_per_unit,
-            use_sim_field   = use_sim_field,
-            sim_n_warmup    = sim_n_warmup,
-            slow_tol        = slow_tol,
-            show_slow_manifold   = show_slow_manifold,
-            slow_manifold_thresh = slow_manifold_thresh,
-        )
-        fig.suptitle(f"{meta.run_id} — {stage} ({task.upper()})", y=1.01)
-        out_path = os.path.join(flow_dir, f"fp_{stage}.pdf")
-        save_fig(fig, out_path)
-        plt.close(fig)
-        del model
-    print(f"  flow fields saved: {flow_dir}")
+    if not stages:
+        print(f"  flow fields: no checkpoints for {meta.run_id}"); return
+
+    # When auto_xlim, scale grid density to match default ±1.5/151 spacing (≈50.3 pts/unit, cap 401).
+    n_grid_per_unit = (n_grid / 3.0) if auto_xlim else None
+    fig, _ = plot_stage_stacked_flow(
+        stages,
+        cue_on_go_input = cue,
+        cue_scale       = meta.cue_scale,
+        attention_input = meta.attention_input,
+        attention_scale = meta.attention_scale,
+        xlim            = None if auto_xlim else XLIM,
+        ylim            = None if auto_xlim else YLIM,
+        n_grid          = n_grid,
+        n_grid_per_unit = n_grid_per_unit,
+        n_fp_seeds      = n_fp_seeds,
+        use_sim_field   = use_sim_field,
+        sim_n_warmup    = sim_n_warmup,
+        field_input_noise = meta.noise_sigma() if field_input_noise else 0.0,
+        slow_tol        = slow_tol,
+        show_slow_manifold   = show_slow_manifold,
+        slow_manifold_thresh = slow_manifold_thresh,
+        suptitle        = f"{meta.run_id} — stage flow portraits (rows: dpa / naive / expert)",
+    )
+    out_path = os.path.join(flow_dir, "fp_stages.pdf")
+    save_fig(fig, out_path)
+    plt.close(fig)
+    for st in stages:
+        st["model"] = None
+    print(f"  flow fields (stacked) saved: {out_path}")
 
 
 # ============================================================

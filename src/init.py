@@ -18,6 +18,7 @@ def init_dpa_internal_readout_prepost(
     sample_scale: float = 0.8,
     test_scale: float = 0.8,
     readout_scale: float = 1.0,
+    decision_readout_mean: float = 0.0,
     mix_strength: float = 0.10,
     readout_private_scale: float = 0.02,
     noise_scale_mn: float = 0.05,
@@ -145,6 +146,14 @@ def init_dpa_internal_readout_prepost(
 
     model.n[:, out] = n_out
     model.m[:, out] = m_out
+
+    # Decision-readout DC mean ⟨n₁⟩. With a non-negative saturating φ (lif = Gaussian CDF, φ(0)=½),
+    # the RESTING decision is κ₁ = φ(0)·⟨n₁⟩ = ½⟨n₁⟩, so a net-inhibitory readout seats the whole
+    # memory manifold in the no-lick plane (both A/B wells shift to ≈½⟨n₁⟩ together) — the clean,
+    # saturating well-push (ring_lowerplane_log §20). n_out is zero-mean and m_out zero-mean, so adding
+    # a constant sets ⟨n₁⟩ exactly while leaving decision_lambda = ⟨n₁·m₁⟩/N ≈ unchanged.
+    if decision_readout_mean:
+        model.n[:, out] = model.n[:, out] + decision_readout_mean
 
     # ------------------------------------------------------------------
     # 5b. Install GNG-memory rank (rank-3 nets): a self-sustaining go/nogo

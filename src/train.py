@@ -784,7 +784,8 @@ class UnifiedLoss(nn.Module):
                  gng_weight: float = 1.0, pair_weight: float = 1.0,
                  gng_decay_weight: float = 1.0, pair_decay_weight: float = 1.0,
                  rwd_go_weight: float = 1.0, rwd_nogo_weight: float = 1.0,
-                 rwd_nogo_onesided: bool = False,
+                 rwd_nogo_onesided: bool = False, rwd_nogo_l1: bool = False,
+                 rwd_keep_go_hinge: bool = False,
                  mem_weight: float = 1.0, bl_weight: float = 1.0,
                  nolick_weight: float = 0.0):
         super().__init__()
@@ -801,6 +802,11 @@ class UnifiedLoss(nn.Module):
         self.rwd_nogo_weight = rwd_nogo_weight      # response window: nogo (0→pin / −1→hinge)
         self.rwd_nogo_onesided = rwd_nogo_onesided  # nogo response: True → one-sided relu(κ₁)²
         # (penalise lick only, no-lick value free); False → pin κ₁² (both sides)
+        self.rwd_keep_go_hinge = rwd_keep_go_hinge  # with onesided: KEEP the go +1 hinge (go must
+        # lick) instead of dropping it → go-preserving one-sided (avoids the never-lick collapse)
+        self.rwd_nogo_l1   = rwd_nogo_l1            # nogo pin form: True → |κ₁| (L1, NeuroFlame's
+        # 0.1·|overlap|), False → κ₁² (L2). L1's constant weak pull is more permissive of a low
+        # autonomous well; L2's gradient (2·κ₁) is stiffer the deeper the well sits.
         self.mem_weight    = mem_weight
         self.bl_weight     = bl_weight
         self.nolick_weight = nolick_weight
@@ -861,14 +867,20 @@ class UnifiedLoss(nn.Module):
                     g_mask = g_mask & ~rwd_m
                     p_mask = p_mask & ~rwd_m
                     if self.rwd_nogo_onesided:
-                        # ONLY penalise nogo licking (κ₁>0) in the response window — NO go +1 hinge,
-                        # NO nogo −1 hinge. go response and the nogo no-lick value are both free.
-                        comp["rwd_go"]   = zero_f
+                        # Penalise nogo licking (κ₁>0) only — nogo no-lick value free (settles below 0).
+                        # go: rwd_keep_go_hinge=True KEEPS the +1 hinge (go MUST lick) → go-preserving
+                        # one-sided; under the shared response cue that forces the nogo memory below the
+                        # lick line (emergent well-push). rwd_keep_go_hinge=False drops it (go free too
+                        # → the never-lick collapse).
+                        comp["rwd_go"]   = (self.masked_mean(torch.relu(self.thresh - p) ** 2,
+                                                             rwd_m & (tgt > 0))
+                                            if self.rwd_keep_go_hinge else zero_f)
                         comp["rwd_nogo"] = self.masked_mean(torch.relu(p) ** 2, rwd_m & (tgt == 0))
                     else:
                         rgo = self.masked_mean(torch.relu(self.thresh - p) ** 2, rwd_m & (tgt > 0))  # go +1 hinge
                         rn  = self.masked_mean(torch.relu(p + self.thresh) ** 2, rwd_m & (tgt < 0))  # nogo −1 hinge
-                        rz  = self.masked_mean(p ** 2, rwd_m & (tgt == 0))                            # nogo pin to 0
+                        nogo_pin = torch.abs(p) if self.rwd_nogo_l1 else p ** 2                       # L1 |κ₁| or L2 κ₁²
+                        rz  = self.masked_mean(nogo_pin, rwd_m & (tgt == 0))                          # nogo pin to 0
                         comp["rwd_go"]   = rgo
                         comp["rwd_nogo"] = rn + rz
                 gp, gn, gd = self._class_terms(p, tgt, g_mask)

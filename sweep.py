@@ -98,6 +98,7 @@ class RunConfig:
     sample_scale:       float = 1.0
     test_scale:         float = 1.0
     mix_strength:       float = 0.0
+    decision_readout_mean: float = 0.0   # DC mean ⟨n₁⟩ of the decision readout (structured init). With a non-negative saturating φ (lif), resting κ₁=½⟨n₁⟩ → negative value seats the memory wells below the no-lick line (the clean saturating well-push). §20.
     rwd_input_scale:    float = 1.0   # scale of reward input alignment with u_read (structured init only)
     rwd_align_weight:   float = 0.0   # weight of reward-input ↔ n1 cosine alignment loss during DPA
     freeze_rank0_dual:  bool  = False  # also freeze rank-0 of m/n during the Dual stage
@@ -138,11 +139,14 @@ class RunConfig:
     go_target:        float = 1.0   # target value for go response window
     input_scale:      float = 1.0   # global multiplier on all stimulus + cue input amplitudes
     attention_input:  bool  = False # tonic attention/context input (last channel, =1 from first stim onset); input_size += 1
+    attention_gated:  bool  = False # gate attention to the RETENTION+REWARD bracket: on from first-stim OFFSET through the reward (last-stim off + 1s), off during sample & final washout. False = original (from first-stim onset to end)
     freeze_attention_input: bool = False # keep the attention channel's wi column FROZEN at init in ALL stages (untrained attention)
+    attention_scale:  float = 1.0   # amplitude multiplier on the tonic attention channel (× input_scale). >1 strengthens the readout-plane symmetry-breaking bias b_attn → pushes memory wells' κ₁ DOWN (attention-direct term). See ring_lowerplane_log §19.
     rwd:              bool  = False  # teacher-forced reward feedback
     rwd_scale:        float = 1.0   # amplitude of the reward pulse (default +1)
     # Which stages freeze ALL input dims. Subset of ['dpa', 'gng', 'dual'].
-    # GNG always freezes DPA+rwd dims regardless; 'gng' extends that to all channels.
+    # GNG always freezes DPA + rwd + attention dims regardless; 'gng' extends that to all channels.
+    # (Attention is a DPA-learned tonic context input → frozen from GNG on by default.)
     freeze_input_stages: list = field(default_factory=lambda: ["dual"])
     # Freeze GNG input dims (go/nogo/cue = channels 4..input_size-2) during DPA.
     # Prevents AdamW weight decay from zeroing them before GNG training starts.
@@ -176,6 +180,8 @@ class RunConfig:
     rwd_go_weight:     float = 1.0      # unified loss: weight on the response-window go term (+1 hinge)
     rwd_nogo_weight:   float = 1.0      # unified loss: weight on the response-window nogo term (0→pin; allows go/nogo imbalance after cue)
     rwd_nogo_onesided: bool  = False    # unified loss: response window scores ONLY the nogo lick penalty relu(κ₁)² (no go +1 hinge, no nogo pin) — go response & no-lick value both free. False = go +1 hinge + nogo pin-to-0
+    rwd_nogo_l1:       bool  = False    # unified loss: nogo pin form — True = |κ₁| (L1, NeuroFlame's 0.1·|overlap|, constant weak pull, permits a low autonomous well); False = κ₁² (L2, stiffer the deeper the well)
+    rwd_keep_go_hinge: bool  = False    # unified loss: with rwd_nogo_onesided, KEEP the go +1 hinge (go MUST lick) → go-preserving one-sided. Under the shared response cue this forces the nogo well below the lick line (emergent well-push) instead of the never-lick collapse
     gng_go_weight:   float = 1.0        # relative weight on go trials within gng_loss
     gng_nogo_weight: float = 1.0        # relative weight on nogo trials within gng_loss
     go_hinge_thresh: float | None = None  # if set, go response window uses relu(thresh-pred)² instead of MSE
@@ -219,48 +225,60 @@ class RunConfig:
 # Accuracy helpers  (defined here so they don't live in the general modules)
 # ---------------------------------------------------------------------------
 
-@torch.no_grad()
-def _dpa_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1, input_scale=1.0, attention_input=False):
-    model.eval()
-    X, y = generate_dpa_trials(n_trials, timing=timing, input_size=input_size,
-                                noise=noise, target_rank=target_rank, input_scale=input_scale,
-                                attention_input=attention_input)
-    pred         = model(X.to(device), y.to(device))[..., -1].cpu()
-    decision_t   = int(timing.n_stim_off[1])
-    pred_final   = pred[:, decision_t:].mean(1)
-    target_final = y[:, -1, -1]
-    return ((pred_final > 0) == (target_final > 0)).float().mean().item()
-
-
-@torch.no_grad()
-def _dpa_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1, input_scale=1.0, attention_input=False):
-    model.eval()
-    X, y = generate_dpa_trials(n_trials, timing=timing, input_size=input_size,
-                                noise=noise, target_rank=target_rank, input_scale=input_scale,
-                                attention_input=attention_input)
-    pred         = model(X.to(device), y.to(device))[..., -1].cpu()
-    decision_t   = int(timing.n_stim_off[1])
-    pred_final   = pred[:, decision_t:].mean(1)
-    target_final = y[:, -1, -1]
-    correct      = (pred_final > 0) == (target_final > 0)
-    pair_mask    = target_final > 0
-    unpair_mask  = target_final < 0
+def _dpa_score(pred, y, timing):
+    """Score DPA match/nonmatch from the SUPERVISED decision window — the timesteps at/after test-off
+    where the ±1 pairing target is actually set. Robust to windowed_targets/decay_to_zero: those
+    express the decision as a LATE ±1 plateau that then decays to 0, so the old `y[:, -1, -1]`
+    (last-timestep target) reads 0/NaN and mislabels every trial → spurious 0.50 + pair=nan. Here we
+    read pred and target over exactly the supervised steps instead."""
+    decision_t = int(timing.n_stim_off[1])
+    tgt   = torch.nan_to_num(y[..., -1], nan=0.0)          # (B,T): ±1 in the decision window, 0 else
+    dmask = torch.zeros_like(tgt, dtype=torch.bool)
+    dmask[:, decision_t:] = tgt[:, decision_t:] != 0        # only post-test supervised steps
+    pred_dec    = (pred * dmask).sum(1) / dmask.sum(1).clamp_min(1)   # mean readout over the window
+    target_sign = tgt.masked_fill(~dmask, 0.0).sum(1)       # >0 match, <0 nonmatch
+    correct     = (pred_dec > 0) == (target_sign > 0)
+    valid       = dmask.any(1)
+    pair_mask   = valid & (target_sign > 0)
+    unpair_mask = valid & (target_sign < 0)
     return {
-        "overall": correct.float().mean().item(),
-        "pair":    correct[pair_mask].float().mean().item() if pair_mask.any() else float("nan"),
+        "overall": correct[valid].float().mean().item()       if valid.any()       else float("nan"),
+        "pair":    correct[pair_mask].float().mean().item()   if pair_mask.any()   else float("nan"),
         "unpair":  correct[unpair_mask].float().mean().item() if unpair_mask.any() else float("nan"),
     }
 
 
 @torch.no_grad()
+def _dpa_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1, input_scale=1.0, attention_input=False, attention_gated=False, attention_scale=1.0, windowed_targets=False, decay_to_zero=True):
+    model.eval()
+    X, y = generate_dpa_trials(n_trials, timing=timing, input_size=input_size,
+                                noise=noise, target_rank=target_rank, input_scale=input_scale,
+                                attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale,
+                                windowed_targets=windowed_targets, decay_to_zero=decay_to_zero)
+    pred = model(X.to(device), y.to(device))[..., -1].cpu()
+    return _dpa_score(pred, y, timing)["overall"]
+
+
+@torch.no_grad()
+def _dpa_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1, input_scale=1.0, attention_input=False, attention_gated=False, attention_scale=1.0, windowed_targets=False, decay_to_zero=True):
+    model.eval()
+    X, y = generate_dpa_trials(n_trials, timing=timing, input_size=input_size,
+                                noise=noise, target_rank=target_rank, input_scale=input_scale,
+                                attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale,
+                                windowed_targets=windowed_targets, decay_to_zero=decay_to_zero)
+    pred = model(X.to(device), y.to(device))[..., -1].cpu()
+    return _dpa_score(pred, y, timing)
+
+
+@torch.no_grad()
 def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
-                  cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False):
+                  cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False, attention_gated=False, attention_scale=1.0):
     model.eval()
     X, y = generate_gng_trials(n_trials, timing=timing, input_size=input_size,
                                 noise=noise, target_rank=target_rank, cue_on_go_input=cue_on_go_input,
                                 cue_scale=cue_scale, nogo_target=nogo_target,
                                 go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
-                                attention_input=attention_input)
+                                attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale)
     pred        = model(X.to(device), y.to(device))[..., -1].cpu()
     stim_epoch  = slice(int(timing.n_stim_on[0]), int(timing.n_stim_off[0]))
     go_ch       = input_size - 1 if go_on_rwd_input else 4
@@ -274,13 +292,13 @@ def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, targe
 
 @torch.no_grad()
 def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
-                           cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False):
+                           cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False, attention_gated=False, attention_scale=1.0):
     model.eval()
     X, y = generate_gng_trials(n_trials, timing=timing, input_size=input_size,
                                 noise=noise, target_rank=target_rank, cue_on_go_input=cue_on_go_input,
                                 cue_scale=cue_scale, nogo_target=nogo_target,
                                 go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
-                                attention_input=attention_input)
+                                attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale)
     pred        = model(X.to(device), y.to(device))[..., -1].cpu()
     stim_epoch  = slice(int(timing.n_stim_on[0]), int(timing.n_stim_off[0]))
     go_ch       = input_size - 1 if go_on_rwd_input else 4
@@ -299,14 +317,14 @@ def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=102
 
 @torch.no_grad()
 def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
-                   cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False,
+                   cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False, attention_gated=False, attention_scale=1.0,
                    go_target=1.0):
     model.eval()
     X, y, _, condition_names = generate_dual_trials(
         n_trials, timing=timing, input_size=input_size, noise=noise, target_rank=target_rank,
         cue_on_go_input=cue_on_go_input, cue_scale=cue_scale, nogo_target=nogo_target,
         go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
-        attention_input=attention_input,
+        attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale,
     )
     pred  = model(X.to(device), y.to(device))[..., -1].cpu()
     names = np.asarray(condition_names).astype(str)
@@ -534,6 +552,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             target_out_mn_corr=config.target_out_mn_corr,
             sample_scale=config.sample_scale,
             test_scale=config.test_scale,
+            decision_readout_mean=config.decision_readout_mean,
             mix_strength=config.mix_strength,
             noise_scale_mn=1.0, noise_scale_in=1.0,
             rwd_input_scale=config.rwd_input_scale,
@@ -583,7 +602,14 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                 rwd_go_weight=config.rwd_go_weight,
                 rwd_nogo_weight=config.rwd_nogo_weight,
                 rwd_nogo_onesided=config.rwd_nogo_onesided,
+                rwd_nogo_l1=config.rwd_nogo_l1,
+                rwd_keep_go_hinge=config.rwd_keep_go_hinge,
                 mem_weight=config.aux_weight, bl_weight=config.bl_weight)
+    # The one-sided nogo scoring (rwd_nogo_onesided) drops the go +1 hinge in the response window; that
+    # is fine in DUAL (frees the nogo value to settle low) but MUST NOT apply in the GNG stage, where it
+    # would remove the go supervision and the go/nogo working memory never forms (go→0). So GNG always
+    # trains the go/nogo memory TWO-SIDED; one-sided is a Dual-only relaxation.
+    _uw_gng = {**_uw, "rwd_nogo_onesided": False}
     _half_steps = int(round(0.5 / gng_timing.dt))   # response window length in steps
     if config.dual_loss == "unified":
         # ONE value-based loss at all three stages (targets carry the semantics). Baseline is its
@@ -592,7 +618,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                     pair_start=int(dpa_timing.n_stim_on[1]), **_uw)
         gng_criterion = UnifiedLoss(gng_timing, thresh=_uth, pair_start=None,
                                     rwd_window=(int(gng_timing.n_stim_off[1]),
-                                                int(gng_timing.n_stim_off[1]) + _half_steps), **_uw)
+                                                int(gng_timing.n_stim_off[1]) + _half_steps), **_uw_gng)
         print(f"[{rid}]  loss=unified (ALL stages): ±1→one-sided hinge(th={_uth}), 0→pin, NaN→free"
               f"  [bl | gng | pair split @ test-on]", flush=True)
     losses    = {}
@@ -618,11 +644,12 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     def _eval(label):
         model.noise = 0.0
         dpa = _dpa_accuracy_by_type(model, dpa_timing, config.input_size, noise=noise, device=device,
-                                    target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input)
+                                    target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
+                                    windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
         gng = _gng_accuracy_by_type(model, gng_timing, config.input_size, noise=noise, device=device,
                                     target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                     cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-                                    go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale, attention_input=config.attention_input)
+                                    go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale)
         print(f"[{rid}]   {label}: "
               f"dpa={dpa['overall']:.3f} (pair={dpa['pair']:.3f} unpair={dpa['unpair']:.3f})  "
               f"gng={gng['overall']:.3f} (go={gng['go']:.3f} nogo={gng['nogo']:.3f})", flush=True)
@@ -650,7 +677,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             dpa_freeze_input = sorted(set(dpa_freeze_input) | {config.input_size - 1})
         _stage_header("DPA", config.epochs_dpa, dpa_freeze_input, [])
         t0 = time.time()
-        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
+        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -728,8 +755,13 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         _stage_summary("GNG", train_l, val_l, acc_after_gng, t0)
         _log_params("after GNG")
     else:
+        # Default GNG freeze: DPA sample/test dims [0,1,2,3], plus the LAST channel whenever it carries
+        # reward OR attention. Attention is a tonic CONTEXT input learned in DPA — freeze it from GNG
+        # onward (train in DPA, frozen GNG+Dual, like the DPA dims) so GNG can't rescale/rotate the
+        # learned attention bias away. (freeze_attention_input additionally freezes it in DPA too.)
         gng_freeze_input = (list(range(config.input_size)) if "gng" in config.freeze_input_stages
-                            else [0, 1, 2, 3] + ([config.input_size - 1] if config.rwd else []))
+                            else [0, 1, 2, 3]
+                                 + ([config.input_size - 1] if (config.rwd or config.attention_input) else []))
         if config.freeze_attention_input and config.attention_input:
             gng_freeze_input = sorted(set(gng_freeze_input) | {config.input_size - 1})
         _stage_header("GNG", config.epochs_gng, gng_freeze_input, [0])
@@ -737,7 +769,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         X, y   = generate_gng_trials(config.n_batch, gng_timing, config.input_size, noise=noise, target_rank=config.target_rank,
                                       cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                       nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
-                                      input_scale=config.input_scale, attention_input=config.attention_input,
+                                      input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
@@ -784,7 +816,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                             target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                             cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                             go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
-                                            input_scale=config.input_scale, attention_input=config.attention_input,
+                                            input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
                                             paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory)
         print(f"[{rid}]  data(paired): {list(Xp.shape)} → {list(yp.shape)}", flush=True)
         tlp, vlp     = train_val_split(Xp.to(device), yp.to(device), config.batch_size)
@@ -833,7 +865,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     X, y, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise, target_rank=config.target_rank,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                        nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
-                                       input_scale=config.input_scale, attention_input=config.attention_input,
+                                       input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
                                        ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory)
     print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
     tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
@@ -903,7 +935,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     dual_dpa, dual_gng, dual_go, dual_nogo = _dual_accuracy(model, dual_timing, config.input_size, noise=noise, device=device,
                                          target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                          cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-                                         go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale, attention_input=config.attention_input,
+                                         go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
                                          go_target=config.go_target)
     _stage_summary("Dual", train_l, val_l, acc_after_dual, t0)
     _log_params("after Dual")
@@ -1142,6 +1174,208 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  dual_gng_memory=False,
                                  gng_response=True, rwd_nogo_onesided=False,
                                  **emergent_nolick, **shared_unfrozen))
+
+    # ★ RANDOM INIT (2026-07-31, 8 seeds): the clean unfrozen/nmrwd base + delay-only attention_gated,
+    # but init_style="random" (NO hand-installed structured eigenmodes) — tests whether the recipe /
+    # geometry depend on the structured init. Unified, no nolick, no lever. --run_filter _rnd.
+    shared_rnd = {**shared_unfrozen, "init_style": "random"}
+    for seed in range(8):
+        configs.append(RunConfig(run_id=f"s{seed}_rnd", seed=seed, memory_lambda=0.8,
+                                 nogo_push_memory=False, ramping_gng=True,
+                                 windowed_targets=True, decay_to_zero=False,
+                                 dual_gng_memory=False,
+                                 gng_response=True, rwd_nogo_onesided=False,
+                                 attention_gated=True,
+                                 **emergent, **shared_rnd))
+
+    # ★ NOGO-PIN sweep (2026-08-03): the NeuroFlame convergence. Our rwd nogo term IS point-2
+    # (go +1 hinge, nogo pin-to-0); NeuroFlame runs that pin at weight 0.1·|overlap| (L1), we ran
+    # it at 1.0·κ₁² (L2). A stiff pin clamps κ₁≈0 and holds the autonomous well up (+0.02..+0.09);
+    # a weak pin should let the field relax the well BELOW 0. Base = the clean unfrozen +
+    # attention_gated + nmrwd recipe (structured init), vary ONLY the nogo pin. 4 arms:
+    # Form fixed at L1 (|κ₁|, NeuroFlame's form); vary ONLY the weight → isolates the weight as the
+    # lever within the L1 pin:
+    #   _pinng10L1: rwd_nogo_weight=1.0, L1 (|κ₁|) — L1 form at our current weight (stiff L1)
+    #   _pinng01L1: rwd_nogo_weight=0.1, L1 (|κ₁|) — NeuroFlame weight AND form (exact match)
+    # Prediction: autonomous well κ₁ drops below 0 at weight 0.1 (pinng01L1) but not at 1.0 (pinng10L1);
+    # task accuracy stays ~1 (go still hard-pinned up). Both share the token "pin" → one launch:
+    # --run_filter pin (both into ONE dir for a clean same-init comparison).
+    PIN_SEEDS = 4
+    shared_pin = {**shared_unfrozen}          # structured init, unfrozen κ₀, epochs 100/100/300
+    pin_arms = [("pinng10L1", 1.0, True), ("pinng01L1", 0.1, True)]
+    for tag, w, l1 in pin_arms:
+        for seed in range(PIN_SEEDS):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, memory_lambda=0.8,
+                                     nogo_push_memory=False, ramping_gng=True,
+                                     windowed_targets=True, decay_to_zero=False,
+                                     dual_gng_memory=False,
+                                     gng_response=True, rwd_nogo_onesided=False,
+                                     rwd_nogo_weight=w, rwd_nogo_l1=l1,
+                                     attention_gated=True,
+                                     **emergent, **shared_pin))
+
+    # ★ SOFTPLUS capacity probe (2026-08-03): swap tanh→softplus (rectifying, non-saturating; an
+    # intrinsic even-curvature symmetry break in φ itself — mechanistically distinct from tanh_asym).
+    # Same clean unfrozen + attention_gated + nmrwd base, default pin (w=1.0, L2). Questions: does the
+    # even curvature bend the AUTONOMOUS wells below 0, and do two isolated A/B wells survive
+    # rectification (softplus is not odd/saturating → the ring/bistability may not hold)?
+    # --run_filter _sp.  Plot with --xlim -5 5 (κ runs wider than tanh's ±1.5).
+    SP_SEEDS = 4
+    emergent_sp = {**emergent, "nonlinearity": "softplus"}   # override tanh; everything else identical
+    for seed in range(SP_SEEDS):
+        configs.append(RunConfig(run_id=f"s{seed}_sp", seed=seed, memory_lambda=0.8,
+                                 nogo_push_memory=False, ramping_gng=True,
+                                 windowed_targets=True, decay_to_zero=False,
+                                 dual_gng_memory=False,
+                                 gng_response=True, rwd_nogo_onesided=False,
+                                 attention_gated=True,
+                                 **emergent_sp, **shared_unfrozen))
+
+    # ★ RELU capacity probe (2026-08-03): same clean base as the softplus probe but a HARD rectifier
+    # (relu). Even more extreme non-saturation than softplus — tests whether hard rectification bends
+    # the autonomous wells below 0 and whether isolated A/B wells survive (softplus gave marginal,
+    # κ₁≈0 wells; relu is the sharper case). --run_filter _relu.  Plot with --auto_xlim (κ runs wide).
+    RELU_SEEDS = 4
+    emergent_relu = {**emergent, "nonlinearity": "relu"}     # override tanh; everything else identical
+    for seed in range(RELU_SEEDS):
+        configs.append(RunConfig(run_id=f"s{seed}_relu", seed=seed, memory_lambda=0.8,
+                                 nogo_push_memory=False, ramping_gng=True,
+                                 windowed_targets=True, decay_to_zero=False,
+                                 dual_gng_memory=False,
+                                 gng_response=True, rwd_nogo_onesided=False,
+                                 attention_gated=True,
+                                 **emergent_relu, **shared_unfrozen))
+
+    # ★★ WELL-PUSH via the ATTENTION symmetry-breaker (2026-08-03) — §19. The odd-φ "forbidden"
+    # framing assumes b⊥n; but attention is clamped ON in the autonomous field, so b_attn breaks the
+    # odd symmetry (theory §8 route 1). Measured: the well κ₁ = attention-direct term ⟨n₁,φ(g·b_attn)⟩/N
+    # (DOWN, −0.13 for tanh) vs memory-modulated even coupling ⟨n₁·φ''(g·b_attn)·m₀²⟩ (UP for tanh).
+    # De-risked at fixed weights: scaling attention flips net-even negative at scale≈2.5–3 → tanh wells
+    # go BELOW 0 without leaving tanh (clean bounded, no relu spiral). Arms (share token "wp"):
+    #   Route A (tanh, sweep attention amplitude): wp_attn1 / wp_attn2 / wp_attn3  (scale 1/2/3)
+    #   Route B (rectification comparison):        wp_lifsc (bounded saturating rectifier),
+    #                                              wp_reludeep (relu + deep supercritical memory λ₀)
+    # --run_filter wp (all into ONE dir for a same-base comparison). Base = the relu/sp arm base.
+    WP_SEEDS = 4
+    emergent_lifsc = {**emergent, "nonlinearity": "lif_sc"}
+    emergent_reludeep = {**emergent, "nonlinearity": "relu"}
+    wp_arms = [   # (tag, nonlinearity-dict, attention_scale, memory_lambda)
+        ("wp_attn1",    emergent,          1.0, 0.8),
+        ("wp_attn2",    emergent,          2.0, 0.8),
+        ("wp_attn3",    emergent,          3.0, 0.8),
+        ("wp_lifsc",    emergent_lifsc,    1.0, 0.8),
+        ("wp_reludeep", emergent_reludeep, 1.0, 3.0),
+    ]
+    for tag, nl_dict, att_scale, mem_lam in wp_arms:
+        for seed in range(WP_SEEDS):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, memory_lambda=mem_lam,
+                                     nogo_push_memory=False, ramping_gng=True,
+                                     windowed_targets=True, decay_to_zero=False,
+                                     dual_gng_memory=False,
+                                     gng_response=True, rwd_nogo_onesided=False,
+                                     attention_gated=True, attention_scale=att_scale,
+                                     **nl_dict, **shared_unfrozen))
+
+    # ★★★ LIF (Gaussian CDF) + decision-readout DC — the CLEAN saturating well-push (2026-08-04) §20.
+    # φ = ½[1+erf(x/√2)] is non-negative, bounded, SATURATING → compact bistable wells, no relu spiral/
+    # blowup. Being non-negative, resting κ₁ = φ(0)·⟨n₁⟩ = ½⟨n₁⟩, so a net-inhibitory decision readout
+    # (`decision_readout_mean`<0) seats BOTH A/B memory wells below the no-lick line — cleanly. Toy
+    # confirmed: mean well κ₁ tracks ½⟨n₁⟩ (amplified by feedback): ⟨n₁⟩ 0/−0.3/−0.6/−1.0 → κ₁
+    # +0.02/−0.24/−0.47/−0.73, compact κ₀≈±1, bistable. lif needs supercritical memory (g·λ₀·φ'(0)>1,
+    # φ'(0)≈0.4) → gain=2, memory_lambda=3 (toy regime). Sweep the DC: does the task stay intact and do
+    # the wells drop as predicted (and does training KEEP the negative ⟨n₁⟩ vs the baseline-pin dragging
+    # it to 0)? --run_filter lifdc.
+    LIFDC_SEEDS = 4
+    emergent_lif = {**emergent, "nonlinearity": "lif", "gain": 2.0}
+    lifdc_arms = [("lifdc0", 0.0), ("lifdc03", -0.3), ("lifdc06", -0.6), ("lifdc10", -1.0)]
+    for tag, drm in lifdc_arms:
+        for seed in range(LIFDC_SEEDS):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, memory_lambda=3.0,
+                                     decision_readout_mean=drm,
+                                     nogo_push_memory=False, ramping_gng=True,
+                                     windowed_targets=True, decay_to_zero=False,
+                                     dual_gng_memory=False,
+                                     gng_response=True, rwd_nogo_onesided=False,
+                                     attention_gated=True,
+                                     **emergent_lif, **shared_unfrozen))
+
+    # ★★★ KILL THE UP COPIES (2026-08-04) §21. sweep_lifdc gave 4 wells (2 up + 2 DOWN) because the
+    # DECISION axis is deeply SUPERCRITICAL (measured g·λ₁≈8–9, threshold for lif = 1/φ'(0)≈2.5) → a
+    # decision double-well → each memory splits into an up and a down attractor. Kill the up copy by
+    # making the decision SUBCRITICAL (kappa1_clamp caps g·λ₁), so κ₁ is monostable at the DC-set value
+    # (½⟨n₁⟩<0 = down) → ONE down well per memory. The clamp rescales n₁ (shrinks the DC ~√(clamp/g·λ₁)),
+    # so use a STRONGER decision_readout_mean to keep ⟨n₁⟩ negative after the rescale. Base = lifdc.
+    # Predict: control keeps 4 wells; clamped arms → 2 DOWN wells only (GOAL all-down 4/4), task intact
+    # (decision becomes input-driven/transient, the memory stays the persistent attractor). --run_filter lifup.
+    LIFUP_SEEDS = 4
+    lifup_arms = [   # (tag, decision_readout_mean, kappa1_clamp)
+        ("lifup_ctl",  -1.0, None),    # control: supercritical decision → 4 wells
+        ("lifup_c20",  -1.5, 2.0),     # subcritical (g·λ₁≤2.0, eff 0.80) + stronger DC
+        ("lifup_c15",  -2.0, 1.5),     # more subcritical (eff 0.60) + strongest DC
+    ]
+    for tag, drm, clamp in lifup_arms:
+        for seed in range(LIFUP_SEEDS):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, memory_lambda=3.0,
+                                     decision_readout_mean=drm, kappa1_clamp=clamp,
+                                     nogo_push_memory=False, ramping_gng=True,
+                                     windowed_targets=True, decay_to_zero=False,
+                                     dual_gng_memory=False,
+                                     gng_response=True, rwd_nogo_onesided=False,
+                                     attention_gated=True,
+                                     **emergent_lif, **shared_unfrozen))
+
+    # ★★★ TASK-FLAG conditions for the UP wells to vanish EMERGENTLY (2026-08-04) §21. Keep lif + the
+    # DC (decision_readout_mean — a transfer-function shift, KEPT) but NO clamp. The up copies come from
+    # a SUPERCRITICAL decision axis (g·λ₁≈8); ask which TASK STRUCTURE keeps the decision transient
+    # (subcritical) on its own → only the DOWN wells survive. Feature-isolation on the lif+DC(−1.0)
+    # base (each arm toggles ONE task flag). --run_filter tf_
+    tf_common = dict(memory_lambda=3.0, decision_readout_mean=-1.0,
+                     nogo_push_memory=False, ramping_gng=True,
+                     windowed_targets=True, decay_to_zero=False, dual_gng_memory=False,
+                     gng_response=True, rwd_nogo_onesided=False, attention_gated=True)
+    tf_arms = [
+        ("tf_base",  {}),                           # reference: 4 wells (2 up + 2 down)
+        ("tf_decay", {"decay_to_zero": True}),      # decision + pairing decay to 0 → transient
+        ("tf_1s",    {"rwd_nogo_onesided": True}),  # nogo scored by lick penalty only (no pin/hinge)
+        ("tf_ngt",   {"nogo_target": -1.0}),        # nogo response target −1 (vs 0)
+        ("tf_norwd", {"gng_response": False}),      # no 0.5 s response window (go/nogo emergent on κ₁)
+        ("tf_gm",    {"dual_gng_memory": True}),    # supervise the go/nogo pre-cue hold in Dual
+        # reruns (2026-08-04): fuller DPA convergence (epochs_dpa 100→250, stop_loss 0.1→0.02) on the
+        # tf_1s one-sided base. tf1sep = attention ON (the rerun); tf1sna = attention OFF (does the
+        # well-lowering survive with NO attention symmetry-breaker?). --run_filter tf1sep / tf1sna.
+        ("tf1sep",   {"rwd_nogo_onesided": True, "epochs_dpa": 250, "stop_loss": 0.02}),
+        ("tf1sna",   {"rwd_nogo_onesided": True, "epochs_dpa": 250, "stop_loss": 0.02,
+                      "attention_input": False}),
+        # attention-only: NO DC (decision_readout_mean 0), attention ON — does the attention
+        # symmetry-breaker alone lower the wells without the readout DC shift? --run_filter tf1sndc
+        ("tf1sndc",  {"rwd_nogo_onesided": True, "epochs_dpa": 250, "stop_loss": 0.02,
+                      "decision_readout_mean": 0.0}),
+        # control cell of the 2×2 (well-lowering levers): NO DC and NO attention → neither
+        # symmetry-breaker. --run_filter tf1snn
+        ("tf1snn",   {"rwd_nogo_onesided": True, "epochs_dpa": 250, "stop_loss": 0.02,
+                      "decision_readout_mean": 0.0, "attention_input": False}),
+        # (a) NOISE sweep on the DC=0, attention-on, one-sided base (attention frozen in GNG by
+        # default). Hypothesis: emergent well depth = noise-robustness margin, so raising the input
+        # noise (0.25→0.5→0.75) should deepen the nogo wells below 0. --run_filter nzA
+        # stop_loss=0.05 (not 0.02): Dual solves the task by ~loss 0.05; pushing to 0.02 just overtrains
+        # (300 Dual epochs) and can distort the wells. DPA already converges by 0.05 (fixed eval).
+        ("nzA5",     {"rwd_nogo_onesided": True, "epochs_dpa": 250, "stop_loss": 0.05,
+                      "decision_readout_mean": 0.0, "noise": 0.5}),
+        ("nzA7",     {"rwd_nogo_onesided": True, "epochs_dpa": 250, "stop_loss": 0.05,
+                      "decision_readout_mean": 0.0, "noise": 0.75}),
+        # (a)+(b) go-preserving one-sided (KEEP the go +1 hinge) at elevated noise → under the shared
+        # response cue the net must seat nogo below the lick line (margin binds). --run_filter nzB
+        ("nzB5",     {"rwd_nogo_onesided": True, "rwd_keep_go_hinge": True, "epochs_dpa": 250,
+                      "stop_loss": 0.05, "decision_readout_mean": 0.0, "noise": 0.5}),
+        ("nzB7",     {"rwd_nogo_onesided": True, "rwd_keep_go_hinge": True, "epochs_dpa": 250,
+                      "stop_loss": 0.05, "decision_readout_mean": 0.0, "noise": 0.75}),
+    ]
+    # (rwd_gng needs the last channel → would require attention OFF, which we DON'T want — attention
+    # stays on in every arm. So no rwd_gng arm here.) Run these ≤8 at a time (4/GPU) via --run_filter.
+    for tag, over in tf_arms:
+        kw = {**emergent_lif, **shared_unfrozen, **tf_common, **over}
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, **kw))
 
     return configs
 
