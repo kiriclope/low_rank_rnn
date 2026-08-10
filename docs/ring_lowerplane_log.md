@@ -1130,7 +1130,8 @@ Wired into `low_rank_field_np(noise_sigma=σ)` / `low_rank_jacobian_flow_np(nois
 **Validated to ~2e-3 vs Monte-Carlo E_ξ[Ψ]** (`scratchpad/validate_noise_field.py`). The naive 2-term φ''
 Taylor **fails** here (½⟨s²⟩≈2.15 is not small — origin −0.21 vs MC −0.07) and is no longer used anywhere.
 Tools: `rank3_flow.py --noise` (lif/lif_sc added to its jax PHI), `plot_sweep --field_input_noise`
-(16-draw MC of the same E_ξ[Ψ]; ~16× slower — TODO rewire to the analytic term), `scratchpad/wells3.py`.
+(REWIRED 2026-08-10 to the analytic term, f6f8d72: 8.2× faster and exact — legacy estimator still
+available via `--field_noise_mc`), `scratchpad/wells3.py`.
 
 **Non-Gaussian-CDF φ (fixed 2026-08-10, commit dcc0cec).** Two bugs found in the math review:
 (i) **relu was treated as noise-transparent** ("φ''=0 a.e.") — false, relu's φ'' is a **delta at 0**, and
@@ -1182,4 +1183,43 @@ trajectories) + **`traj_flow.py`** CLI (rank-2: stages×conditions; rank-3: cond
 `--noise`). Confirms the analytic reduced field IS the true flow for these pure low-rank nets (the state can't
 leave the m-manifold), while exposing transients / empirical basins / stochastic wander. Figures
 `rnn/sweep_{cue,r2go,r3o}/flow` (clean + `_noise` + `trajflow`). Also `scratchpad/plot_cue_{targets,inputs}.py`
-(target + clean/noisy input time-courses). Uncommitted.
+(target + clean/noisy input time-courses). Committed on `main` (f6f8d72).
+
+### 22g. ★ WHERE THE GOAL STANDS — the reframing, and the open routes
+
+**The sharpest statement of the problem this session produced.** The lick the nets learn is **ADDITIVE**:
+κ₂ ≈ (rule-drive) + (cue-drive). What the goal requires is a **CONJUNCTION**: κ₂ high ⟺ (rule = go
+**AND** cue present). With an additive readout the up-copies are not a bug to be tuned away — they are
+*forced*: holding the go-rule is mandatory (you need it to know whether to lick later), and any additive
+κ₁→κ₂ coupling therefore leaks a standing lick at the held-go state. **"Make go cue-driven" ⟺ "force the
+conjunction."** Every negative result below is an instance of attacking the symptom instead of the AND.
+
+**Three routes now closed (each necessary, none sufficient):**
+| route | tested by | why it fails alone |
+|---|---|---|
+| make the lick **subcritical** so it can't self-hold | r3o (g·λ₂=1) | a subcritical unit still faithfully *tracks its input* — the held rule drives it up |
+| make the response **cue-locked in time** | r3cue (§22a) | removes the *demand* for a memory-held lick, not the *ability*; and dropping the post-cue pin removed the only downward pressure ⇒ WORSE (κ₂ +0.7 vs +0.3) |
+| let **noise** flatten the wells | §22c, all 4 sweeps | non-directional — kills whichever wells are shallowest (2/16 seeds; in r3o s0 it killed the *good* down-wells) |
+
+**Open routes, in the order I'd try them:**
+1. **r3cue + one-sided κ₂ decay** (the direct next experiment; base config exists, just add
+   `decay_onesided=True`, `gng_decay_weight` 0.5 and 1.0). Adds an active downward force on top of the
+   cleaner cue-locked response. Rank-3 is what makes this affordable: the decay's spiral lives in the
+   κ₁–κ₂ plane, so the κ₀ sample memory is spared (the rank-2 tightrope of §17/§21). *Imposed, not emergent.*
+2. **Attention-baseline depression** (`attention_scale` 1/2/3 on the r3o or r3cue base) — the *emergent*
+   version of the same downward force: a tonic readout-plane bias that lowers the κ₂ rest point until the
+   retained rule alone is sub-threshold and only rule+cue crosses. This is the §15/§19 mechanism applied
+   to κ₂ and **has never actually been run in rank-3**. Threshold-with-a-depressed-baseline *is* an AND
+   gate, so this is the closest thing to implementing the conjunction structurally.
+3. **A genuine multiplicative gate** — the only route that makes the readout a conjunction *by
+   construction* rather than by tuning a threshold. Nothing in the current architecture does this;
+   it would need a gating nonlinearity or a cue-modulated κ₂ gain. Biggest change, most principled.
+
+**Diagnostic worth running first (cheap, no training):** clamp the response cue ON vs OFF on an existing
+r3o/r3cue net and measure κ₂'s marginal move at a go-rule state. If it is additive (fixed cue increment on
+top of a positive rule floor) that confirms the framing and quantifies how far the floor must drop (~0.4).
+
+**Tooling debt / smaller open items:** (a) the SC-DMFT needs the α/α_rec fluctuation–dissipation factor to
+become quantitative (§22d); (b) a flow-fields *skill* was scoped but not built — the doc map now lives in
+`docs/analysis.md`; (c) the across-seed `fp_meanflow` published for sweep_r2go was rendered from ONE seed
+(verification run) so its agreement background is meaningless — re-render on the full 8-run sweep if wanted.
