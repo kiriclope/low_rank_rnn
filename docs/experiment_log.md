@@ -722,9 +722,21 @@ CLI (rank-2 stages×conditions / rank-3 conditions×3-planes / `--noise`) — in
 reduced field is the true flow for pure low-rank nets. Companion figs `scratchpad/plot_cue_{targets,inputs}.py`.
 §22f.
 
-**Infra — flow-code refactor (branch `flow-refactor`).** `src/dynamics.py` (1884 lines) split into a
+**★ NEXT STEPS (the reframing — §22g).** The lick is **additive** (κ₂ ≈ rule + cue); the goal needs a
+**conjunction** (rule AND cue). Up-copies are therefore *forced* by any additive κ₁→κ₂ coupling, since
+holding the go-rule is mandatory — they are not a tuning artifact. Three routes now closed as
+insufficient-alone: subcritical κ₂ (r3o), cue-locked timing (r3cue), noise (non-directional). Ranked open
+routes: **(1)** r3cue + one-sided κ₂ decay (`decay_onesided=True`, weight 0.5/1.0 — rank-3 confines the
+decay spiral to κ₁–κ₂ so κ₀ is spared); **(2)** `attention_scale` 1/2/3 to depress the κ₂ baseline — the
+*emergent* AND-gate, never yet run in rank-3; **(3)** a true multiplicative gate (conjunction by
+construction). Cheap diagnostic first, no training: clamp the cue ON/OFF on an existing net and measure
+κ₂'s marginal move at a go-rule state (confirms additivity, sizes the required floor drop ≈0.4).
+
+**Infra — flow-code refactor (merged to `main`, f6f8d72).** `src/dynamics.py` (1884 lines) split into a
 layered flow package (`dynamics.py` re-exports for back-compat): `flow_field.py` (shared rank-general
 engine + noise + sim primitives), `flow_fixedpoints.py` (**shared rank-general `find_fixed_points`, scipy
 + brainpy backends**), `flow_rank2.py` / `flow_rank3.py` (analytic rendering by rank), `flow_traj.py`
 (trajectory rendering, rank-general). `rank3_flow.py`/`traj_flow.py` → thin CLIs. All tools verified
 identical output (rank3_flow 12 FPs unchanged). Tool-selection + code map in `docs/analysis.md`.
+`plot_sweep --field_input_noise` rewired to the analytic term (8.2× faster, exact; `--field_noise_mc`
+keeps the old estimator).
