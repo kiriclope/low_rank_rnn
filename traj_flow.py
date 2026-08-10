@@ -19,8 +19,8 @@ import numpy as np, torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 from plot_sweep import _load_sweep_meta, _build_model, _load_ckpt
-from src.dynamics import (make_input, _canonical_flow_panels, integrate_kappa_trajectories,
-                          low_rank_numpy_params, low_rank_field_np)
+from src.flow_field import (make_input, _canonical_flow_panels, integrate_kappa_trajectories,
+                            low_rank_numpy_params, low_rank_field_np)
 
 KLAB = {0: "κ0", 1: "κ1", 2: "κ2"}
 PLANES3 = [(0, 1), (0, 2), (1, 2)]

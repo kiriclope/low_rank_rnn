@@ -42,11 +42,9 @@ import seaborn as sns
 import torch
 
 from analyze import load_results
-from src.dynamics import (
-    find_all_fixed_points, classify_fixed_points, make_input,
-    plot_task_flow_fields, plot_stage_stacked_flow, _reduce_marginals,
-    low_rank_numpy_params, low_rank_field_np,
-)
+from src.flow_field import make_input, low_rank_numpy_params, low_rank_field_np
+from src.flow_fixedpoints import find_all_fixed_points, classify_fixed_points
+from src.flow_rank2 import plot_task_flow_fields, plot_stage_stacked_flow, _reduce_marginals
 from src.models import LowRankModel, EILowRankModel, EISTPModel
 from src.tasks import (
     TaskTiming, make_timings,

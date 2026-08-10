@@ -18,7 +18,7 @@ import numpy as np, torch
 sys.path.insert(0, "/home/leon/rnn"); os.chdir("/home/leon/rnn")
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 from plot_sweep import _load_sweep_meta, _build_model, _load_ckpt, make_input
-from src.dynamics import _sim_step_single
+from src.flow_field import _sim_step_single
 try:
     import wells3   # analytic cross-check (optional)
 except Exception:

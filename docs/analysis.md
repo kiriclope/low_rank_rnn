@@ -1,5 +1,36 @@
 # Analysis & Plotting
 
+## Flow-field code map (2026-08 refactor)
+
+**Which tool to run** (all need `LD_PRELOAD`):
+
+| want | rank-2 | rank-3 |
+|---|---|---|
+| flow portrait (analytic) | `plot_sweep.py --plots flow` | `rank3_flow.py` |
+| + input noise | `plot_sweep.py --field_input_noise` (MC) | `rank3_flow.py --noise` |
+| GENUINE sim trajectories | `traj_flow.py` | `traj_flow.py --stage …` |
+| autonomous well table | `scratchpad/wells3.py <sweep>` | same |
+| EISTP / backbone | `ei_flow.py` | — |
+
+**Gotchas:** plot_sweep's rank-2 FP finder **asserts rank==2** → never point plain `plot_sweep` at a
+rank-3 or mixed-rank sweep (crashes / `(…,3)`-vs-`(…,2)` broadcast in the summary); scope with
+`--run_ids`/`--plots`. `plot_sweep --use_sim_field` is a **one-step adiabatic map** (≈β·analytic), NOT
+trajectories — use `traj_flow.py` for real integrated paths. Noise field = the validated input-only
+exact term (`noise_sigma`), *not* the self-consistent DMFT (`solve_sc_variance`, experimental).
+
+**Where the code lives** (`src/`, split 2026-08; `dynamics.py` re-exports for back-compat):
+- `flow_field.py` — shared rank-general ENGINE: `low_rank_field_np`/`_jacobian_flow_np` (+ `noise_sigma`),
+  `low_rank_numpy_params`, noise (`_phi_avgs`, `solve_sc_variance`, `low_rank_field_sc_np`),
+  `_canonical_flow_panels`, sim primitives (`_sim_step_single`, `sim_kappa_field`,
+  `integrate_kappa_trajectories`), κ-projection.
+- `flow_fixedpoints.py` — **shared rank-general `find_fixed_points(params, ff, backend="scipy"|"brainpy", …)`**
+  (scipy root on the numpy field / brainpy SlowPointFinder on the jax field, `build_jax_field`) +
+  `classify_lowrank_fps`; plus the rank-2 `find_all_fixed_points`/`classify_fixed_points` (plot_sweep).
+- `flow_rank2.py` — rank-2 rendering: `plot_stage_stacked_flow` (the `fp_stages` 3×8 portrait) + panels.
+- `flow_rank3.py` — rank-3 rendering: 3 pairwise-plane slices (`render_run`), uses the shared finder.
+
+
+
 ## Main entrypoint: `plot_sweep.py`
 
 ```bash

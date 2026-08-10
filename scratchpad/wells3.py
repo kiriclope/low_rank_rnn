@@ -10,7 +10,7 @@ import numpy as np, torch
 sys.path.insert(0, "/home/leon/rnn"); os.chdir("/home/leon/rnn")
 from scipy.optimize import root
 from plot_sweep import _load_sweep_meta, _build_model, _load_ckpt, make_input
-from src.dynamics import low_rank_numpy_params, low_rank_field_np, low_rank_jacobian_flow_np
+from src.flow_field import low_rank_numpy_params, low_rank_field_np, low_rank_jacobian_flow_np
 
 DEV = "cpu"
 K0_WELL_FRAC = 0.4     # a memory well has |κ₀| ≥ this fraction of the run's κ₀ scale
