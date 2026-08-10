@@ -1111,17 +1111,35 @@ or attention-baseline depression) — timing alone doesn't do it. r3o already ha
 lick *can't self-hold*, but the bistable rule still drives it up: subcriticality is necessary, not sufficient.
 
 ### 22b. ★ The NOISE mean field — input-only EXACT Gaussian resummation (production)
-The deterministic reduced field ignores the training input noise (σ_eff = noise·√(1−e^{−α})² ≈ 0.37 for
+The deterministic reduced field ignores the training input noise (σ_eff = noise·√(1−e^{−2α}) ≈ 0.37 for
 noise=1). Correct object: E_ξ[Ψ]. For a Gaussian-CDF φ (**lif** c=1, erf c=2, lif_sc c=2π) the input-noise
 average is **exact for all σ**:
-  **Ψ_σ(κ) = (1/N) Σⱼ nⱼ φ(āⱼ / √(1 + c·sⱼ²)),  sⱼ² = g²Aⱼ²σ²‖wⱼ‖²**  — noise DIVIDES the drive by √(1+c s²),
-i.e. an exact **effective-gain compression g→g/√(1+c s²)** (≈2.3× at σ=0.37, s²≈4.3). Wired into
-`low_rank_field_np(noise_sigma=σ)` / `low_rank_jacobian_flow_np(noise_sigma=σ)` (φ',φ'',φ''' + `noise_compress`
-added to `low_rank_numpy_params`). **Validated to ~2e-3 vs Monte-Carlo E_ξ[Ψ]** (`scratchpad/validate_noise_field.py`).
-The naive 2-term φ'' Taylor **overshoots** here (½⟨s²⟩≈2.15 is not small — origin −0.21 vs MC −0.07); the exact
-resummation is what's used. Tools: `rank3_flow.py --noise` (added lif/lif_sc to its jax PHI), `plot_sweep
---field_input_noise` (16-draw MC of the same E_ξ[Ψ]; ~16× slower — TODO rewire to the analytic term),
-`scratchpad/wells3.py` (clean-vs-σ well table).
+  **Ψ_σ(κ) = (1/N) Σⱼ nⱼ φ(āⱼ / √(1 + c·sⱼ²)),  sⱼ² = g²Aⱼ²σ²‖wⱼ‖²**  — noise DIVIDES each neuron's drive
+by √(1+c sⱼ²), a **per-neuron effective-gain compression**. Why it is exact and not just a good
+approximation: ⟨Ψ⟩ = (1/N)Σⱼ nⱼ⟨φ(aⱼ)⟩ is LINEAR in the expectation, so only each aⱼ's **marginal** is
+needed — the cross-neuron correlations induced by the shared ξ never enter the mean field.
+
+**Magnitude — do NOT read the per-neuron factor as the mode-level one** (measured on s0_r3o10, σ=0.37):
+per-neuron √(1+c s²) averages **2.12** (min 1.27, max 5.50), but the effect on the REDUCED modes is much
+milder — g·λ at the origin goes 2.11/1.16/1.16 → 1.33/1.05/1.05, i.e. only **1.58× / 1.11× / 1.11×**. The
+compression sits inside φ' evaluated at a compressed argument and is reweighted by the n·m overlap, so it
+is *not* a uniform rescale of g. (An earlier note claimed "≈2.3×, would drop g·λ=3→1.3, subcritical" — wrong
+twice over: the mode-level reduction is 1.58×, and g·λ≈2.11 is the *trained* value, not the init 3.0.)
+
+Wired into `low_rank_field_np(noise_sigma=σ)` / `low_rank_jacobian_flow_np(noise_sigma=σ)`.
+**Validated to ~2e-3 vs Monte-Carlo E_ξ[Ψ]** (`scratchpad/validate_noise_field.py`). The naive 2-term φ''
+Taylor **fails** here (½⟨s²⟩≈2.15 is not small — origin −0.21 vs MC −0.07) and is no longer used anywhere.
+Tools: `rank3_flow.py --noise` (lif/lif_sc added to its jax PHI), `plot_sweep --field_input_noise`
+(16-draw MC of the same E_ξ[Ψ]; ~16× slower — TODO rewire to the analytic term), `scratchpad/wells3.py`.
+
+**Non-Gaussian-CDF φ (fixed 2026-08-10, commit dcc0cec).** Two bugs found in the math review:
+(i) **relu was treated as noise-transparent** ("φ''=0 a.e.") — false, relu's φ'' is a **delta at 0**, and
+⟨relu(ā+η)⟩ = ā·Φ(ā/√Δ) + √Δ·N(ā/√Δ); at ā=0,Δ=1 the code returned 0.000 vs the true 0.399, so the noise
+field silently returned the DETERMINISTIC field for every relu net (relevant to §18's relu arms).
+(ii) the production field still used the bad φ'' **Taylor** for non-Gaussian φ while the SC path used
+quadrature (tanh ā=0.5,Δ=1: Taylor 0.0987 vs true 0.2952). Both fixed: everything now routes through the
+single `_phi_avgs` — exact closed form (Gaussian-CDF φ, relu), Gauss-Hermite otherwise. **lif is
+bit-identical**, so every lif result above stands.
 
 ### 22c. Noise result — destabilizes MARGINAL wells, not a directional fix
 Clean-vs-σ wells (flows published for all four sweeps):

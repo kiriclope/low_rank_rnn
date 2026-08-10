@@ -704,8 +704,9 @@ emergent). **RESULT: task-perfect, but cue-locking made the up-copies WORSE** �
 
 **★ NOISE-corrected flows (all four sweeps: `r2go`, `r2cue`, `r3o`, `r3cue`, clean + `_noise` published).**
 Production noise field = **input-only EXACT Gaussian resummation**, `low_rank_field_np(noise_sigma=σ)` =
-`(1/N)Σ nⱼ φ(āⱼ/√(1+c·sⱼ²))`, sⱼ²=g²Aⱼ²σ²‖wⱼ‖², c=1 lif (effective-gain compression g→g/√(1+cs²)); validated
-~2e-3 vs MC. σ_eff=noise·√(1−e^{−α})²≈0.37. Noise destabilizes MARGINAL wells (saddle-node) but is **not
+`(1/N)Σ nⱼ φ(āⱼ/√(1+c·sⱼ²))`, sⱼ²=g²Aⱼ²σ²‖wⱼ‖², c=1 lif (a PER-NEURON gain compression: mean √(1+cs²)≈2.1,
+but only **1.58×/1.11×/1.11×** on the reduced modes — not a uniform rescale of g); validated ~2e-3 vs MC.
+σ_eff=noise·√(1−e^{−2α})≈0.37. Noise destabilizes MARGINAL wells (saddle-node) but is **not
 directional** — clears go-rule up-copies in only **2/16 seeds** (r3cue s1 annihilates both; r2go10 s2 → 0 up),
 and can kill the desired down-wells (r3o s0). `rank3_flow.py --noise` (lif added to its jax PHI), `plot_sweep
 --field_input_noise` (16-draw MC of the same thing, ~16× slower), `scratchpad/wells3.py` clean-vs-σ. §22b–c.
