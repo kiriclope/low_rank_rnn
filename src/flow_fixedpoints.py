@@ -1,20 +1,16 @@
+"""Fixed-point finding — rank-general, two backends (scipy root / brainpy SlowPointFinder)."""
 from __future__ import annotations
 
-from contextlib import contextmanager
-from typing import Optional
 
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 import scipy.special
 from scipy.optimize import root
 
-from .tasks import TaskTiming
 from .flow_field import (
-    _model_device, _model_dtype, make_input, low_rank_numpy_params, low_rank_field_np, low_rank_jacobian_flow_np, low_rank_jacobian_map_np, _phi_avgs, solve_sc_variance, _sc_a_bar, low_rank_field_sc_np, low_rank_jacobian_sc_np, trace_slow_manifold, project_rec_inputs_to_kappa, run_low_rank_with_effective_inputs, auto_limits_from_trajs, _canonical_flow_panels, sim_kappa_field, _sim_step_single, integrate_kappa_trajectories,
+    NOISE_COMPRESS, _model_device, _model_dtype, make_input, low_rank_numpy_params, low_rank_field_np, low_rank_jacobian_flow_np, low_rank_jacobian_map_np, _phi_avgs, solve_sc_variance, _sc_a_bar, low_rank_field_sc_np, low_rank_jacobian_sc_np, trace_slow_manifold, project_rec_inputs_to_kappa, run_low_rank_with_effective_inputs, auto_limits_from_trajs, _canonical_flow_panels, sim_kappa_field, _sim_step_single, integrate_kappa_trajectories,
 )
 
-"""Fixed-point finding — rank-general, two backends (scipy root / brainpy SlowPointFinder)."""
 
 def merge_roots(roots, residuals, merge_tol=5e-2):
     if len(roots) == 0:
@@ -200,12 +196,12 @@ def classify_sim_fixed_points(model, fixed_points, ff_input, n_warmup=0,
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # Shared RANK-GENERAL fixed-point finder — two backends: scipy (numpy field) / brainpy (jax field)
 # ---------------------------------------------------------------------------
 
-_JAX_PHI_NC = {"lif": 1.0, "erf": 2.0, "lif_sc": 6.283185307179586}   # noise_compress c per nonlinearity
+# noise-compression c: imported from flow_field so the jax and numpy fields can never diverge.
+_JAX_PHI_NC = NOISE_COMPRESS
 
 
 def build_jax_field(params, phi_name, ff, noise_sigma=0.0):

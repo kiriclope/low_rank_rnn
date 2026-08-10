@@ -1,19 +1,21 @@
-from __future__ import annotations
-
-from contextlib import contextmanager
-from typing import Optional
-
-import numpy as np
-import torch
-import matplotlib.pyplot as plt
-import scipy.special
-from scipy.optimize import root
-
-from .tasks import TaskTiming
-
 """Shared rank-general low-rank flow ENGINE: analytic field + Jacobian, input-noise mean
 field (exact + self-consistent), κ-projection, sim primitives, integrate_kappa_trajectories.
 Imported by flow_fixedpoints / flow_rank2 / flow_rank3 and re-exported by dynamics.py."""
+from __future__ import annotations
+
+
+import numpy as np
+import torch
+import scipy.special
+
+
+# SINGLE SOURCE OF TRUTH for the input-noise Gaussian-resummation constant c, used by BOTH the numpy
+# field (low_rank_numpy_params → params["noise_compress"]) and the jax field
+# (flow_fixedpoints.build_jax_field). For a Gaussian-CDF φ the input-noise average is exact:
+# ⟨φ(ā+η)⟩ = φ(ā/√(1+c·s²)). Nonlinearities absent here have no exact form → φ'' Taylor fallback.
+# Keep in sync with the φ definitions in low_rank_numpy_params / build_jax_field's PHI.
+NOISE_COMPRESS = {"lif": 1.0, "erf": 2.0, "lif_sc": 2.0 * np.pi}
+
 
 def _model_device(model):
     return next(model.parameters()).device
@@ -73,9 +75,10 @@ def low_rank_numpy_params(model):
     # φ'' isn't provided they default to 0 → noise correction silently off for that nl.
     nl_str = getattr(model, "nonlinearity_str", "tanh")
     phi_pp_np = phi_ppp_np = lambda u: np.zeros_like(np.asarray(u, dtype=np.float64))
-    # noise_compress c: for a Gaussian-CDF φ the Gaussian input-noise average is EXACT —
-    # ⟨φ(ā+η)⟩ = φ(ā/√(1+c·s²)) (c=1 lif, 2 erf, 2π lif_sc). None ⇒ fall back to the φ'' Taylor term.
-    noise_compress = None
+    # noise_compress c comes from the single source of truth NOISE_COMPRESS (module level) — for a
+    # Gaussian-CDF φ the input-noise average is EXACT: ⟨φ(ā+η)⟩ = φ(ā/√(1+c·s²)).
+    # None (φ not a Gaussian CDF) ⇒ fall back to the φ'' Taylor term.
+    noise_compress = NOISE_COMPRESS.get(nl_str)
     if nl_str == "relu":
         phi_np       = lambda u: np.maximum(u, 0.0)
         phi_prime_np = lambda u: (u > 0).astype(np.float64)
@@ -94,7 +97,6 @@ def low_rank_numpy_params(model):
         phi_prime_np = lambda u: _2_sqrt_pi * _e(u)
         phi_pp_np    = lambda u: _2_sqrt_pi * (-2.0 * u) * _e(u)
         phi_ppp_np   = lambda u: _2_sqrt_pi * (4.0 * u ** 2 - 2.0) * _e(u)
-        noise_compress = 2.0                                    # erf(x)=2Φ(x√2)−1 ⇒ c=2
     elif nl_str == "elu":
         # ELU: x for x>0, exp(x)-1 for x<=0 (alpha=1); φ'= 1 for x>0, exp(x) for x<=0
         _en          = lambda u: np.exp(np.minimum(u, 0.0))
@@ -111,7 +113,6 @@ def low_rank_numpy_params(model):
         phi_prime_np = _g
         phi_pp_np    = lambda u: -u * _g(u)                      # φ'' = -u·N(u)
         phi_ppp_np   = lambda u: (u ** 2 - 1.0) * _g(u)          # φ''' = (u²-1)·N(u)
-        noise_compress = 1.0                                     # lif=Φ ⇒ exact c=1
     elif nl_str == "lif_sc":
         # Rescaled LIF: φ(x)=(1+erf(x√π))/2, range [0,1], φ'(0)=1 (matches tanh at origin)
         _sqrtpi = np.sqrt(np.pi)
@@ -120,7 +121,6 @@ def low_rank_numpy_params(model):
         phi_prime_np = _gc
         phi_pp_np    = lambda u: -2.0 * np.pi * u * _gc(u)                            # φ'' = -2πu·φ'
         phi_ppp_np   = lambda u: 2.0 * np.pi * (2.0 * np.pi * u ** 2 - 1.0) * _gc(u)  # φ''' = 2π(2πu²-1)φ'
-        noise_compress = 2.0 * np.pi                                                  # lif_sc=Φ(x√2π) ⇒ c=2π
     elif nl_str == "tanh_asym":
         # φ = tanh(u) + γ·tanh²(u);  φ' = (1-tanh²)(1 + 2γ·tanh)
         g = float(getattr(model, "nl_gamma", 0.0))

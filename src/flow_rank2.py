@@ -1,15 +1,11 @@
+"""Rank-2 flow rendering: κ0–κ1 stage×condition portraits (plot_stage_stacked_flow) + panels."""
 from __future__ import annotations
 
-from contextlib import contextmanager
-from typing import Optional
 
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-import scipy.special
-from scipy.optimize import root
 
-from .tasks import TaskTiming
 from .flow_field import (
     _model_device, _model_dtype, make_input, low_rank_numpy_params, low_rank_field_np, low_rank_jacobian_flow_np, low_rank_jacobian_map_np, _phi_avgs, solve_sc_variance, _sc_a_bar, low_rank_field_sc_np, low_rank_jacobian_sc_np, trace_slow_manifold, project_rec_inputs_to_kappa, run_low_rank_with_effective_inputs, auto_limits_from_trajs, _canonical_flow_panels, sim_kappa_field, _sim_step_single, integrate_kappa_trajectories,
 )
@@ -17,7 +13,6 @@ from .flow_fixedpoints import (
     merge_roots, find_all_fixed_points, classify_fixed_points, find_sim_fixed_points, classify_sim_fixed_points,
 )
 
-"""Rank-2 flow rendering: κ0–κ1 stage×condition portraits (plot_stage_stacked_flow) + panels."""
 
 def make_vector_field_grid(model, ff_input, xlim, ylim, n_grid=151, include_beta=False):
     params       = low_rank_numpy_params(model)
