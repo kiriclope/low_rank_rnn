@@ -689,3 +689,34 @@ window) → re-scored **dpa=1.0**. All prior "task-perfect" numbers reported thi
 - **Infra**: `stop_loss` 0.02→0.05 (0.02 overtrains Dual); `gng_criterion` kept two-sided (`_uw_gng`);
   STACKED 3-row flow portraits (`plot_stage_stacked_flow` + `_render_meanflow_stacked`). Figures
   `rnn/sweep_{os_ep,noattn,nodc,nodc_noattn,nodc_afrz}/`.
+
+### Cue-driven response; the NOISE mean field; sim-trajectory tooling (2026-08-06/07)
+
+**`sweep_cue`** — `r3cue` (rank-3) + `r2cue` (rank-2), 4 seeds each. Base = the tf-arm recipe (lif, gain2,
+one-sided go-preserving `rwd_keep_go_hinge`, `decision_readout_mean=0`, noise 1.0, 250 DPA ep, stop 0.05);
+rank-3 adds `gng_lambda=1.5` (bistable rule) + `decision_lambda=0.5` (subcritical κ₂). **New flag
+`response_in_cue`** (all 3 generators + eval windows + RunConfig): score the go/pairing response in the LAST
+0.5 s of its triggering stimulus (cue/test ON) not after it turns off; ran with `decay_to_zero=False` (purest
+emergent). **RESULT: task-perfect, but cue-locking made the up-copies WORSE** — r3cue autonomous go-rule wells
+κ₂≈+0.64…+0.77 (vs r3o10 +0.25…+0.44), **0/4 all-down**; r2cue 0/4. The held rule feeds an ADDITIVE lick
+(κ₂≈rule+cue, not the conjunction rule∧cue), and dropping the post-cue pin removed the only downward pressure.
+⇒ up-copies need an active downward force (one-sided κ₂ decay / attention-baseline), not timing alone. §22a.
+
+**★ NOISE-corrected flows (all four sweeps: `r2go`, `r2cue`, `r3o`, `r3cue`, clean + `_noise` published).**
+Production noise field = **input-only EXACT Gaussian resummation**, `low_rank_field_np(noise_sigma=σ)` =
+`(1/N)Σ nⱼ φ(āⱼ/√(1+c·sⱼ²))`, sⱼ²=g²Aⱼ²σ²‖wⱼ‖², c=1 lif (effective-gain compression g→g/√(1+cs²)); validated
+~2e-3 vs MC. σ_eff=noise·√(1−e^{−α})²≈0.37. Noise destabilizes MARGINAL wells (saddle-node) but is **not
+directional** — clears go-rule up-copies in only **2/16 seeds** (r3cue s1 annihilates both; r2go10 s2 → 0 up),
+and can kill the desired down-wells (r3o s0). `rank3_flow.py --noise` (lif added to its jax PHI), `plot_sweep
+--field_input_noise` (16-draw MC of the same thing, ~16× slower), `scratchpad/wells3.py` clean-vs-σ. §22b–c.
+
+**Self-consistent DMFT** (`solve_sc_variance` etc.) = ⚠ EXPERIMENTAL: right structure but over-predicts stiff
+modes ~10–20× (two-timescale FDT factor omitted; `scratchpad/validate_sc.py`). Kept input-only exact as
+production. **Dubreuil** (`~/models/dubreuil`) flow field is finite-N deterministic (no noise/self-consistent
+code in the repo) — equivalent to our reduced field for pure low-rank. §22d–e.
+
+**★ Genuine sim-trajectory tooling:** `src/dynamics.integrate_kappa_trajectories` (rank-general) + **`traj_flow.py`**
+CLI (rank-2 stages×conditions / rank-3 conditions×3-planes / `--noise`) — integrate REAL trajectories from a
+κ-grid. `plot_sweep --use_sim_field` is a one-step adiabatic map (≈β·analytic), NOT trajectories. Confirms the
+reduced field is the true flow for pure low-rank nets. Companion figs `scratchpad/plot_cue_{targets,inputs}.py`.
+All this session UNCOMMITTED. §22f.

@@ -74,6 +74,8 @@ def generate_dpa_trials(
     attention_scale: float = 1.0,
     windowed_targets: bool = False,
     decay_to_zero: bool = True,
+    decay_onesided: bool = False,
+    response_in_cue: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -100,7 +102,7 @@ def generate_dpa_trials(
     # baseline
     targets[:, :n_on[0], 0] = 0.0 # on kappa 0
     # no ramping
-    targets[:, :n_on[1], -1] = 0.0 # on kappa 1
+    targets[:, :n_on[1], -1] = 0.0 # pre-test no-lick on the readout [-1] (κ₁ rank-2, κ₂ rank-3)
 
     # memory
     targets[idx_A, n_on[0]:n_on[1], 0] = 1.0
@@ -110,12 +112,19 @@ def generate_dpa_trials(
     if windowed_targets:
         # express 1 s AFTER test-off (a 1 s plateau — longer window so the match/+1 decision can push
         # up against the no-lick bias), then optionally decay to 0 (transient decision)
-        half = int(round(0.5 / timing.dt))
+        half    = int(round(0.5 / timing.dt))
+        quarter = int(round(0.25 / timing.dt))   # 0.25 s (shortened pairing window)
         to   = int(n_off[1])
-        targets[idx_pair,  to:to + 2*half, -1] =  1.0
-        targets[~idx_pair, to:to + 2*half, -1] = -1.0
+        # response_in_cue: score in the last 0.5 s of the TEST (test ON) so the match decision is
+        # test-DRIVEN, not held from memory; else the legacy 0.25 s window starting at test-off.
+        r0, r1 = (to - half, to) if response_in_cue else (to, to + quarter)
+        targets[idx_pair,  r0:r1, -1] =  1.0
+        targets[~idx_pair, r0:r1, -1] = -1.0
         if decay_to_zero:
-            targets[:,     to + 2*half:, -1] = 0.0
+            targets[:,        r1:, -1] = 0.0   # default: pin the lick to 0
+            if decay_onesided:  # pairing decay MARKERS on the LICK ([-1]) → loss scores one-sided at thresh 0
+                targets[idx_pair,  r1:, -1] = -0.5   # match: penalise lick>0 (relax the pulse DOWN)
+                targets[~idx_pair, r1:, -1] = +0.5   # nonmatch: penalise lick<0 (relax the trace UP)
     else:
         targets[idx_pair,  n_off[1], -1] = 1.0
         targets[~idx_pair, n_off[1], -1] = -1.0
@@ -143,6 +152,8 @@ def generate_gng_trials(
     windowed_targets: bool = False,
     decay_to_zero: bool = True,
     gng_response: bool = False,
+    decay_onesided: bool = False,
+    response_in_cue: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -174,7 +185,8 @@ def generate_gng_trials(
     # baseline
     targets[:, :n_on[0]] = 0.0
 
-    half = int(round(0.5 / timing.dt))    # 0.5 s in steps
+    half    = int(round(0.5 / timing.dt))    # 0.5 s in steps
+    quarter = int(round(0.25 / timing.dt))   # 0.25 s (shortened gng-hold / pairing windows)
     cu   = int(n_on[1])                   # cue ONSET
     co   = int(n_off[1])                  # cue OFFset
 
@@ -182,19 +194,21 @@ def generate_gng_trials(
         # Transient decision. HOLD the go/nogo identity (go=+1 / nogo=−1) for 0.5 s ENDING at the cue
         # onset, so nogo learns to sit at −1 BEFORE the go-push cue; then a 0.5 s response 0.5 s after
         # cue-off (go→go_target; nogo NOT reset on cue — held free); then optionally decay to 0.
-        targets[idx_go,   cu - half:cu, 1] =  1.0             # pre-cue hold: 0.5 s before the cue
-        targets[idx_nogo, cu - half:cu, 1] = -1.0
+        targets[idx_go,   cu - quarter:cu, 1] =  1.0             # pre-cue hold: 0.25 s before the cue
+        targets[idx_nogo, cu - quarter:cu, 1] = -1.0
+        # response_in_cue: score in the last 0.5 s of the response cue (cue ON, r0:r1 = co-half:co) so the
+        # lick is cue-DRIVEN; else the legacy 0.5 s window starting at cue-off. Decay follows at r1.
+        r0, r1 = (co - half, co) if response_in_cue else (co, co + half)
         if gng_response:
-            # optional response window (0.5 s after cue-off): go→go_target, nogo→nogo_target(=0).
-            # Scored by the UnifiedLoss rwd group (rwd_go/rwd_nogo, separately weighted).
-            targets[idx_go,   co:co + half, 1] = go_target
-            targets[idx_nogo, co:co + half, 1] = nogo_target
+            # go→go_target, nogo→nogo_target(=0). Scored by the UnifiedLoss rwd group (separately weighted).
+            # RESPONSE = readout/lick → dim [-1] (κ₁ in rank-2, κ₂ in rank-3). The RULE stays held on [1].
+            targets[idx_go,   r0:r1, -1] = go_target
+            targets[idx_nogo, r0:r1, -1] = nogo_target
         if decay_to_zero:
-            targets[:,    co + half:co + 3*half, 1] = 0.0     # decay to 0 over the next 1.0 s
-
-        if target_rank >= 3:
-            targets[idx_go,   co:co + half, 2] = go_target
-            targets[idx_nogo, co:co + half, 2] = nogo_target
+            targets[:,        r1:r1 + 2*half, -1] = 0.0   # 'none' trials: pin the lick to 0
+            if decay_onesided:  # go/nogo decay MARKERS on the LICK ([-1]) → loss scores one-sided at thresh 0
+                targets[idx_go,   r1:r1 + 2*half, -1] = -0.5   # go: penalise lick>0 (relax the pulse DOWN)
+                targets[idx_nogo, r1:r1 + 2*half, -1] = +0.5   # nogo: penalise lick<0 (relax the trace UP)
     else:
         dt = co + half
         if ramping_gng:
@@ -233,6 +247,8 @@ def generate_dual_trials(
     decay_to_zero: bool = True,
     gng_response: bool = False,
     gng_memory: bool = True,
+    decay_onesided: bool = False,
+    response_in_cue: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -297,7 +313,8 @@ def generate_dual_trials(
     # baseline
     targets[:, :n_on[0]] = 0.0
 
-    half = int(round(0.5 / timing.dt))    # 0.5 s in steps
+    half    = int(round(0.5 / timing.dt))    # 0.5 s in steps
+    quarter = int(round(0.25 / timing.dt))   # 0.25 s (shortened gng-hold / pairing windows)
     cu   = int(n_on[2])                   # cue ONSET
     co   = int(n_off[2])                  # cue OFFset
     to   = int(n_off[3])                  # test offset
@@ -311,29 +328,35 @@ def generate_dual_trials(
         if gng_memory:
             # the go/nogo working memory (pre-cue hold). Optional in Dual: with it off, the go/nogo
             # identity is NOT re-supervised — it must survive on the GNG-learned (frozen) structure.
-            targets[idx_go,   cu - half:cu, 1] =  1.0         # pre-cue hold: 0.5 s before the cue
-            targets[idx_nogo, cu - half:cu, 1] = -1.0
+            targets[idx_go,   cu - quarter:cu, 1] =  1.0         # pre-cue hold: 0.25 s before the cue
+            targets[idx_nogo, cu - quarter:cu, 1] = -1.0
 
+        # response_in_cue: gng response in the last 0.5 s of the response cue (cue ON, rg0:rg1 = co-half:co)
+        # → lick is cue-DRIVEN; else legacy 0.5 s after cue-off. Decay follows at rg1.
+        rg0, rg1 = (co - half, co) if response_in_cue else (co, co + half)
         if gng_response:
-            # optional response window (0.5 s after cue-off): go→go_target, nogo→nogo_target(=0).
-            # Scored by the UnifiedLoss rwd group (rwd_go/rwd_nogo, separately weighted).
-            targets[idx_go,   co:co + half, 1] = go_target
-            targets[idx_nogo, co:co + half, 1] = nogo_target
+            # go→go_target, nogo→nogo_target(=0). Scored by the UnifiedLoss rwd group (separately weighted).
+            # RESPONSE = readout/lick → dim [-1] (κ₁ in rank-2, κ₂ in rank-3). The RULE stays held on [1].
+            targets[idx_go,   rg0:rg1, -1] = go_target
+            targets[idx_nogo, rg0:rg1, -1] = nogo_target
 
         if decay_to_zero:
-            targets[:,    co + half:co + 3*half, 1] = 0.0     # decay to 0 over the next 1 s
+            targets[:,        rg1:rg1 + 2*half, -1] = 0.0   # 'none' trials: pin the lick to 0
+            if decay_onesided:  # go/nogo decay MARKERS on the LICK ([-1]) → loss scores one-sided at thresh 0
+                targets[idx_go,   rg1:rg1 + 2*half, -1] = -0.5   # go: penalise lick>0 (relax the pulse DOWN)
+                targets[idx_nogo, rg1:rg1 + 2*half, -1] = +0.5   # nogo: penalise lick<0 (relax the trace UP)
 
-        if target_rank >= 3:
-            targets[idx_go,   co:co + half, -1] = go_target
-            targets[idx_nogo, co:co + half, -1] = nogo_target
-
-        # pairing: 1 s expression right after test-off (longer window so match/+1 can push up against
-        # the no-lick bias), then optionally decay to 0
-        targets[idx_pair,  to:to + 2*half, -1] =  1.0
-        targets[~idx_pair, to:to + 2*half, -1] = -1.0
+        # pairing: response_in_cue → last 0.5 s of the TEST (test ON, rp0:rp1 = to-half:to) so the match
+        # decision is test-DRIVEN; else legacy 0.25 s starting at test-off. Decay follows at rp1.
+        rp0, rp1 = (to - half, to) if response_in_cue else (to, to + quarter)
+        targets[idx_pair,  rp0:rp1, -1] =  1.0
+        targets[~idx_pair, rp0:rp1, -1] = -1.0
 
         if decay_to_zero:
-            targets[:,     to + 2*half:, -1] = 0.0
+            targets[:,        rp1:, -1] = 0.0   # default: pin the lick to 0
+            if decay_onesided:  # pairing decay MARKERS on the LICK ([-1]) → loss scores one-sided at thresh 0
+                targets[idx_pair,  rp1:, -1] = -0.5   # match: penalise lick>0 (relax the pulse DOWN)
+                targets[~idx_pair, rp1:, -1] = +0.5   # nonmatch: penalise lick<0 (relax the trace UP)
     else:
         dt = co + half
         if ramping_gng:

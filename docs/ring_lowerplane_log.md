@@ -1090,3 +1090,78 @@ to ~300 ep for no gain; DPA converges well above it); `plot_sweep`/`dynamics` no
 (dpa/naive/expert) flow portraits** (`plot_stage_stacked_flow`) + stacked summary mean-flow
 (`_render_meanflow_stacked`) — same panel columns, shared κ-limits + speed scale, so a column reads top→bottom
 as DPA→GNG→Dual. Figures `rnn/sweep_{os_ep,noattn,nodc,nodc_noattn,nodc_afrz}/`.
+
+## 22. Session 2026-08-06/07 — cue-driven response; the NOISE mean field; genuine sim-trajectory flow
+
+Arms this session: rank-2 baseline `r2go` (go-preserving, no decay) + rank-2/3 cue-driven `r2cue`/`r3cue`,
+rank-3 baseline `r3o` (subcritical κ₂, no decay). Sweeps `sweep_r2go`, `sweep_r3o`, `sweep_cue`.
+
+### 22a. Cue-driven response (`response_in_cue`) — necessary framing, NOT sufficient
+New flag (sweep.py + all 3 generators + shifted eval windows): score the go/pairing response in the **last
+0.5 s of its triggering stimulus** (cue/test ON) instead of after it turns off, so the lick can be
+input-driven rather than held from memory. Diagnosis it was meant to fix: the old window `co:co+half` (co =
+cue-OFFset) *demands a lick when the cue is already gone* → the net is forced to wire the held rule κ₁ into
+κ₂ → that coupling IS the up-copy. **RESULT: cue-locking ALONE made the up-copies WORSE** — r3cue go-rule
+wells κ₂≈+0.7 (vs r3o +0.3), 0/4 all-down. Two reasons: (1) the lick the net learns is **additive** (κ₂ ≈
+rule-drive + cue-drive), not a **conjunction** (rule AND cue); holding the go-rule is mandatory, so an additive
+readout leaks a standing lick regardless of when it's scored. (2) We ran `decay_to_zero=False` (purest
+emergent) → removed the only post-cue downward pressure r3o still had (its pin-to-0). **Conclusion:
+"make go cue-driven" ⟺ force the conjunction, and that needs an ACTIVE downward force** (one-sided κ₂ decay,
+or attention-baseline depression) — timing alone doesn't do it. r3o already has subcritical κ₂ (g·λ=1) so the
+lick *can't self-hold*, but the bistable rule still drives it up: subcriticality is necessary, not sufficient.
+
+### 22b. ★ The NOISE mean field — input-only EXACT Gaussian resummation (production)
+The deterministic reduced field ignores the training input noise (σ_eff = noise·√(1−e^{−α})² ≈ 0.37 for
+noise=1). Correct object: E_ξ[Ψ]. For a Gaussian-CDF φ (**lif** c=1, erf c=2, lif_sc c=2π) the input-noise
+average is **exact for all σ**:
+  **Ψ_σ(κ) = (1/N) Σⱼ nⱼ φ(āⱼ / √(1 + c·sⱼ²)),  sⱼ² = g²Aⱼ²σ²‖wⱼ‖²**  — noise DIVIDES the drive by √(1+c s²),
+i.e. an exact **effective-gain compression g→g/√(1+c s²)** (≈2.3× at σ=0.37, s²≈4.3). Wired into
+`low_rank_field_np(noise_sigma=σ)` / `low_rank_jacobian_flow_np(noise_sigma=σ)` (φ',φ'',φ''' + `noise_compress`
+added to `low_rank_numpy_params`). **Validated to ~2e-3 vs Monte-Carlo E_ξ[Ψ]** (`scratchpad/validate_noise_field.py`).
+The naive 2-term φ'' Taylor **overshoots** here (½⟨s²⟩≈2.15 is not small — origin −0.21 vs MC −0.07); the exact
+resummation is what's used. Tools: `rank3_flow.py --noise` (added lif/lif_sc to its jax PHI), `plot_sweep
+--field_input_noise` (16-draw MC of the same E_ξ[Ψ]; ~16× slower — TODO rewire to the analytic term),
+`scratchpad/wells3.py` (clean-vs-σ well table).
+
+### 22c. Noise result — destabilizes MARGINAL wells, not a directional fix
+Clean-vs-σ wells (flows published for all four sweeps):
+
+| sweep | rank | noise effect on go-rule up-copies | all-down @σ |
+|---|---|---|---|
+| r2go10 (σ0.37) | 2 | pushes up-wells to/below the line | **1/4** (s2 → 4w, 0 up) |
+| r2cue | 2 | shrink, survive | 0/4 |
+| r3o10 | 3 | shrink; sometimes kills the *down* (good) wells (s0) | 0/4 |
+| r3cue | 3 | **s1: both up-copies ANNIHILATED** (saddle-node) | 1/4 |
+
+Noise compresses the gain and tips whichever wells are **shallowest** over the saddle-node — clears up-copies
+in only **2/16 seeds** across configs, and can equally kill the desired down-wells. **Not a directional fix**;
+it nudges marginal wells, consistent with the "well depth = noise-robustness margin" story (§21).
+
+### 22d. Self-consistent DMFT — ⚠ EXPERIMENTAL (over-predicts stiff modes)
+Derived + implemented the recurrent-variance closure (`solve_sc_variance`, `low_rank_field_sc_np`,
+`low_rank_jacobian_sc_np`): Δᵢ = input-direct + cross + **Mᵢᵀ C Mᵢ**, C = (I−σ̃)⁻¹ g²σ²ŨŨᵀ(I−σ̃)⁻ᵀ,
+σ̃ = (g/N)nᵀdiag(φ̄')M (renormalized overlap = reduced Jacobian), Ũ = (1/N)nᵀdiag(φ̄'A)W; iterate to
+self-consistency ((I−σ̃)⁻¹ amplifies near criticality). **Validation vs noisy sim (`scratchpad/validate_sc.py`):
+right STRUCTURE (rule-mode variance matches exactly at σ0.37) but OVER-predicts the stiff/slow modes ~10–20×** —
+our **two-timescale discrete dynamics temporally FILTER** the injected noise (fluctuation–dissipation), a factor
+the instantaneous-variance closure omits; it bites the stiff κ₀ memory hardest. **Decision (Leon): keep the
+input-only exact term as production, SC as qualitative** (finish it by folding the α/α_rec FDT factor into s²).
+
+### 22e. Dubreuil (`~/models/dubreuil`) comparison — their flow field is finite-N DETERMINISTIC
+`low_rank_rnns/ranktwo.py:plot_field` computes `F = −x + m(nᵀtanh x)/N + I` in the full N-space then projects —
+the true finite-N field, **no noise, no Gaussian integrals, no self-consistent equations anywhere in the repo**
+(grepped). Same family as our reduced field; algebraically **equivalent for a pure single-timescale low-rank net**
+(they add I_orth to the φ-argument + affine in-plane; we put the full input inside φ — same result). The
+self-consistent-noise theory is the Mastrogiuseppe–Ostojic *framework*, not coded here. What Dubreuil does that
+generalizes: full-N-space FP finding (robust when there's off-plane W_fixed).
+
+### 22f. ★ Genuine simulated-trajectory tooling (`--use_sim_field` was a one-step map)
+Leon flagged that `plot_sweep --use_sim_field` "looks analytical" — correct: with `n_warmup=0` it seeds on the
+slow manifold and takes ONE step, collapsing to ≈β·(analytic field). New honest tooling:
+`src/dynamics.integrate_kappa_trajectories(model, ff, κ₀, n_steps, noise_sigma)` (rank-general primitive — seed
+full state on the κ-manifold, integrate the true two-timescale dynamics with input clamped; σ>0 = noisy
+trajectories) + **`traj_flow.py`** CLI (rank-2: stages×conditions; rank-3: conditions×3-planes `--stage`;
+`--noise`). Confirms the analytic reduced field IS the true flow for these pure low-rank nets (the state can't
+leave the m-manifold), while exposing transients / empirical basins / stochastic wander. Figures
+`rnn/sweep_{cue,r2go,r3o}/flow` (clean + `_noise` + `trajflow`). Also `scratchpad/plot_cue_{targets,inputs}.py`
+(target + clean/noisy input time-courses). Uncommitted.

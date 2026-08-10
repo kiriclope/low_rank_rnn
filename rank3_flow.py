@@ -82,21 +82,38 @@ def conditions_for(cfg, names):
     return out
 
 
-def build_field(p, phi_name, ff):
+def build_field(p, phi_name, ff, noise_sigma=0.0):
     """jax reduced field  F(κ)=Ψ(κ)−κ  for a single input condition ff, as a (batch,rank)→(batch,rank)
-    callable — shared by the brainpy fixed-point search AND the jax flow relaxation."""
+    callable — shared by the brainpy fixed-point search AND the jax flow relaxation.
+
+    noise_sigma>0 applies the EXACT input-noise mean field for a Gaussian-CDF φ: ⟨φ(a+η)⟩=φ(a/√(1+c·s²)),
+    sᵢ²=g²Aᵢ²σ²‖wᵢ‖², c=1(lif)/2(erf)/2π(lif_sc) — i.e. noise compresses the drive (effective-gain drop).
+    Non-Gaussian φ: noise ignored here (matches low_rank_field_np's Taylor fallback being off in jax)."""
     import jax, jax.numpy as jnp
     PHI = {"tanh": jnp.tanh, "relu": lambda x: jnp.maximum(x, 0.0),
-           "erf": jax.scipy.special.erf, "softplus": jax.nn.softplus, "elu": jax.nn.elu}
+           "erf": jax.scipy.special.erf, "softplus": jax.nn.softplus, "elu": jax.nn.elu,
+           # match src/models.py: lif = Gaussian CDF ½(1+erf(x/√2)); lif_sc rescaled by √π
+           "lif":    lambda x: 0.5 * (1.0 + jax.scipy.special.erf(x / jnp.sqrt(2.0))),
+           "lif_sc": lambda x: 0.5 * (1.0 + jax.scipy.special.erf(x * jnp.sqrt(jnp.pi)))}
+    NC  = {"lif": 1.0, "erf": 2.0, "lif_sc": 2.0 * np.pi}
     M  = jnp.asarray(p["M"]); Nv = jnp.asarray(p["Nvec"]); g = float(p["gain"]); N = p["M"].shape[0]
     drive = jnp.asarray(p["Ai"] * (np.asarray(ff, float) @ p["Wi"].T + p["bi"]))
     phi = PHI.get(phi_name, jnp.tanh)
+    c = NC.get(phi_name)
+    denom = None
+    if noise_sigma and noise_sigma > 0.0 and c is not None:
+        s2 = (g ** 2) * (np.asarray(p["Ai"], float) ** 2) * (float(noise_sigma) ** 2) \
+             * np.sum(np.asarray(p["Wi"], float) ** 2, axis=1)
+        denom = jnp.asarray(np.sqrt(1.0 + c * s2))                # (N,)
     def field(k):
-        return phi(g * (drive[None, :] + k @ M.T)) @ Nv / N - k
+        a = g * (drive[None, :] + k @ M.T)
+        if denom is not None:
+            a = a / denom[None, :]
+        return phi(a) @ Nv / N - k
     return field
 
 
-def find_fps_brainpy(field_fn, p, ff, xlim=3.0, grid=9, slow_tol=1e-7, marg=0.04, num_opt=1500):
+def find_fps_brainpy(field_fn, p, ff, xlim=3.0, grid=9, slow_tol=1e-7, marg=0.04, num_opt=1500, noise_sigma=0.0):
     """3-D fixed points via brainpy SlowPointFinder (Adam GD on ½‖F‖² over a grid³ of candidates,
     on jax) — same finder as the rank-2 tools. Classified by the analytic 3×3 flow Jacobian."""
     import brainpy as bp, brainpy.math as bm
@@ -109,7 +126,7 @@ def find_fps_brainpy(field_fn, p, ff, xlim=3.0, grid=9, slow_tol=1e-7, marg=0.04
     fps = np.asarray(fdr.fixed_points).reshape(-1, 3)
     labs = []
     for fp in fps:
-        ev = np.sort(np.linalg.eigvals(low_rank_jacobian_flow_np(p, fp, ff_input=ff)).real)
+        ev = np.sort(np.linalg.eigvals(low_rank_jacobian_flow_np(p, fp, ff_input=ff, noise_sigma=noise_sigma)).real)
         lo, hi = ev[0], ev[-1]
         labs.append("attractor" if hi < -marg else "repeller" if lo > marg else
                     "saddle" if (hi > marg and lo < -marg) else "marginal")
@@ -135,9 +152,14 @@ def plane_field(field_fn, dx, dy, df, GX, GY, fps, iters=250, step=0.5):
 
 
 def render_run(sweep_dir, rid, out_path, conditions, xlim=3.0, n_seeds=11, stage="expert",
-               slice_mode="adiabatic", slow_tol=1e-7, marg=0.04):
+               slice_mode="adiabatic", slow_tol=1e-7, marg=0.04, use_run_noise=False):
     m, cfg = load_run(sweep_dir, rid, stage=stage)
     p = low_rank_numpy_params(m)
+    # input-noise σ (exact Gaussian resummation): σ_eff = noise·√(β(2−β)), β = 1−e^{−α} (from params)
+    sigma = 0.0
+    if use_run_noise:
+        beta  = float(p["beta"])
+        sigma = float(cfg.get("noise", 0.0)) * float(np.sqrt(beta * (2.0 - beta)))
     conds = conditions_for(cfg, conditions)
     n = 121
     ax_ = np.linspace(-xlim, xlim, n)
@@ -151,9 +173,9 @@ def render_run(sweep_dir, rid, out_path, conditions, xlim=3.0, n_seeds=11, stage
     phi_name = cfg.get("nonlinearity", "tanh")
     cells, all_speed, total_fps = {}, [], 0
     for r, (cname, ff) in enumerate(conds):
-        field_fn   = build_field(p, phi_name, ff)                 # jax field for this condition
+        field_fn   = build_field(p, phi_name, ff, noise_sigma=sigma)   # jax field (noise-corrected if σ>0)
         fps, labs  = find_fps_brainpy(field_fn, p, ff, xlim=xlim, grid=n_seeds,
-                                      slow_tol=slow_tol, marg=marg)
+                                      slow_tol=slow_tol, marg=marg, noise_sigma=sigma)
         att        = fps[labs == "attractor"] if len(fps) else np.zeros((0, 3))
         total_fps += len(fps)
         for c, (dx, dy, df) in enumerate(PLANES):
@@ -166,7 +188,7 @@ def render_run(sweep_dir, rid, out_path, conditions, xlim=3.0, n_seeds=11, stage
                     (float(np.median(fps[:, df])) if len(fps) else 0.0))
                 K = np.zeros((n, n, 3))
                 K[..., dx], K[..., dy], K[..., df] = GX, GY, c_slice
-                F = low_rank_field_np(p, K, ff_input=ff)
+                F = low_rank_field_np(p, K, ff_input=ff, noise_sigma=sigma)
                 dX, dY = F[..., dx], F[..., dy]
             speed = np.hypot(dX, dY)
             cells[(r, c)] = dict(cname=cname, dx=dx, dy=dy, df=df, c_slice=c_slice,
@@ -202,8 +224,10 @@ def render_run(sweep_dir, rid, out_path, conditions, xlim=3.0, n_seeds=11, stage
                Line2D([0], [0], ls="", marker="s", mfc="none", mec="gold", ms=8, label="marginal")]
     fig.legend(handles=handles, loc="upper center", ncol=4, fontsize=8, framealpha=0.9,
                bbox_to_anchor=(0.48, 0.99))
+    noise_tag = (f"  ·  NOISE-corrected mean field σ={sigma:.2f} (input-noise gain compression)"
+                 if sigma > 0 else "")
     fig.suptitle(f"{os.path.basename(os.path.normpath(sweep_dir))} · {rid} · {stage}  —  rank-3 flow "
-                 f"(rows = input condition, cols = κ-plane; real 3-D fixed points projected)",
+                 f"(rows = input condition, cols = κ-plane; real 3-D fixed points projected){noise_tag}",
                  fontsize=11, y=1.005)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     for ext in ("png", "svg"):
@@ -234,17 +258,21 @@ def main():
                          "structure a root-finder misses")
     ap.add_argument("--marg", type=float, default=0.04,
                     help="|Re eigenvalue| below this → 'marginal' (a slow-manifold direction)")
+    ap.add_argument("--noise", action="store_true",
+                    help="render the INPUT-NOISE mean field at the run's own σ (exact Gaussian "
+                         "resummation φ(a/√(1+c·s²))) — shows which fixed points the noise destabilizes")
     args = ap.parse_args()
 
     sweep = os.path.basename(os.path.normpath(args.sweep_dir))
     rids = args.run_ids or discover_run_ids(args.sweep_dir)
-    print(f"rank3_flow: {sweep}  stage={args.stage}  conditions={args.conditions}  runs={rids}")
+    suffix = "_noise" if args.noise else ""
+    print(f"rank3_flow: {sweep}  stage={args.stage}  conditions={args.conditions}  noise={args.noise}  runs={rids}")
     for rid in rids:
-        out = os.path.join(args.out_root, sweep, "individual", rid, "flow", f"rank3_{args.stage}")
+        out = os.path.join(args.out_root, sweep, "individual", rid, "flow", f"rank3_{args.stage}{suffix}")
         try:
             k = render_run(args.sweep_dir, rid, out, args.conditions, args.xlim, args.n_seeds,
-                           args.stage, args.slice_mode, args.slow_tol, args.marg)
-            print(f"  {rid}: {k} fixed points  ->  {out}.pdf")
+                           args.stage, args.slice_mode, args.slow_tol, args.marg, use_run_noise=args.noise)
+            print(f"  {rid}: {k} fixed points  ->  {out}.png")
         except Exception as e:
             print(f"  {rid}: ERROR {e}")
 

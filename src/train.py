@@ -785,7 +785,7 @@ class UnifiedLoss(nn.Module):
                  gng_decay_weight: float = 1.0, pair_decay_weight: float = 1.0,
                  rwd_go_weight: float = 1.0, rwd_nogo_weight: float = 1.0,
                  rwd_nogo_onesided: bool = False, rwd_nogo_l1: bool = False,
-                 rwd_keep_go_hinge: bool = False,
+                 rwd_keep_go_hinge: bool = False, decay_onesided: bool = False,
                  mem_weight: float = 1.0, bl_weight: float = 1.0,
                  nolick_weight: float = 0.0):
         super().__init__()
@@ -804,6 +804,9 @@ class UnifiedLoss(nn.Module):
         # (penalise lick only, no-lick value free); False → pin κ₁² (both sides)
         self.rwd_keep_go_hinge = rwd_keep_go_hinge  # with onesided: KEEP the go +1 hinge (go must
         # lick) instead of dropping it → go-preserving one-sided (avoids the never-lick collapse)
+        self.decay_onesided = decay_onesided        # decay window scored ONE-SIDED at thresh 0 instead
+        # of pin-to-0: go-decay (target −0.5) penalises κ₁>0, nogo-decay (target +0.5) penalises κ₁<0 —
+        # each trace relaxes to rest from its own side (transient decision) rather than being clamped to 0
         self.rwd_nogo_l1   = rwd_nogo_l1            # nogo pin form: True → |κ₁| (L1, NeuroFlame's
         # 0.1·|overlap|), False → κ₁² (L2). L1's constant weak pull is more permissive of a low
         # autonomous well; L2's gradient (2·κ₁) is stiffer the deeper the well sits.
@@ -883,8 +886,22 @@ class UnifiedLoss(nn.Module):
                         rz  = self.masked_mean(nogo_pin, rwd_m & (tgt == 0))                          # nogo pin to 0
                         comp["rwd_go"]   = rgo
                         comp["rwd_nogo"] = rn + rz
+                # One-sided decay: the decay window carries signed MARKERS (go −0.5 / nogo +0.5) instead
+                # of 0. Carve them out of the pin groups and score them one-sided at thresh 0 — go-decay
+                # penalises κ₁>0 (relaxes the go pulse back DOWN), nogo-decay penalises κ₁<0 (relaxes the
+                # nogo trace back UP) — so each decays to rest from its own side (transient decision)
+                # rather than being clamped to exactly 0.
+                dcy_go = dcy_nogo = None
+                if self.decay_onesided:
+                    dcy_go   = post & (tgt == -0.5)
+                    dcy_nogo = post & (tgt ==  0.5)
+                    g_mask = g_mask & ~dcy_go & ~dcy_nogo
+                    p_mask = p_mask & ~dcy_go & ~dcy_nogo
                 gp, gn, gd = self._class_terms(p, tgt, g_mask)
                 pp, pn, pd = self._class_terms(p, tgt, p_mask)
+                if self.decay_onesided:
+                    gd = gd + self.masked_mean(torch.relu(p) ** 2,  dcy_go) \
+                            + self.masked_mean(torch.relu(-p) ** 2, dcy_nogo)
                 comp["gng_pos"], comp["gng_neg"], comp["gng_decay"]    = gp, gn, gd
                 comp["pair_pos"], comp["pair_neg"], comp["pair_decay"] = pp, pn, pd
                 if self.nolick_weight:
