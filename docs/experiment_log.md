@@ -719,4 +719,11 @@ code in the repo) — equivalent to our reduced field for pure low-rank. §22d�
 CLI (rank-2 stages×conditions / rank-3 conditions×3-planes / `--noise`) — integrate REAL trajectories from a
 κ-grid. `plot_sweep --use_sim_field` is a one-step adiabatic map (≈β·analytic), NOT trajectories. Confirms the
 reduced field is the true flow for pure low-rank nets. Companion figs `scratchpad/plot_cue_{targets,inputs}.py`.
-All this session UNCOMMITTED. §22f.
+§22f.
+
+**Infra — flow-code refactor (branch `flow-refactor`).** `src/dynamics.py` (1884 lines) split into a
+layered flow package (`dynamics.py` re-exports for back-compat): `flow_field.py` (shared rank-general
+engine + noise + sim primitives), `flow_fixedpoints.py` (**shared rank-general `find_fixed_points`, scipy
++ brainpy backends**), `flow_rank2.py` / `flow_rank3.py` (analytic rendering by rank), `flow_traj.py`
+(trajectory rendering, rank-general). `rank3_flow.py`/`traj_flow.py` → thin CLIs. All tools verified
+identical output (rank3_flow 12 FPs unchanged). Tool-selection + code map in `docs/analysis.md`.
