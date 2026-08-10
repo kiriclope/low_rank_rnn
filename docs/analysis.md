@@ -26,8 +26,13 @@ exact term (`noise_sigma`), *not* the self-consistent DMFT (`solve_sc_variance`,
 - `flow_fixedpoints.py` — **shared rank-general `find_fixed_points(params, ff, backend="scipy"|"brainpy", …)`**
   (scipy root on the numpy field / brainpy SlowPointFinder on the jax field, `build_jax_field`) +
   `classify_lowrank_fps`; plus the rank-2 `find_all_fixed_points`/`classify_fixed_points` (plot_sweep).
-- `flow_rank2.py` — rank-2 rendering: `plot_stage_stacked_flow` (the `fp_stages` 3×8 portrait) + panels.
-- `flow_rank3.py` — rank-3 rendering: 3 pairwise-plane slices (`render_run`), uses the shared finder.
+- `flow_rank2.py` — rank-2 ANALYTIC rendering: `plot_stage_stacked_flow` (the `fp_stages` 3×8 portrait) + panels.
+- `flow_rank3.py` — rank-3 ANALYTIC rendering: 3 pairwise-plane slices (`render_run`), uses the shared finder.
+- `flow_traj.py` — rank-general TRAJECTORY rendering (`render_run`): integrates real paths from a κ-grid
+  (via `integrate_kappa_trajectories`); split by *method* not rank. CLI: `traj_flow.py`.
+
+The split axis: `flow_rank2`/`flow_rank3` = analytic field portraits (by rank); `flow_traj` = integrated
+trajectories (rank-general). All sit on `flow_field` + `flow_fixedpoints`.
 
 
 
