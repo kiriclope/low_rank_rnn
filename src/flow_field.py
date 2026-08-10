@@ -12,9 +12,21 @@ import scipy.special
 # SINGLE SOURCE OF TRUTH for the input-noise Gaussian-resummation constant c, used by BOTH the numpy
 # field (low_rank_numpy_params → params["noise_compress"]) and the jax field
 # (flow_fixedpoints.build_jax_field). For a Gaussian-CDF φ the input-noise average is exact:
-# ⟨φ(ā+η)⟩ = φ(ā/√(1+c·s²)). Nonlinearities absent here have no exact form → φ'' Taylor fallback.
+# ⟨φ(ā+η)⟩ = φ(ā/√(1+c·s²)). Nonlinearities absent here are handled in _phi_avgs (exact closed form
+# for relu, Gauss-Hermite quadrature otherwise).
 # Keep in sync with the φ definitions in low_rank_numpy_params / build_jax_field's PHI.
 NOISE_COMPRESS = {"lif": 1.0, "erf": 2.0, "lif_sc": 2.0 * np.pi}
+
+
+def _drive_variance(params, noise_sigma):
+    """Per-neuron INPUT-noise variance of the total drive aᵢ = g(Aᵢ(Wᵢx+bᵢ) + (Mκ)ᵢ):
+    with x = x̄ + ξ, ξ~N(0,σ²I), the fluctuation is g·Aᵢ·(Wᵢξ) ⇒ sᵢ² = g²Aᵢ²σ²‖wᵢ‖².
+    Single source of truth — used by the field, the Jacobian and the self-consistent closure.
+    NOTE only the MARGINAL of each aᵢ is needed for ⟨Ψ⟩ = (1/N)Σ nᵢ⟨φ(aᵢ)⟩ (linearity of E), so
+    cross-neuron correlations induced by the shared ξ do NOT enter the mean field."""
+    gain, Wi = params["gain"], params["Wi"]
+    Ai = np.asarray(params["Ai"], dtype=np.float64)
+    return (gain ** 2) * (Ai ** 2) * (float(noise_sigma) ** 2) * np.sum(Wi ** 2, axis=1)
 
 
 def _model_device(model):
@@ -70,9 +82,9 @@ def low_rank_numpy_params(model):
         else float(model.gain) if hasattr(model, "gain") else 1.0
     )
 
-    # phi_pp (φ'') and phi_ppp (φ''') are used ONLY by the noise-corrected mean field
-    # (Ψ_σ = Ψ_0 + ½·(1/N)Σ n_i φ''(a_i) s_i²) and its Jacobian (φ''' term). Where a closed
-    # φ'' isn't provided they default to 0 → noise correction silently off for that nl.
+    # phi_pp (φ'') / phi_ppp (φ''') are retained for diagnostics only — the noise mean field now goes
+    # through _phi_avgs (exact where a closed form exists, Gauss-Hermite otherwise), NOT the 2-term
+    # Taylor, which breaks once ½Δ is O(1) (see ring_lowerplane_log §22b).
     nl_str = getattr(model, "nonlinearity_str", "tanh")
     phi_pp_np = phi_ppp_np = lambda u: np.zeros_like(np.asarray(u, dtype=np.float64))
     # noise_compress c comes from the single source of truth NOISE_COMPRESS (module level) — for a
@@ -82,7 +94,8 @@ def low_rank_numpy_params(model):
     if nl_str == "relu":
         phi_np       = lambda u: np.maximum(u, 0.0)
         phi_prime_np = lambda u: (u > 0).astype(np.float64)
-        # φ''=0 a.e. (kink at 0 ignored) → relu is noise-transparent at leading order
+        # NB relu is NOT noise-transparent: φ'' is a DELTA at 0, not 0. The exact Gaussian average
+        # ⟨relu(ā+η)⟩ = ā·Φ(ā/√Δ)+√Δ·N(ā/√Δ) is handled explicitly in _phi_avgs (nl_name=="relu").
     elif nl_str == "softplus":
         # numerically stable: softplus(u) = u for u>>0, log1p(exp(u)) otherwise
         _sig         = lambda u: 1.0 / (1.0 + np.exp(-np.clip(u, -20.0, 20.0)))
@@ -158,6 +171,7 @@ def low_rank_numpy_params(model):
         "phi_pp":    phi_pp_np,
         "phi_ppp":   phi_ppp_np,
         "noise_compress": noise_compress,
+        "nl_name":  nl_str,
     }
 
 
@@ -196,12 +210,8 @@ def low_rank_field_np(params, kappa, ff_input=None, include_beta=False, noise_si
     ub  = params.get("unit_bias", 0.0)
     h   = kappa_flat @ M.T                                  # (B, N)
 
-    phi_pp    = params.get("phi_pp")
-    compress  = params.get("noise_compress")
-    use_noise = bool(noise_sigma) and noise_sigma > 0.0 and (compress is not None or phi_pp is not None)
-    s2    = ((gain ** 2) * (np.asarray(Ai, dtype=np.float64) ** 2)
-             * (float(noise_sigma) ** 2) * np.sum(Wi ** 2, axis=1)) if use_noise else None   # (N,)
-    denom = np.sqrt(1.0 + compress * s2) if (use_noise and compress is not None) else None    # (N,)
+    use_noise = bool(noise_sigma) and noise_sigma > 0.0
+    s2 = _drive_variance(params, noise_sigma) if use_noise else None      # (N,) per-neuron Δᵢ
 
     psi = np.zeros((kappa_flat.shape[0], rank), dtype=np.float64)
     for xk in ff_input:                                     # average φ over the K input draws
@@ -209,10 +219,9 @@ def low_rank_field_np(params, kappa, ff_input=None, include_beta=False, noise_si
         a   = gain * (input_drive[None, :] + h) + ub        # (B, N) full drive
         if not use_noise:
             psi += phi(a) @ Nvec / M.shape[0]
-        elif denom is not None:                             # EXACT Gaussian resummation: φ(a/√(1+c·s²))
-            psi += phi(a / denom[None, :]) @ Nvec / M.shape[0]
-        else:                                               # leading Taylor: φ(a) + ½φ''(a)s²
-            psi += (phi(a) + 0.5 * phi_pp(a) * s2[None, :]) @ Nvec / M.shape[0]
+        else:                        # ⟨φ⟩ via the SINGLE implementation (_phi_avgs): exact where a
+            phi_bar, _ = _phi_avgs(params, a, s2[None, :])   # closed form exists, else quadrature
+            psi += phi_bar @ Nvec / M.shape[0]
     psi /= ff_input.shape[0]
 
     field = psi - kappa_flat
@@ -224,9 +233,10 @@ def low_rank_field_np(params, kappa, ff_input=None, include_beta=False, noise_si
 def low_rank_jacobian_flow_np(params, kappa, ff_input=None, noise_sigma=0.0):
     """Jacobian of F(κ; x) = Ψ(κ; x) - κ.
 
-    noise_sigma > 0 matches the noise-corrected field: the effective per-neuron slope becomes
-    φ'(aᵢ) + ½φ'''(aᵢ)sᵢ², sᵢ² = g²Aᵢ²σ²‖wᵢ‖². For lif φ'''(0)<0, so noise LOWERS the effective
-    gain — which is what can turn a bistable well marginal/unstable (saddle-node)."""
+    noise_sigma > 0 matches the noise-corrected field exactly: since ∂⟨φ(a+η)⟩/∂a = ⟨φ'(a+η)⟩, the
+    per-neuron slope is the SAME Gaussian average ⟨φ'⟩ that _phi_avgs returns for the field. For a
+    Gaussian-CDF φ that is φ'(a/√(1+cs²))/√(1+cs²) — noise LOWERS the effective gain, which is what
+    can turn a bistable well marginal/unstable (saddle-node)."""
     M, Nvec = params["M"], params["Nvec"]
     Wi, bi  = params["Wi"], params["bi"]
     Ai, gain= params["Ai"], params["gain"]
@@ -239,23 +249,16 @@ def low_rank_jacobian_flow_np(params, kappa, ff_input=None, noise_sigma=0.0):
 
     phi_prime_fn = params.get("phi_prime", lambda u: 1.0 - np.tanh(u) ** 2)
     ub          = params.get("unit_bias", 0.0)
-    phi_ppp   = params.get("phi_ppp")
-    phi_fn    = params.get("phi", np.tanh)
-    compress  = params.get("noise_compress")
-    use_noise = bool(noise_sigma) and noise_sigma > 0.0 and (compress is not None or phi_ppp is not None)
-    s2    = ((gain ** 2) * (np.asarray(Ai, dtype=np.float64) ** 2)
-             * (float(noise_sigma) ** 2) * np.sum(Wi ** 2, axis=1)) if use_noise else None
-    denom = np.sqrt(1.0 + compress * s2) if (use_noise and compress is not None) else None
+    use_noise = bool(noise_sigma) and noise_sigma > 0.0
+    s2 = _drive_variance(params, noise_sigma) if use_noise else None
     J = np.zeros((M.shape[1], M.shape[1]), dtype=np.float64)
     for xk in ff_input:
         input_drive = Ai * (xk @ Wi.T + bi)
         u           = gain * (input_drive + M @ kappa) + ub
         if not use_noise:
             slope = phi_prime_fn(u)
-        elif denom is not None:                              # d/dκ φ(a/√(1+cs²)) = φ'(a/·)·(gM)/√(1+cs²)
-            slope = phi_prime_fn(u / denom) / denom
-        else:                                                # φ' → φ' + ½φ'''·s²
-            slope = phi_prime_fn(u) + 0.5 * phi_ppp(u) * s2
+        else:                        # ⟨φ'⟩ = ∂⟨φ⟩/∂a — same single implementation as the field
+            _, slope = _phi_avgs(params, u, s2)
         J += Nvec.T @ (slope[:, None] * (gain * M)) / M.shape[0]
     J /= ff_input.shape[0]
     J -= np.eye(M.shape[1])
@@ -285,8 +288,17 @@ def low_rank_jacobian_map_np(params, kappa, ff_input=None):
 
 def _phi_avgs(params, a_bar, Delta):
     """Gaussian averages ⟨φ(ā+√Δ z)⟩ and ⟨φ'(ā+√Δ z)⟩ (z~N(0,1)), per element of a_bar/Delta.
-    Gaussian-CDF φ (lif/erf/lif_sc, noise_compress=c): EXACT closed form φ̄=φ(ā/√(1+cΔ)),
-    φ̄'=φ'(ā/√(1+cΔ))/√(1+cΔ). Otherwise (tanh, …): probabilists' Gauss-Hermite quadrature."""
+    THE single implementation of the input-noise average — used by both the production field
+    (low_rank_field_np / low_rank_jacobian_flow_np) and the self-consistent path. Three regimes:
+
+      * Gaussian-CDF φ (lif/erf/lif_sc, NOISE_COMPRESS c): EXACT for all Δ —
+        φ̄ = φ(ā/√(1+cΔ)),  φ̄' = φ'(ā/√(1+cΔ))/√(1+cΔ).
+      * relu: EXACT closed form — φ̄ = ā·Φ(ā/√Δ) + √Δ·N(ā/√Δ),  φ̄' = Φ(ā/√Δ).  (relu's φ'' is a
+        DELTA at 0, not 0: the "φ''=0 a.e." reading makes relu look noise-transparent, which is wrong
+        — ⟨relu(η)⟩ = √Δ/√(2π) ≠ 0.)
+      * everything else (tanh, softplus, elu, tanh_asym): probabilists' Gauss-Hermite quadrature
+        (NOT the 2-term φ'' Taylor, which breaks once ½Δ is O(1) — see ring_lowerplane_log §22b).
+    """
     phi   = params.get("phi", np.tanh)
     phip  = params.get("phi_prime", lambda u: 1.0 - np.tanh(u) ** 2)
     c     = params.get("noise_compress")
@@ -295,6 +307,12 @@ def _phi_avgs(params, a_bar, Delta):
         comp = np.sqrt(1.0 + c * Delta)
         ae   = a_bar / comp
         return phi(ae), phip(ae) / comp
+    if params.get("nl_name") == "relu":
+        sd = np.sqrt(np.maximum(Delta, 1e-300))
+        z  = a_bar / sd
+        Phi = 0.5 * (1.0 + scipy.special.erf(z / np.sqrt(2.0)))
+        pdf = np.exp(-0.5 * z ** 2) / np.sqrt(2.0 * np.pi)
+        return a_bar * Phi + sd * pdf, Phi
     nodes, wts = np.polynomial.hermite_e.hermegauss(15)     # ∫f(x)e^{-x²/2}dx = Σ w f(x)
     wts = wts / np.sqrt(2.0 * np.pi)
     sd  = np.sqrt(Delta)
@@ -317,7 +335,7 @@ def solve_sc_variance(params, a_bar, noise_sigma, n_iter=80, tol=1e-8, damping=0
     if Ai.ndim == 0:
         Ai = np.full(N, float(Ai))
     sig2   = float(noise_sigma) ** 2
-    s2     = (gain ** 2) * (Ai ** 2) * sig2 * np.sum(Wi ** 2, axis=1)     # (N,) input-direct variance
+    s2     = _drive_variance(params, noise_sigma)                         # (N,) input-direct variance
     B      = a_bar.shape[0]
     Delta  = np.tile(s2, (B, 1))
     I_R    = np.eye(R)
