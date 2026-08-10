@@ -1223,3 +1223,78 @@ top of a positive rule floor) that confirms the framing and quantifies how far t
 become quantitative (§22d); (b) a flow-fields *skill* was scoped but not built — the doc map now lives in
 `docs/analysis.md`; (c) the across-seed `fp_meanflow` published for sweep_r2go was rendered from ONE seed
 (verification run) so its agreement background is meaningless — re-render on the full 8-run sweep if wanted.
+
+## 23. Session 2026-08-10 — ★★ SIGN-BASED supervision: the rule wells DISSOLVE (not pushed — gone)
+
+### 23a. The reframing (Leon): only 2 wells, and where the 4 came from
+Target portrait restated: the autonomous landscape should have **exactly TWO wells — the A/B sample
+memories — both κ₁<0**; go/nogo/lick must be input-driven/transient, never autonomous. The 4-well
+portraits of §22 (2 up / 2 down) are *supervised into existence* by amplitude demands sitting on the
+shared rank-2 lick axis: (i) the windowed ±1 **pre-cue holds** (dim 1 IS the readout in rank-2 — the
+up/down copies are literally the targets); (ii) the go→+1 response and nogo≤−1 delay hinge (park at
+amplitude for the 1 s rule→cue gap ⇒ autonomous supercritical κ₁); (iii) the DPA **two-sided 0-pin**
+on the readout from t=0 to test-on (`tasks.py`, clamps the sample wells ON the line). The historical
+**spiraling** of subcritical attempts is the same conflict: reach ±1 (amplify) AND be transient
+(contract) is only jointly satisfiable by a complex eigenpair — rotation. Remove the amplitude
+demands and pure contraction satisfies the loss: no spiral, no parking. XOR/counter-cue task
+redesigns were considered and REJECTED (they dissolve the go/nogo asymmetry under study).
+
+### 23b. First launch (`sweep_r2sign`, thresholds 0/0) — two calibration traps
+go_hinge_thresh=nogo_hinge_thresh=0 (pure sign) + response_in_cue on the r2go10 base. Two traps:
+(1) hinges at exactly 0 have a **degenerate optimum κ₁≡0** (both sides zero-loss at 0) broken only
+by noise tails — and the realized κ fluctuation is FDT-filtered well below σ_eff, so the drive is
+weak; (2) sign hinges shrink the loss scale ~25× ⇒ **stop_loss=0.05 was already met at GNG start**
+— GNG stopped at ~5 epochs (16 s), Dual ~20 (95 s). go learned instantly (0.96+, the additive cue
+push), **nogo never got its margin** (0.38–0.64), dual_gng≈0.56. Portraits: sample wells clamped AT
+κ₁=0 (the DPA pin, (iii) above) + a (0,±2) autonomous **pairing** attractor pair — built by DPA's
+±1 pairing hinge on the same κ₁ axis. Lesson: in rank-2 every ±amplitude anywhere on the readout
+recruits autonomous κ₁ structure; and loss↔accuracy decouple near 0 (margin² pricing).
+
+### 23c. ★ The sign2 calibration (Leon): margin on the HOLD, sign on the RESPONSE, delay FREE
+`sweep_r2sign2` arm `sign2` = r2go10 base + response_in_cue +
+- **holds** (pre-cue rule memory): go ≥ **+0.25** / nogo ≤ **−0.25** (`go_hinge_thresh=0.25`,
+  `nogo_hinge_thresh=−0.25`) — the 1 s rule trace must carry a real ±ε separation (ε≈⅔σ_eff);
+  kills the κ₁≡0 optimum without ±1 parking (a ±0.25 decaying trace is subcritically feasible).
+- **response** (cue ON): go ≥ +0.25 strict (a lick must clear threshold); nogo ≤ **0** one-sided,
+  FREE below (`rwd_nogo_onesided` + NEW `gng_rwd_onesided` so it applies in the GNG stage too —
+  the legacy GNG-stage two-sided nogo pin is gone; response-side depth left fully emergent).
+- **DPA delay**: NEW `dpa_prelick_free=True` — readout supervision only pre-sample; sample→test
+  fully FREE (Leon: no delay penalty at all; wells placed by pairing training alone).
+- `stop_loss=0.005` (≈1.5–2σ margins at the sign scale). Pairing & κ₀ memory keep ±1
+  (`dpa_hinge_thresh=1`).
+Infra (all legacy-bit-identical, smoke-tested `scratchpad smoke_sign{,2}.py`): `UnifiedLoss` gained
+**`gng_thresh`/`gng_neg_thresh`** — gng-side hinge thresholds split from `thresh` (pair+mem), wired
+from go_hinge_thresh/−nogo_hinge_thresh (without the split, sign-gng would silently relax the
+pairing/κ₀ amplitude supervision — caught in review); eval decision boundary now follows the loss:
+`(th_go + max(nogo_target, nogo_hinge_thresh))/2` (legacy 0.5/0.0 preserved; sign2 → 0.125).
+
+### 23d. ★★ RESULT — structure achieved; wells straddle the line (the measured cost of the free delay)
+Task (4/4 seeds, full budgets): dpa ≥0.995, **after_gng/dpa ≥0.994**, gng nogo ≥0.996 after GNG,
+dual_gng 0.87–0.97 (s1 weakest). Geometry (expert autonomous field; scipy FPs + direct-field
+verification + Jacobian classification):
+
+| seed | #att | sample wells (κ₀,κ₁) | extras | spirals | dual_gng |
+|---|---|---|---|---|---|
+| s0 | **2** | (−1.39,−0.17) (+1.34,+0.19) | — | none | 0.955 |
+| s1 | 4 | (−1.40,−0.13) (+1.38,+0.20) | 2 weak central | none | 0.872 |
+| s2 | **2** | (−1.35,−0.09) (+1.27,+0.28) | — | none | 0.944 |
+| s3 | 3 | (−1.25,+0.34) (+1.28,+0.30) | 1 weak central (spiral) | wells clean | 0.966 |
+
+Three structural firsts, all 4/4: (1) **NO autonomous rule attractors** — the up-copy problem is
+not pushed down, it's *dissolved*; the rule is a genuine transient. (2) The DPA-stage autonomous
+pairing pair (0,±2) **dissolves during Dual** (response_in_cue reads pairing test-ON — no parking
+needed). (3) **Zero spirals at wells** (real negative flow eigs — the amplify-vs-contract conflict
+resolved). Noise field (σ_eff≈0.37): everything survives, wells pulled in to ≈±1.1, no
+annihilation. **The gap:** wells sit at κ₁ ∈ [−0.17,+0.34] — STRADDLING the line, not below.
+With the delay unsupervised nothing selects the side; free-delay placement is line-centered ±0.25
+(s3 both above). **Open decision:** the below-line pressure — one-sided delay hinge (the §17h
+family, now with a clean 2-well substrate) vs noise↑ vs `attention_scale` — is the single
+remaining step to the goal portrait.
+
+### 23e. Tool caveats found this session
+(a) `bifurcation_probe`'s **brainpy pass returned spurious FPs** on these runs (claimed wells at
+κ₀≈±2.8 where direct evaluation gives |F|≈1.4) — use the scipy finder (`find_all_fixed_points`)
+and verify |F| directly; probe needs a fix. (b) `plot_sweep --field_input_noise` **overwrites**
+`fp_stages.png` (same filename as the clean render) — rename to `fp_stages_noise.*` (done for
+sweep_r2sign2). Figures: `rnn/sweep_r2sign2/{flow(+_noise),traj,accuracy,targets}` +
+`rnn/sweep_r2sign/*` (the failed-launch reference).

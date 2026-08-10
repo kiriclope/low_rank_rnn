@@ -751,6 +751,11 @@ class UnifiedLoss(nn.Module):
          0  → pin              p²  (MSE-to-0)
         NaN → free             (optional nolick: relu(p)² on free decision windows)
 
+    gng_thresh (None → thresh) overrides the threshold for the GNG-side terms only (pre-cue
+    go/nogo holds + rwd response hinges); pair and memory terms always use `thresh`. gng_thresh=0
+    = SIGN-based go/nogo (no amplitude demand → nothing recruits autonomous/supercritical κ₁;
+    margins emerge at the noise scale). See ring_lowerplane_log §23.
+
     Every term is averaged over its OWN mask (short expression windows are never diluted by
     long tails). Timing knowledge is deliberately minimal — exactly two splits:
       • pre-sample BASELINE (t < n_on[0], target 0): its own pinned term `bl`, SEPARATE from
@@ -779,6 +784,8 @@ class UnifiedLoss(nn.Module):
     """
 
     def __init__(self, timing: TaskTiming, thresh: float = 1.0, readout_index: int = -1,
+                 gng_thresh: float | None = None,
+                 gng_neg_thresh: float | None = None,
                  pair_start: int | None = None,
                  rwd_window: tuple[int, int] | None = None,
                  gng_weight: float = 1.0, pair_weight: float = 1.0,
@@ -791,7 +798,14 @@ class UnifiedLoss(nn.Module):
         super().__init__()
         self.timing        = timing
         self.thresh        = thresh
-        self.readout_index = readout_index
+        # gng-side hinge thresholds (pre-cue go/nogo holds + rwd response hinges). None → thresh.
+        # gng_thresh = the GO/pos side (p ≥ +gng_thresh); gng_neg_thresh = the NOGO/neg side
+        # (p ≤ −gng_neg_thresh, free below; None → gng_thresh). Asymmetric sign design (Leon):
+        # go strictly positive at +ε, nogo at 0 — the lick must clear threshold, the no-lick side
+        # only must not lick, its depth stays fully emergent. Pair + memory always use `thresh`.
+        self.gng_thresh     = thresh if gng_thresh is None else gng_thresh
+        self.gng_neg_thresh = self.gng_thresh if gng_neg_thresh is None else gng_neg_thresh
+        self.readout_index  = readout_index
         self.pair_start    = pair_start
         self.rwd_window    = rwd_window
         self.gng_weight    = gng_weight
@@ -820,11 +834,12 @@ class UnifiedLoss(nn.Module):
         mask = mask.to(dtype=loss.dtype)
         return (loss * mask).sum() / mask.sum().clamp_min(1.0)
 
-    def _class_terms(self, p, tgt, mask):
-        """(pos, neg, decay) — each its own masked_mean over `mask` ∩ its value class."""
-        pos = self.masked_mean(torch.relu(self.thresh - p) ** 2, mask & (tgt > 0))
-        neg = self.masked_mean(torch.relu(p + self.thresh) ** 2, mask & (tgt < 0))
-        dec = self.masked_mean(p ** 2,                           mask & (tgt == 0))
+    def _class_terms(self, p, tgt, mask, pos_thresh, neg_thresh):
+        """(pos, neg, decay) — each its own masked_mean over `mask` ∩ its value class.
+        pos: p ≥ +pos_thresh (free above); neg: p ≤ −neg_thresh (free below); 0: pinned."""
+        pos = self.masked_mean(torch.relu(pos_thresh - p) ** 2, mask & (tgt > 0))
+        neg = self.masked_mean(torch.relu(p + neg_thresh) ** 2, mask & (tgt < 0))
+        dec = self.masked_mean(p ** 2,                          mask & (tgt == 0))
         return pos, neg, dec
 
     def forward(self, y_pred: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -875,13 +890,13 @@ class UnifiedLoss(nn.Module):
                         # one-sided; under the shared response cue that forces the nogo memory below the
                         # lick line (emergent well-push). rwd_keep_go_hinge=False drops it (go free too
                         # → the never-lick collapse).
-                        comp["rwd_go"]   = (self.masked_mean(torch.relu(self.thresh - p) ** 2,
+                        comp["rwd_go"]   = (self.masked_mean(torch.relu(self.gng_thresh - p) ** 2,
                                                              rwd_m & (tgt > 0))
                                             if self.rwd_keep_go_hinge else zero_f)
                         comp["rwd_nogo"] = self.masked_mean(torch.relu(p) ** 2, rwd_m & (tgt == 0))
                     else:
-                        rgo = self.masked_mean(torch.relu(self.thresh - p) ** 2, rwd_m & (tgt > 0))  # go +1 hinge
-                        rn  = self.masked_mean(torch.relu(p + self.thresh) ** 2, rwd_m & (tgt < 0))  # nogo −1 hinge
+                        rgo = self.masked_mean(torch.relu(self.gng_thresh - p) ** 2, rwd_m & (tgt > 0))      # go +1 hinge
+                        rn  = self.masked_mean(torch.relu(p + self.gng_neg_thresh) ** 2, rwd_m & (tgt < 0))  # nogo −1 hinge (≤ −neg_th, free below)
                         nogo_pin = torch.abs(p) if self.rwd_nogo_l1 else p ** 2                       # L1 |κ₁| or L2 κ₁²
                         rz  = self.masked_mean(nogo_pin, rwd_m & (tgt == 0))                          # nogo pin to 0
                         comp["rwd_go"]   = rgo
@@ -897,8 +912,8 @@ class UnifiedLoss(nn.Module):
                     dcy_nogo = post & (tgt ==  0.5)
                     g_mask = g_mask & ~dcy_go & ~dcy_nogo
                     p_mask = p_mask & ~dcy_go & ~dcy_nogo
-                gp, gn, gd = self._class_terms(p, tgt, g_mask)
-                pp, pn, pd = self._class_terms(p, tgt, p_mask)
+                gp, gn, gd = self._class_terms(p, tgt, g_mask, self.gng_thresh, self.gng_neg_thresh)
+                pp, pn, pd = self._class_terms(p, tgt, p_mask, self.thresh, self.thresh)
                 if self.decay_onesided:
                     gd = gd + self.masked_mean(torch.relu(p) ** 2,  dcy_go) \
                             + self.masked_mean(torch.relu(-p) ** 2, dcy_nogo)
@@ -913,7 +928,7 @@ class UnifiedLoss(nn.Module):
                     pfree = torch.where(freem, pred, torch.zeros_like(pred))
                     comp["nolick"] = self.masked_mean(torch.relu(pfree) ** 2, freem)
             else:
-                mp, mn, md = self._class_terms(p, tgt, post)
+                mp, mn, md = self._class_terms(p, tgt, post, self.thresh, self.thresh)
                 comp["mem_pos"]   = comp["mem_pos"]   + mp
                 comp["mem_neg"]   = comp["mem_neg"]   + mn
                 comp["mem_decay"] = comp["mem_decay"] + md

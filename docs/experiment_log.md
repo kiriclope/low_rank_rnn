@@ -740,3 +740,39 @@ engine + noise + sim primitives), `flow_fixedpoints.py` (**shared rank-general `
 identical output (rank3_flow 12 FPs unchanged). Tool-selection + code map in `docs/analysis.md`.
 `plot_sweep --field_input_noise` rewired to the analytic term (8.2× faster, exact; `--field_noise_mc`
 keeps the old estimator).
+
+## 2026-08-05 — noise ladder + tf-arm foundations (BACKFILL, logged 2026-08-10)
+
+Previously unlogged sweeps (results on disk, referenced by §21–§22 but never written up):
+- **`sweep_noise`/`sweep_noise_hi` (nzA5/7/10/15 — pure one-sided nogo, noise 0.5–1.5):**
+  **never-lick collapse 16/16** (dual_go 0.00–0.09, dual_gng≈0.50) at EVERY noise level —
+  confirms §21's prediction; one-sided without the go hinge is unusable.
+- **`sweep_noise_go`/`_hi` (nzB — + `rwd_keep_go_hinge`):** noise 0.5/0.75 **8/8 perfect**;
+  1.0 solves; 1.5 starts eroding DPA (0.894–0.976, s2 nogo 0.679) ⇒ **noise=1.0 became the §22
+  base** (margin grows with σ until DPA pays).
+- **`sweep_noise_go_decay` (nzBd):** mostly fine. **`sweep_noise_go_odecay` (nzBo, ONE-SIDED
+  decay): 3/8 seeds lose DPA entirely (≈0.50)** — the rank-2 decay tightrope measured; this is
+  the empirical case for §22g route-1 living in rank-3. `sweep_decayw` (nzBw 0.25/0.5): 7/8 fine.
+- **`sweep_lif_tf` (tf_1s/tf_gm/tf_ngt/tf_norwd)** — the tf-arm recipe §22 builds on — and
+  **`sweep_uni_random`**: results predate the 2026-08-05 DPA-metric fix, their dpa≈0.47–0.53 rows
+  are the §21 metric BUG, not real failures; geometry unscored. tf_ngt = nogo_target=−1 @ noise
+  0.25 (no response_in_cue/nolick — superseded by the §23 sign design).
+
+## 2026-08-10 — SIGN-based hinges: `sweep_r2sign` (failed calibration) → ★★ `sweep_r2sign2`
+
+**`sweep_r2sign` (arm sign: go/nogo hinge thresholds 0/0 + response_in_cue on r2go10, 4 seeds):**
+sign hinges shrink the loss scale ~25× ⇒ `stop_loss=0.05` already met at GNG start — GNG ~5 epochs,
+Dual ~20; go instant (0.96+) but nogo 0.38–0.64, dual_gng≈0.56. Also exposed: the DPA delay's
+two-sided 0-pin clamps the sample wells ON the line, and DPA's ±1 pairing hinge builds an
+autonomous (0,±2) κ₁ attractor pair. KEEP for reference; superseded by sign2.
+
+**★★ `sweep_r2sign2` (arm sign2, 4 seeds, full detail `ring_lowerplane_log.md` §23):** holds
+go≥+0.25/nogo≤−0.25, response go≥+0.25 / nogo≤0 one-sided (NEW `gng_rwd_onesided`), DPA delay
+FREE (NEW `dpa_prelick_free`), `stop_loss=0.005`; UnifiedLoss `gng_thresh`/`gng_neg_thresh` split
+(pair/κ₀ keep ±1), eval boundary follows the loss. **RESULT: the rule wells DISSOLVE (4/4 — rule
+= genuine transient, no autonomous rule attractors), the DPA pairing pair dissolves in Dual, zero
+spirals; s0/s2 = EXACTLY 2 attractors.** Task: dpa≥0.995, after_gng/dpa≥0.994, nogo≥0.996 after
+GNG, dual_gng 0.87–0.97. **Wells straddle the line (κ₁ −0.17…+0.34)** — the free delay provides
+no side-selection; the below-line pressure (one-sided delay hinge / noise↑ / attention_scale) is
+the open decision. ⚠ tools: bifurcation_probe brainpy pass gave spurious FPs here (use scipy +
+direct |F| check); `plot_sweep --field_input_noise` overwrites `fp_stages.png` (renamed `_noise`).

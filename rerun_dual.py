@@ -83,7 +83,9 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
         gng = _gng_accuracy_by_type(model, gng_timing, config.input_size, noise=noise, device=device,
                                     target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                     cue_scale=config.cue_scale, nogo_target=config.nogo_target,
-                                    go_on_rwd_input=config.go_on_rwd_input)
+                                    go_on_rwd_input=config.go_on_rwd_input,
+                                    go_hinge_thresh=config.go_hinge_thresh,
+                                    nogo_hinge_thresh=config.nogo_hinge_thresh)
         print(f"[{rid}]   {label}: "
               f"dpa={dpa['overall']:.3f} (pair={dpa['pair']:.3f} unpair={dpa['unpair']:.3f})  "
               f"gng={gng['overall']:.3f} (go={gng['go']:.3f} nogo={gng['nogo']:.3f})", flush=True)
@@ -145,6 +147,7 @@ def rerun_dual_single(config: RunConfig, device: str, out_dir: str, naive_dir: s
         target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
         cue_scale=config.cue_scale, nogo_target=config.nogo_target,
         go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale,
+        go_hinge_thresh=config.go_hinge_thresh, nogo_hinge_thresh=config.nogo_hinge_thresh,
     )
     elapsed = time.time() - t0
     print(f"[{rid}]  Dual done in {elapsed:.1f}s"

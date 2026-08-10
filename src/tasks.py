@@ -76,6 +76,7 @@ def generate_dpa_trials(
     decay_to_zero: bool = True,
     decay_onesided: bool = False,
     response_in_cue: bool = False,
+    prelick_free: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -102,7 +103,11 @@ def generate_dpa_trials(
     # baseline
     targets[:, :n_on[0], 0] = 0.0 # on kappa 0
     # no ramping
-    targets[:, :n_on[1], -1] = 0.0 # pre-test no-lick on the readout [-1] (κ₁ rank-2, κ₂ rank-3)
+    # prelick_free: pin the readout only PRE-SAMPLE (baseline); sample→test is FREE (NaN) — no
+    # no-lick supervision on the delay at all, the wells sit wherever pairing training puts them.
+    # Default (False): legacy two-sided 0-pin over the whole pre-test span (clamps wells ON the line).
+    _pl = n_on[0] if prelick_free else n_on[1]
+    targets[:, :_pl, -1] = 0.0 # pre-test no-lick on the readout [-1] (κ₁ rank-2, κ₂ rank-3)
 
     # memory
     targets[idx_A, n_on[0]:n_on[1], 0] = 1.0

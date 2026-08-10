@@ -17,6 +17,12 @@ rank-3 or mixed-rank sweep (crashes / `(…,3)`-vs-`(…,2)` broadcast in the su
 `--run_ids`/`--plots`. `plot_sweep --use_sim_field` is a **one-step adiabatic map** (≈β·analytic), NOT
 trajectories — use `traj_flow.py` for real integrated paths. Noise field = the validated input-only
 exact term (`noise_sigma`), *not* the self-consistent DMFT (`solve_sc_variance`, experimental).
+`plot_sweep --field_input_noise` **overwrites `fp_stages.png`** (same filename as the clean render) —
+rename the clean set or the noise set to `fp_stages_noise.*` before publishing both (2026-08-10).
+The **brainpy FP backend can return spurious fixed points** (sweep_r2sign2: claimed wells at κ₀≈±2.8
+where the field is |F|≈1.4) — for load-bearing well tables use the scipy finder
+(`find_all_fixed_points`) and spot-verify |F(κ*)| directly with `low_rank_field_np` (2026-08-10,
+also affects `bifurcation_probe.py` which uses the brainpy pass).
 
 **Where the code lives** (`src/`, split 2026-08; `dynamics.py` re-exports for back-compat):
 - `flow_field.py` — shared rank-general ENGINE: `low_rank_field_np`/`_jacobian_flow_np` (+ `noise_sigma`),
