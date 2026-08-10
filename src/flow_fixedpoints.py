@@ -31,7 +31,7 @@ def merge_roots(roots, residuals, merge_tol=5e-2):
 
 
 def find_all_fixed_points(model, xlim, ylim, ff_input, n_seeds=41,
-                           residual_tol=1e-8, merge_tol=5e-2):
+                           residual_tol=1e-8, merge_tol=5e-2, noise_sigma=0.0):
     if model.m.shape[1] != 2:
         raise ValueError("Fixed-point finding assumes rank == 2.")
 
@@ -39,10 +39,10 @@ def find_all_fixed_points(model, xlim, ylim, ff_input, n_seeds=41,
     ff_input_np = torch.as_tensor(ff_input).detach().cpu().numpy().astype(np.float64)
 
     def fun(k):
-        return low_rank_field_np(params, k, ff_input=ff_input_np).reshape(-1)
+        return low_rank_field_np(params, k, ff_input=ff_input_np, noise_sigma=noise_sigma).reshape(-1)
 
     def jac(k):
-        return low_rank_jacobian_flow_np(params, k, ff_input=ff_input_np)
+        return low_rank_jacobian_flow_np(params, k, ff_input=ff_input_np, noise_sigma=noise_sigma)
 
     roots, residuals = [], []
 
@@ -63,7 +63,7 @@ def find_all_fixed_points(model, xlim, ylim, ff_input, n_seeds=41,
 
 
 def classify_fixed_points(model, fixed_points, ff_input, eig_tol=1e-5,
-                          marginal_tol=2e-3, slow_tol=None):
+                          marginal_tol=2e-3, slow_tol=None, noise_sigma=0.0):
     # marginal_tol default 2e-3 (was 1e-2): the loose band mislabeled genuine but SLOW attractors
     # (map |λ|≈0.99 — shallow subcritical wells, non-saturating φ like relu/softplus) as "marginal",
     # so they were dropped/faint in the flow plots and excluded from well stats. 2e-3 still catches
@@ -88,7 +88,7 @@ def classify_fixed_points(model, fixed_points, ff_input, eig_tol=1e-5,
     labels, eigvals = [], []
 
     for fp in fixed_points:
-        J  = low_rank_jacobian_map_np(params, fp, ff_input=ff_input_np)
+        J  = low_rank_jacobian_map_np(params, fp, ff_input=ff_input_np, noise_sigma=noise_sigma)
         ev = np.linalg.eigvals(J)
         rad = np.abs(ev)
 

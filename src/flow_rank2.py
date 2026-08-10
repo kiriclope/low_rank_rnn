@@ -14,7 +14,7 @@ from .flow_fixedpoints import (
 )
 
 
-def make_vector_field_grid(model, ff_input, xlim, ylim, n_grid=151, include_beta=False):
+def make_vector_field_grid(model, ff_input, xlim, ylim, n_grid=151, include_beta=False, noise_sigma=0.0):
     params       = low_rank_numpy_params(model)
     ff_input_np  = torch.as_tensor(ff_input).detach().cpu().numpy().astype(np.float64)
 
@@ -23,7 +23,8 @@ def make_vector_field_grid(model, ff_input, xlim, ylim, n_grid=151, include_beta
     K1, K2 = np.meshgrid(k1, k2)
     K      = np.stack([K1, K2], axis=-1)
 
-    field  = low_rank_field_np(params, K, ff_input=ff_input_np, include_beta=include_beta)
+    field  = low_rank_field_np(params, K, ff_input=ff_input_np, include_beta=include_beta,
+                               noise_sigma=noise_sigma)
     U, V   = field[..., 0], field[..., 1]
     speed  = np.sqrt(U**2 + V**2)
 
@@ -300,7 +301,7 @@ def _reduce_marginals(pts, labels, mem_thresh=0.6, keep_thresh=0.3):
 def _flow_panel_cache(model, spec, input_size, effective_x, xlim, ylim, n_grid, *,
                       attention_input=False, attention_scale=1.0,
                       use_sim_field=False, sim_n_warmup=0,
-                      field_input_noise=0.0, field_noise_K=16, field_noise_seed=0,
+                      field_input_noise=0.0, field_noise_K=16, field_noise_seed=0, field_noise_mode="analytic",
                       include_beta_in_field=False, n_fp_seeds=41, slow_tol=None,
                       input_threshold=0.35, inactive_atol=0.35):
     """Field + fixed points for ONE frozen-input panel `spec`. Returns (cache, finite-speed-flat).
@@ -321,19 +322,26 @@ def _flow_panel_cache(model, spec, input_size, effective_x, xlim, ylim, n_grid, 
         fp_labels, fp_eigvals = classify_sim_fixed_points(
             model, fixed_points, ff_input, n_warmup=sim_n_warmup, slow_tol=slow_tol)
     else:
-        ff_field = ff_input
+        # Input-noise mean field E_ξ[Ψ]. Default "analytic": the exact per-neuron Gaussian average
+        # (low_rank_field_np(noise_sigma=σ)) — same object as the old 16-draw MC but EXACT (no
+        # sampling error) and ~K× faster. "mc" keeps the old estimator for cross-checking.
+        ff_field, sigma = ff_input, 0.0
         if field_input_noise and field_input_noise > 0.0:
-            gen = torch.Generator(device=device).manual_seed(int(field_noise_seed))
-            nz  = field_input_noise * torch.randn(int(field_noise_K), input_size,
-                                                  generator=gen, device=device, dtype=dtype)
-            ff_field = ff_input[None, :] + nz   # (K, input_size) → noise-averaged field/FPs
+            if field_noise_mode == "mc":
+                gen = torch.Generator(device=device).manual_seed(int(field_noise_seed))
+                nz  = field_input_noise * torch.randn(int(field_noise_K), input_size,
+                                                      generator=gen, device=device, dtype=dtype)
+                ff_field = ff_input[None, :] + nz   # (K, input_size) → MC noise-averaged field/FPs
+            else:
+                sigma = float(field_input_noise)
         K1, K2, U, V, speed, params, ff_input_np = make_vector_field_grid(
             model, ff_input=ff_field, xlim=xlim, ylim=ylim, n_grid=n_grid,
-            include_beta=include_beta_in_field)
+            include_beta=include_beta_in_field, noise_sigma=sigma)
         fixed_points, fixed_residuals = find_all_fixed_points(
             model, xlim=xlim, ylim=ylim, ff_input=ff_field,
-            n_seeds=n_fp_seeds, residual_tol=1e-8, merge_tol=5e-2)
-        fp_labels, fp_eigvals = classify_fixed_points(model, fixed_points, ff_input=ff_field, slow_tol=slow_tol)
+            n_seeds=n_fp_seeds, residual_tol=1e-8, merge_tol=5e-2, noise_sigma=sigma)
+        fp_labels, fp_eigvals = classify_fixed_points(model, fixed_points, ff_input=ff_field,
+                                                      slow_tol=slow_tol, noise_sigma=sigma)
     panel_mask = _canonical_input_mask(
         effective_x, dims=spec["dims"], threshold=input_threshold, atol_inactive=inactive_atol)
     cache = dict(
@@ -446,14 +454,17 @@ def plot_task_flow_fields(
     use_sim_field=False, sim_n_warmup=0, slow_tol=None,
     show_slow_manifold=False, slow_manifold_thresh=0.12,
     attention_input=False, attention_scale=1.0,
-    field_input_noise=0.0, field_noise_K=16, field_noise_seed=0,
+    field_input_noise=0.0, field_noise_K=16, field_noise_seed=0, field_noise_mode="analytic",
 ):
     """Generic low-rank phase portrait for DPA, GNG, and Dual tasks.
 
-    field_input_noise>0 renders the NOISE-AVERAGED field/fixed points: the frozen input for
-    each panel is replicated into field_noise_K draws with N(0, field_input_noise²) added per
-    channel and the field is averaged over them (E_x[Ψ(κ)]). Trajectories/slow-manifold keep
-    the clean input.
+    field_input_noise>0 renders the NOISE-AVERAGED field/fixed points E_ξ[Ψ(κ)] for input noise
+    N(0, field_input_noise²) per channel. field_noise_mode:
+      "analytic" (default) — the EXACT per-neuron Gaussian average (low_rank_field_np(noise_sigma=σ)):
+        no sampling error and ~field_noise_K× faster than the estimator it replaces.
+      "mc" — the legacy estimator: replicate the frozen input into field_noise_K noisy draws and
+        average. Kept for cross-checking; it is the K→∞-convergent approximation of "analytic".
+    Trajectories/slow-manifold keep the clean input.
     """
     task = task.lower()
     if model.m.shape[1] != 2:
@@ -512,6 +523,7 @@ def plot_task_flow_fields(
             attention_input=attention_input, attention_scale=attention_scale,
             use_sim_field=use_sim_field, sim_n_warmup=sim_n_warmup,
             field_input_noise=field_input_noise, field_noise_K=field_noise_K,
+            field_noise_mode=field_noise_mode,
             field_noise_seed=field_noise_seed, include_beta_in_field=include_beta_in_field,
             n_fp_seeds=n_fp_seeds, slow_tol=slow_tol,
             input_threshold=input_threshold, inactive_atol=inactive_atol,
@@ -593,7 +605,7 @@ def plot_stage_stacked_flow(
     attention_input=False, attention_scale=1.0,
     xlim=None, ylim=None, n_grid=151, n_grid_per_unit=None,
     n_fp_seeds=41, slow_tol=None, use_sim_field=False, sim_n_warmup=0,
-    field_input_noise=0.0, figsize_per_panel=3.6, speed_percentile=98,
+    field_input_noise=0.0, field_noise_mode="analytic", figsize_per_panel=3.6, speed_percentile=98,
     include_beta_in_field=False, show_slow_manifold=False, slow_manifold_thresh=0.12,
     dual_mode="conditions", input_threshold=0.35, inactive_atol=0.35, suptitle=None,
 ):
@@ -654,7 +666,8 @@ def plot_stage_stacked_flow(
                 row["model"], spec, row["input_size"], row["effective_x"], xlim, ylim, n_grid,
                 attention_input=attention_input, attention_scale=attention_scale,
                 use_sim_field=use_sim_field, sim_n_warmup=sim_n_warmup,
-                field_input_noise=field_input_noise, include_beta_in_field=include_beta_in_field,
+                field_input_noise=field_input_noise, field_noise_mode=field_noise_mode,
+                include_beta_in_field=include_beta_in_field,
                 n_fp_seeds=n_fp_seeds, slow_tol=slow_tol,
                 input_threshold=input_threshold, inactive_atol=inactive_atol)
             row["caches"].append(cache); all_speeds.append(sp)

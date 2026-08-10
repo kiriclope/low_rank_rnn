@@ -1495,7 +1495,8 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
                     use_sim_field: bool = False, sim_n_warmup: int = 0,
                     auto_xlim: bool = False, n_grid: int = 151, slow_tol=None,
                     show_slow_manifold: bool = False, slow_manifold_thresh: float = 0.12,
-                    field_input_noise: bool = False):
+                    field_input_noise: bool = False,
+                    field_noise_mode: str = "analytic"):
     flow_dir = os.path.join(out_dir, "flow")
     os.makedirs(flow_dir, exist_ok=True)
     cue = meta.cue_on_go_input
@@ -1583,6 +1584,7 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
         use_sim_field   = use_sim_field,
         sim_n_warmup    = sim_n_warmup,
         field_input_noise = meta.noise_sigma() if field_input_noise else 0.0,
+        field_noise_mode  = field_noise_mode,
         slow_tol        = slow_tol,
         show_slow_manifold   = show_slow_manifold,
         slow_manifold_thresh = slow_manifold_thresh,
@@ -1645,6 +1647,10 @@ Examples:
                         help="Trials used for overlaid flow-field trajectories (default 256).")
     parser.add_argument("--show_slow_manifold", action="store_true",
                         help="Overlay the low-velocity ridge (slow manifold / remnant ring) on each flow panel.")
+    parser.add_argument("--field_noise_mc", action="store_true",
+                        help="with --field_input_noise: use the legacy 16-draw Monte-Carlo estimator "
+                             "instead of the exact analytic Gaussian average (slower, sampling error; "
+                             "for cross-checking only)")
     parser.add_argument("--field_input_noise", action="store_true",
                         help="Render the NOISE-AVERAGED flow field/fixed points: freeze each panel's "
                              "input with the run's training input noise (E_x[Ψ(κ)] over 16 draws; "
@@ -1744,7 +1750,8 @@ Examples:
                                 slow_tol=args.slow_tol if args.mark_slow else None,
                                 show_slow_manifold=args.show_slow_manifold,
                                 slow_manifold_thresh=args.slow_manifold_thresh,
-                                field_input_noise=args.field_input_noise)
+                                field_input_noise=args.field_input_noise,
+                                field_noise_mode=("mc" if args.field_noise_mc else "analytic"))
 
 
 if __name__ == "__main__":

@@ -265,9 +265,9 @@ def low_rank_jacobian_flow_np(params, kappa, ff_input=None, noise_sigma=0.0):
     return J
 
 
-def low_rank_jacobian_map_np(params, kappa, ff_input=None):
-    """Jacobian of the discrete map κ⁺ = κ + βF(κ)."""
-    J_flow = low_rank_jacobian_flow_np(params, kappa, ff_input=ff_input)
+def low_rank_jacobian_map_np(params, kappa, ff_input=None, noise_sigma=0.0):
+    """Jacobian of the discrete map κ⁺ = κ + βF(κ). noise_sigma>0 ⇒ input-noise mean field."""
+    J_flow = low_rank_jacobian_flow_np(params, kappa, ff_input=ff_input, noise_sigma=noise_sigma)
     return np.eye(J_flow.shape[0]) + params["beta"] * J_flow
 
 
