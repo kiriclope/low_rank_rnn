@@ -1298,3 +1298,67 @@ and verify |F| directly; probe needs a fix. (b) `plot_sweep --field_input_noise`
 `fp_stages.png` (same filename as the clean render) — rename to `fp_stages_noise.*` (done for
 sweep_r2sign2). Figures: `rnn/sweep_r2sign2/{flow(+_noise),traj,accuracy,targets}` +
 `rnn/sweep_r2sign/*` (the failed-launch reference).
+
+## 24. Session 2026-08-11 — the rwd_window BUG; threshold/weight/softplus dose arcs; ★ the FACTORIZATION
+
+### 24a. ★★ BUG: the response window never followed `response_in_cue` (fixed; invalidates a class of readings)
+The unified loss's rwd carve-out was hardcoded to the LEGACY post-cue slice `(co, co+half)` while
+`response_in_cue` writes the targets IN-cue `(co−half, co)` — disjoint intervals. Consequences for every
+response_in_cue unified run (sign2, th1, first th1w launch): (i) `rwd_go`/`rwd_nogo` computed over an
+EMPTY target set (= 0 forever; `rwd_nogo_weight` inert — caught because w5/w10 same-seed runs trained
+BIT-IDENTICAL for 300 epochs); (ii) the real in-cue nogo 0-targets fell through to the generic class
+rules = **two-sided pin to 0** — the "one-sided free-below" nogo response NEVER RAN before the fix, and
+explains sign2's nogo hovering at +0.05 (pulled toward 0 from below too). FIX (sweep.py, all three
+UnifiedLoss sites): window follows the flag. Diagnosis receipts: `dual_loss_components` rwd_*=0.0;
+post-fix w5-vs-w10 divergence at GNG epoch 10. Sanity rule going forward: a dosed term must show a
+nonzero component, and bit-identical same-seed arms = an inert term.
+
+### 24b. Threshold control `sweep_r2th1` (= sign2 with all hinge thresholds at 1, single-variable):
+parking is CAUSAL in the threshold. Rule wells + spirals RETURN at th=1 (4/4/2/5 attractors, s3 textbook
+up/down copies both sides, 3/4 spiral wells) on the identical free-delay/one-sided base. Behaviourally
+"best" at its own boundary (dual_gng .99) — but that boundary is (1+0)/2=0.5 and at the honest boundary 0
+nogo(≤0)=0.40–0.52: the lenient eval masked near-licks at +0.3. (Pre-fix loss, so nogo was pin-scored.)
+
+### 24c. `sweep_r2th1w` (th1 + rwd_nogo_weight 5/10, POST-fix, from th1 DPA ckpts): behaviour fixed on
+the parking substrate — nogo(≤0)=0.93–0.99 (means −0.18…−0.30), go≥.99, dual_dpa=1.000, spirals mostly
+gone — but geometry = the 270° U again: one side splits into a deep up/down parked pair (down copy at
+κ₁≈−0.6), 3 attractors/run. Depth on an amplitude substrate buys a U (twice now: old decay arms, th1w).
+
+### 24d. `sweep_r2sign2w5` (sign2 + fix + w5, from sign2 DPA ckpts): substrate SURVIVES the pressure —
+exactly 2 attractors, no U, no spirals (3/4 seeds; s3 grows 2 weak extras) and the nogo RESPONSE goes
+below (means −0.10…−0.14, from +0.05). **But the memory wells DO NOT MOVE: still straddling
+(−0.23/+0.27), identical to sign2.** Prediction that cue-coupled response pressure would pull the wells
+was WRONG — the network sinks the state only where scored, via input coupling, leaving the autonomous
+wells untouched.
+
+### 24e. Softplus arc `sweep_r2sp` (hinge_shape="softplus" on ALL hinges, th ±1, gng response moved
+POST-cue via new `gng_rwd_after_cue`, w 1/5, full runs): the BCE-with-logits shape (gradient σ(x) never
+dies on the correct side — the §21 "nothing rewards depth" fix, from the NeuroFlame `BCEOneClassLoss`;
+NOTE the shipped notebook used bce_alpha=1.0 = pure hinge, so the branch was never validated there).
+RESULT: **indiscriminate depth-reward inflates EVERY supervised amplitude into parked structure** —
+memory wells at κ₀≈±2.3–2.9, 4–6 attractors, deep MEMORY-LESS basement states at (κ₀≈0, κ₁≈−3), and at
+w5 DPA breaks (dual_dpa .64–.73). Loss scale note: softplus floor ≈ ln2 per satisfied ±1 class ⇒ "val
+1.8 with dpa=1.0" is CONVERGED; stop_loss is dead in softplus runs. Lesson: the depth incentive must be
+SELECTIVE (no-lick terms only), never on holds/pairing/memory.
+
+### 24f. ★★ THE FACTORIZATION (the arc's one theorem-shaped result) + honest scoreboard
+Across sign2 / th1 / th1w / sign2w5 / spw: (1) **hinge thresholds set the substrate** — ε≈0.25 ⇒
+transient rule, 2 wells; th=1 ⇒ parking/U; softplus-everywhere ⇒ inflation+parking. (2) **response-window
+pressure sets only the in-cue/post-cue state depth** — absorbed by input coupling at any weight/shape/
+placement. (3) **the MEMORY WELLS answer only to DELAY-time forces — and the delay is the one window
+still unsupervised (Leon's "don't penalize", §23).** Honest scoreboard (memory-well κ₁ only; a deep
+κ₀≈0 attractor is NOT pushdown — it carries no sample bit): sign2 −0.17/+0.19 · sign2w5 −0.23/+0.27 ·
+th1/th1w parked +0.2…+0.5 · spw +0.2…+1.3 ⇒ **0 seeds all-down in every arm of the arc.** The only
+both-below result in the project record remains §17h delay-nolick (−0.16, 4/4, shallow). Open decision
+unchanged but now fully cornered: supervise the delay (nolick relu² at 0 / at −ε / selective-softplus)
+or accept straddling.
+
+### 24g. Tooling: `flow_verdict.py` + the `flow-verdict` skill (misreading-proof scoring)
+Repo-root tool: scipy FPs on a ±4.5 box, every root re-verified via |F(κ*)| (the brainpy path returned
+SPURIOUS wells at ±2.8 with |F|≈1.4 — do not trust unverified finders), attractors split into MEMORY
+WELLS (|κ₀|≥0.5, ± pair) vs EXTRAS, per-run ALL-DOWN verdict + spiral count + behaviour at the FIXED
+boundary 0, summary k/N. Skill `.claude/skills/flow-verdict/` encodes the 8 traps of this session
+(basement≠pushdown, behaviour≠geometry, fixed boundary, verify FPs, wide box, figure legend/overwrite
+gotchas, inert-term check, per-seed reporting). Housekeeping: pre-Aug checkpoints deleted (~1.7 GB,
+incl. EISTP refs — Leon's call; §11 no longer re-analysable without retraining), cuda:0-ONLY policy
+(cuda:1 = another user's), gallery server wedged once (restart procedure works).

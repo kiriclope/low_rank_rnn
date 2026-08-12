@@ -159,6 +159,7 @@ def generate_gng_trials(
     gng_response: bool = False,
     decay_onesided: bool = False,
     response_in_cue: bool = False,
+    gng_rwd_after_cue: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -203,7 +204,10 @@ def generate_gng_trials(
         targets[idx_nogo, cu - quarter:cu, 1] = -1.0
         # response_in_cue: score in the last 0.5 s of the response cue (cue ON, r0:r1 = co-half:co) so the
         # lick is cue-DRIVEN; else the legacy 0.5 s window starting at cue-off. Decay follows at r1.
-        r0, r1 = (co - half, co) if response_in_cue else (co, co + half)
+        # gng_rwd_after_cue: response targets POST-cue (nogo pressure lands on the relaxing state
+        # near the well — a nolick-like push) even when response_in_cue times everything else in-cue.
+        _in_cue = response_in_cue and not gng_rwd_after_cue
+        r0, r1 = (co - half, co) if _in_cue else (co, co + half)
         if gng_response:
             # go→go_target, nogo→nogo_target(=0). Scored by the UnifiedLoss rwd group (separately weighted).
             # RESPONSE = readout/lick → dim [-1] (κ₁ in rank-2, κ₂ in rank-3). The RULE stays held on [1].
@@ -254,6 +258,7 @@ def generate_dual_trials(
     gng_memory: bool = True,
     decay_onesided: bool = False,
     response_in_cue: bool = False,
+    gng_rwd_after_cue: bool = False,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -338,7 +343,8 @@ def generate_dual_trials(
 
         # response_in_cue: gng response in the last 0.5 s of the response cue (cue ON, rg0:rg1 = co-half:co)
         # → lick is cue-DRIVEN; else legacy 0.5 s after cue-off. Decay follows at rg1.
-        rg0, rg1 = (co - half, co) if response_in_cue else (co, co + half)
+        _in_cue = response_in_cue and not gng_rwd_after_cue   # see generate_gng_trials
+        rg0, rg1 = (co - half, co) if _in_cue else (co, co + half)
         if gng_response:
             # go→go_target, nogo→nogo_target(=0). Scored by the UnifiedLoss rwd group (separately weighted).
             # RESPONSE = readout/lick → dim [-1] (κ₁ in rank-2, κ₂ in rank-3). The RULE stays held on [1].

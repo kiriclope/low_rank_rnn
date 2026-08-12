@@ -786,6 +786,7 @@ class UnifiedLoss(nn.Module):
     def __init__(self, timing: TaskTiming, thresh: float = 1.0, readout_index: int = -1,
                  gng_thresh: float | None = None,
                  gng_neg_thresh: float | None = None,
+                 hinge_shape: str = "relu2",
                  pair_start: int | None = None,
                  rwd_window: tuple[int, int] | None = None,
                  gng_weight: float = 1.0, pair_weight: float = 1.0,
@@ -805,6 +806,16 @@ class UnifiedLoss(nn.Module):
         # only must not lick, its depth stays fully emergent. Pair + memory always use `thresh`.
         self.gng_thresh     = thresh if gng_thresh is None else gng_thresh
         self.gng_neg_thresh = self.gng_thresh if gng_neg_thresh is None else gng_neg_thresh
+        # hinge_shape: "relu2" (legacy, relu(x)² — zero loss/gradient once satisfied) or
+        # "softplus" (BCE-with-logits form, softplus(x) — the gradient σ(x) NEVER vanishes on the
+        # correct side, so margins/depth keep being rewarded with exponentially decaying force).
+        # Applies to every hinge-class term (pos/neg holds, rwd go/nogo, decay markers, nolick);
+        # 0-target PINS stay p². NOTE softplus has a positive floor at satisfied states, so
+        # stop_loss thresholds tuned for relu2 are effectively disabled.
+        assert hinge_shape in ("relu2", "softplus"), hinge_shape
+        self.hinge_shape    = hinge_shape
+        self._hinge         = ((lambda x: torch.relu(x) ** 2) if hinge_shape == "relu2"
+                               else torch.nn.functional.softplus)
         self.readout_index  = readout_index
         self.pair_start    = pair_start
         self.rwd_window    = rwd_window
@@ -837,9 +848,9 @@ class UnifiedLoss(nn.Module):
     def _class_terms(self, p, tgt, mask, pos_thresh, neg_thresh):
         """(pos, neg, decay) — each its own masked_mean over `mask` ∩ its value class.
         pos: p ≥ +pos_thresh (free above); neg: p ≤ −neg_thresh (free below); 0: pinned."""
-        pos = self.masked_mean(torch.relu(pos_thresh - p) ** 2, mask & (tgt > 0))
-        neg = self.masked_mean(torch.relu(p + neg_thresh) ** 2, mask & (tgt < 0))
-        dec = self.masked_mean(p ** 2,                          mask & (tgt == 0))
+        pos = self.masked_mean(self._hinge(pos_thresh - p), mask & (tgt > 0))
+        neg = self.masked_mean(self._hinge(p + neg_thresh), mask & (tgt < 0))
+        dec = self.masked_mean(p ** 2,                      mask & (tgt == 0))
         return pos, neg, dec
 
     def forward(self, y_pred: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -890,13 +901,13 @@ class UnifiedLoss(nn.Module):
                         # one-sided; under the shared response cue that forces the nogo memory below the
                         # lick line (emergent well-push). rwd_keep_go_hinge=False drops it (go free too
                         # → the never-lick collapse).
-                        comp["rwd_go"]   = (self.masked_mean(torch.relu(self.gng_thresh - p) ** 2,
+                        comp["rwd_go"]   = (self.masked_mean(self._hinge(self.gng_thresh - p),
                                                              rwd_m & (tgt > 0))
                                             if self.rwd_keep_go_hinge else zero_f)
-                        comp["rwd_nogo"] = self.masked_mean(torch.relu(p) ** 2, rwd_m & (tgt == 0))
+                        comp["rwd_nogo"] = self.masked_mean(self._hinge(p), rwd_m & (tgt == 0))
                     else:
-                        rgo = self.masked_mean(torch.relu(self.gng_thresh - p) ** 2, rwd_m & (tgt > 0))      # go +1 hinge
-                        rn  = self.masked_mean(torch.relu(p + self.gng_neg_thresh) ** 2, rwd_m & (tgt < 0))  # nogo −1 hinge (≤ −neg_th, free below)
+                        rgo = self.masked_mean(self._hinge(self.gng_thresh - p), rwd_m & (tgt > 0))      # go +1 hinge
+                        rn  = self.masked_mean(self._hinge(p + self.gng_neg_thresh), rwd_m & (tgt < 0))  # nogo −1 hinge (≤ −neg_th, free below)
                         nogo_pin = torch.abs(p) if self.rwd_nogo_l1 else p ** 2                       # L1 |κ₁| or L2 κ₁²
                         rz  = self.masked_mean(nogo_pin, rwd_m & (tgt == 0))                          # nogo pin to 0
                         comp["rwd_go"]   = rgo
@@ -915,8 +926,8 @@ class UnifiedLoss(nn.Module):
                 gp, gn, gd = self._class_terms(p, tgt, g_mask, self.gng_thresh, self.gng_neg_thresh)
                 pp, pn, pd = self._class_terms(p, tgt, p_mask, self.thresh, self.thresh)
                 if self.decay_onesided:
-                    gd = gd + self.masked_mean(torch.relu(p) ** 2,  dcy_go) \
-                            + self.masked_mean(torch.relu(-p) ** 2, dcy_nogo)
+                    gd = gd + self.masked_mean(self._hinge(p),  dcy_go) \
+                            + self.masked_mean(self._hinge(-p), dcy_nogo)
                 comp["gng_pos"], comp["gng_neg"], comp["gng_decay"]    = gp, gn, gd
                 comp["pair_pos"], comp["pair_neg"], comp["pair_decay"] = pp, pn, pd
                 if self.nolick_weight:
@@ -926,7 +937,7 @@ class UnifiedLoss(nn.Module):
                               (t <  int(self.timing.n_stim_off[0])))[None, :]
                     freem = torch.isfinite(pred) & ~torch.isfinite(target) & ~pre & ~sample
                     pfree = torch.where(freem, pred, torch.zeros_like(pred))
-                    comp["nolick"] = self.masked_mean(torch.relu(pfree) ** 2, freem)
+                    comp["nolick"] = self.masked_mean(self._hinge(pfree), freem)
             else:
                 mp, mn, md = self._class_terms(p, tgt, post, self.thresh, self.thresh)
                 comp["mem_pos"]   = comp["mem_pos"]   + mp

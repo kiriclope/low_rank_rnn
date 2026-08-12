@@ -6,6 +6,7 @@
 
 | want | rank-2 | rank-3 |
 |---|---|---|
+| **SCORE a sweep vs the goal** (memory wells κ₁<0) | **`flow_verdict.py`** (+ `flow-verdict` skill — run this BEFORE interpreting any flow figure) | — |
 | flow portrait (analytic) | `plot_sweep.py --plots flow` | `rank3_flow.py` |
 | + input noise | `plot_sweep.py --field_input_noise` (MC) | `rank3_flow.py --noise` |
 | GENUINE sim trajectories | `traj_flow.py` | `traj_flow.py --stage …` |

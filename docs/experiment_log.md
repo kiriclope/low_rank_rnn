@@ -776,3 +776,24 @@ GNG, dual_gng 0.87–0.97. **Wells straddle the line (κ₁ −0.17…+0.34)** �
 no side-selection; the below-line pressure (one-sided delay hinge / noise↑ / attention_scale) is
 the open decision. ⚠ tools: bifurcation_probe brainpy pass gave spurious FPs here (use scipy +
 direct |F| check); `plot_sweep --field_input_noise` overwrites `fp_stages.png` (renamed `_noise`).
+
+## 2026-08-11 — rwd_window bugfix; th1/th1w/sign2w5/sp arcs (full detail: ring_lowerplane_log §24)
+
+**★ BUG (fixed): unified-loss rwd carve-out never followed `response_in_cue`** — response terms scored
+an empty window; nogo response was two-sided-pinned in ALL prior response_in_cue unified runs (sign2,
+th1, th1w-first-launch; the latter's inert rows preserved as `sweep_r2th1w/results.jsonl.inert-rwdwindow-bug`).
+
+| sweep | config delta | task (boundary 0) | geometry (flow_verdict) |
+|---|---|---|---|
+| `sweep_r2th1` | sign2 w/ ALL hinge th=1 | nogo 0.40–0.52 (+0.3 means) | parking+spirals RETURN (4/4/2/5 att) |
+| `sweep_r2th1w` (w5/w10, post-fix, th1 DPA ckpts) | +rwd_nogo_weight | nogo 0.93–0.99 (−0.2…−0.3) | 270° U (deep parked pair one side) |
+| `sweep_r2sign2w5` (post-fix, sign2 DPA ckpts) | sign2+w5 | nogo 0.87–0.94 (−0.10…−0.14) | 2 wells, no U/spirals — **wells UNMOVED (straddle ±0.25)** |
+| `sweep_r2sp` (spw1/spw5) | softplus ALL hinges, th ±1, `gng_rwd_after_cue` | nogo up to 1.00 (−2.4…−2.9) | INFLATION: 4–6 att, mem κ₀≈±2.5, memory-less basements (0,−3); w5 kills DPA (.64–.73) |
+
+**Factorization (§24f): thresholds→substrate; response pressure→response only; MEMORY WELLS respond
+ONLY to delay-time supervision (still unsupervised by design). 0 seeds all-down in every arm.**
+New flags: `hinge_shape` ("relu2"/"softplus"), `gng_rwd_after_cue`. New tool: `flow_verdict.py` +
+`flow-verdict` skill (canonical scoring; brainpy FP path returns spurious wells — verify |F|).
+Softplus loss floor ≈ ln2/satisfied-class ⇒ val≈1.8 at dpa=1.0 is converged; stop_loss dead there.
+Housekeeping: pre-2026-08 checkpoints deleted (~1.7 GB, incl. EISTP reference runs — retraining needed
+to revisit §11 flows); **cuda:0 ONLY** (cuda:1 belongs to another user; one OOM casualty on 08-10).

@@ -193,6 +193,8 @@ class RunConfig:
     decay_onesided: bool = False          # decay window scored ONE-SIDED at thresh 0 (go-decay penalises κ₁>0, nogo-decay penalises κ₁<0) instead of pin-to-0 — each trace relaxes to rest from its own side (transient decision). Needs windowed_targets + decay_to_zero
     response_in_cue: bool = False         # score the RESPONSE in the last 0.5 s of its triggering stimulus (gng response cue / DPA test) — cue ON — so the lick is input-DRIVEN, not held from memory. Removes the source of the go-rule "up copies". Needs windowed_targets
     dpa_prelick_free: bool = False        # DPA: pin the readout only PRE-SAMPLE; sample→test FREE (no delay no-lick supervision at all — wells placed by pairing training alone). Default False = legacy two-sided 0-pin to test-on
+    hinge_shape: str = "relu2"            # unified loss hinge form: "relu2" (legacy, free once satisfied) or "softplus" (BCE-with-logits — gradient σ(x) never vanishes on the correct side, depth keeps being rewarded). NOTE softplus has a positive loss floor → stop_loss effectively disabled
+    gng_rwd_after_cue: bool = False       # move the GNG RESPONSE window back to POST-cue (co, co+half) even when response_in_cue: the nogo pressure then acts on the RELAXING state near the well (a nolick-like push) instead of the cue-driven transient. Pairing stays per response_in_cue
     dpa_hinge_thresh: float | None = None # if set, DPA ±1 decision uses squared hinge toward ±thresh (DPA + dual stages)
     dpa_zero_thresh: float = 0.0   # DPA ThresholdLoss dead-zone for ZERO targets (baselines); 0 ⇒ MSE-to-0 (pins baseline)
     hinge_squared:   bool = True   # DPA ThresholdLoss: True=relu(...)² (default), False=linear margin relu(...)
@@ -279,13 +281,14 @@ def _dpa_accuracy_by_type(model, timing, input_size, noise, device, n_trials=102
 @torch.no_grad()
 def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
                   cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False, attention_gated=False, attention_scale=1.0,
-                  go_hinge_thresh=None, nogo_hinge_thresh=-1.0):
+                  go_hinge_thresh=None, nogo_hinge_thresh=-1.0, gng_rwd_after_cue=False):
     model.eval()
     X, y = generate_gng_trials(n_trials, timing=timing, input_size=input_size,
                                 noise=noise, target_rank=target_rank, cue_on_go_input=cue_on_go_input,
                                 cue_scale=cue_scale, nogo_target=nogo_target,
                                 go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
-                                attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale)
+                                attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale,
+                                gng_rwd_after_cue=gng_rwd_after_cue)
     pred        = model(X.to(device), y.to(device))[..., -1].cpu()
     stim_epoch  = slice(int(timing.n_stim_on[0]), int(timing.n_stim_off[0]))
     go_ch       = input_size - 1 if go_on_rwd_input else 4
@@ -304,13 +307,14 @@ def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, targe
 @torch.no_grad()
 def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
                            cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False, attention_gated=False, attention_scale=1.0, response_in_cue=False,
-                           go_hinge_thresh=None, nogo_hinge_thresh=-1.0):
+                           go_hinge_thresh=None, nogo_hinge_thresh=-1.0, gng_rwd_after_cue=False):
     model.eval()
     X, y = generate_gng_trials(n_trials, timing=timing, input_size=input_size,
                                 noise=noise, target_rank=target_rank, cue_on_go_input=cue_on_go_input,
                                 cue_scale=cue_scale, nogo_target=nogo_target,
                                 go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
-                                attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale, response_in_cue=response_in_cue)
+                                attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale, response_in_cue=response_in_cue,
+                                gng_rwd_after_cue=gng_rwd_after_cue)
     pred        = model(X.to(device), y.to(device))[..., -1].cpu()
     stim_epoch  = slice(int(timing.n_stim_on[0]), int(timing.n_stim_off[0]))
     go_ch       = input_size - 1 if go_on_rwd_input else 4
@@ -320,7 +324,8 @@ def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=102
     # response_in_cue: read the lick in the last 0.5 s of the response cue (cue ON, before cue-off);
     # else the legacy window from cue-off to trial end.
     co          = int(timing.n_stim_off[1])
-    pred_final  = (pred[:, co - half:co] if response_in_cue else pred[:, co:]).mean(1)
+    _in_cue     = response_in_cue and not gng_rwd_after_cue
+    pred_final  = (pred[:, co - half:co] if _in_cue else pred[:, co:]).mean(1)
     # decision boundary follows the LOSS: go hinge at go_hinge_thresh (1.0 legacy). With sign-based
     # hinges (go_hinge_thresh=0) the boundary is 0 — a σ-scaled go response must not be mis-scored.
     th_go       = go_hinge_thresh if go_hinge_thresh is not None else 1.0
@@ -337,14 +342,14 @@ def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=102
 @torch.no_grad()
 def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, target_rank=1,
                    cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False, attention_gated=False, attention_scale=1.0,
-                   go_target=1.0, response_in_cue=False, go_hinge_thresh=None, nogo_hinge_thresh=-1.0):
+                   go_target=1.0, response_in_cue=False, go_hinge_thresh=None, nogo_hinge_thresh=-1.0, gng_rwd_after_cue=False):
     model.eval()
     X, y, _, condition_names = generate_dual_trials(
         n_trials, timing=timing, input_size=input_size, noise=noise, target_rank=target_rank,
         cue_on_go_input=cue_on_go_input, cue_scale=cue_scale, nogo_target=nogo_target,
         go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
         attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale,
-        response_in_cue=response_in_cue,
+        response_in_cue=response_in_cue, gng_rwd_after_cue=gng_rwd_after_cue,
     )
     pred  = model(X.to(device), y.to(device))[..., -1].cpu()
     names = np.asarray(condition_names).astype(str)
@@ -372,7 +377,7 @@ def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, targ
     # lives, [n_off[2], n_off[2]+½·(test−cue2)]), and score each side by whether it goes to its
     # target — go reaches the go side, nogo reaches ≤ its target — past the go/nogo midpoint.
     # response_in_cue: read in the last 0.5 s of the response cue (cue ON, before cue-off).
-    if response_in_cue:
+    if response_in_cue and not gng_rwd_after_cue:
         rwd_start = int(timing.n_stim_off[2]) - half
         rwd_stop  = int(timing.n_stim_off[2])
     else:
@@ -656,11 +661,16 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     if config.dual_loss == "unified":
         # ONE value-based loss at all three stages (targets carry the semantics). Baseline is its
         # own pinned term; the decision channel splits into separate gng/pair terms at test onset.
-        dpa_criterion = UnifiedLoss(dpa_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg,
+        dpa_criterion = UnifiedLoss(dpa_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
                                     pair_start=int(dpa_timing.n_stim_on[1]), **_uw)
-        gng_criterion = UnifiedLoss(gng_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, pair_start=None,
-                                    rwd_window=(int(gng_timing.n_stim_off[1]),
-                                                int(gng_timing.n_stim_off[1]) + _half_steps), **_uw_gng)
+        # rwd_window follows response_in_cue: targets sit IN-cue (co-half:co) when set, else the
+        # legacy post-cue window. (Fixed 2026-08-10: the window was never shifted, so in-cue nogo
+        # 0-targets fell into the gng group's two-sided PIN and rwd_nogo_weight was inert.)
+        _co_g = int(gng_timing.n_stim_off[1])
+        _ric_g = config.response_in_cue and not config.gng_rwd_after_cue
+        _rw_g = (_co_g - _half_steps, _co_g) if _ric_g else (_co_g, _co_g + _half_steps)
+        gng_criterion = UnifiedLoss(gng_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape, pair_start=None,
+                                    rwd_window=_rw_g, **_uw_gng)
         print(f"[{rid}]  loss=unified (ALL stages): ±1→one-sided hinge(gng th={_uth}, pair/mem th={_uth_pair}),"
               f" 0→pin, NaN→free  [bl | gng | pair split @ test-on]", flush=True)
     losses    = {}
@@ -692,7 +702,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                     target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                     cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                     go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale, response_in_cue=config.response_in_cue,
-                                    go_hinge_thresh=config.go_hinge_thresh, nogo_hinge_thresh=config.nogo_hinge_thresh)
+                                    go_hinge_thresh=config.go_hinge_thresh, nogo_hinge_thresh=config.nogo_hinge_thresh,
+                                    gng_rwd_after_cue=config.gng_rwd_after_cue)
         print(f"[{rid}]   {label}: "
               f"dpa={dpa['overall']:.3f} (pair={dpa['pair']:.3f} unpair={dpa['unpair']:.3f})  "
               f"gng={gng['overall']:.3f} (go={gng['go']:.3f} nogo={gng['nogo']:.3f})", flush=True)
@@ -817,7 +828,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                       cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                       nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                       input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
-                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue)
+                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -864,16 +875,18 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                             cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                             go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                             input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
-                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue)
+                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue)
         print(f"[{rid}]  data(paired): {list(Xp.shape)} → {list(yp.shape)}", flush=True)
         tlp, vlp     = train_val_split(Xp.to(device), yp.to(device), config.batch_size)
         optp, schedp = _opt_and_sched()
         model.noise  = model_noise_sigma
         if config.dual_loss == "unified":
-            paired_criterion = UnifiedLoss(dual_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg,
+            _co_d = int(dual_timing.n_stim_off[2])
+            _ric_d = config.response_in_cue and not config.gng_rwd_after_cue
+            _rw_d = (_co_d - _half_steps, _co_d) if _ric_d else (_co_d, _co_d + _half_steps)
+            paired_criterion = UnifiedLoss(dual_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
                                            pair_start=int(dual_timing.n_stim_on[3]),
-                                           rwd_window=(int(dual_timing.n_stim_off[2]),
-                                                       int(dual_timing.n_stim_off[2]) + _half_steps),
+                                           rwd_window=_rw_d,
                                            nolick_weight=config.nolick_weight, **_uw)
         elif config.dual_loss == "separated":
             paired_criterion = MaskedMultiTargetDualLoss(
@@ -913,17 +926,19 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                        nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                        input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
-                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue)
+                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue)
     print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
     tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
     opt, sched = _opt_and_sched()
     model.noise = model_noise_sigma
 
     if config.dual_loss == "unified":
-        dual_criterion = UnifiedLoss(dual_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg,
+        _co_d = int(dual_timing.n_stim_off[2])
+        _ric_d = config.response_in_cue and not config.gng_rwd_after_cue
+        _rw_d = (_co_d - _half_steps, _co_d) if _ric_d else (_co_d, _co_d + _half_steps)
+        dual_criterion = UnifiedLoss(dual_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
                                      pair_start=int(dual_timing.n_stim_on[3]),
-                                     rwd_window=(int(dual_timing.n_stim_off[2]),
-                                                 int(dual_timing.n_stim_off[2]) + _half_steps),
+                                     rwd_window=_rw_d,
                                      nolick_weight=config.nolick_weight, **_uw)
         print(f"[{rid}]  loss=unified  gng_w={config.gng_weight}  pair_w={config.dpa_weight}"
               f"  nolick_w={config.nolick_weight}", flush=True)
@@ -984,7 +999,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                          cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                          go_on_rwd_input=config.go_on_rwd_input, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
                                          go_target=config.go_target, response_in_cue=config.response_in_cue,
-                                         go_hinge_thresh=config.go_hinge_thresh, nogo_hinge_thresh=config.nogo_hinge_thresh)
+                                         go_hinge_thresh=config.go_hinge_thresh, nogo_hinge_thresh=config.nogo_hinge_thresh,
+                                         gng_rwd_after_cue=config.gng_rwd_after_cue)
     _stage_summary("Dual", train_l, val_l, acc_after_dual, t0)
     _log_params("after Dual")
 
@@ -1514,13 +1530,87 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "go_hinge_thresh": 0.25, "nogo_hinge_thresh": -0.25, "nogo_target": 0.0,
                       "dpa_prelick_free": True,
                       "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # ★ SYNTHESIS ARM (Leon 2026-08-11): sign2 substrate + the FIXED rwd_window (nogo response
+        # truly one-sided, free below — first time for the ε=0.25 base) + rwd_nogo_weight=5 (the
+        # down-force that pushed th1w's nogo to −0.2…−0.3). From sign2's per-seed DPA ckpts (DPA
+        # config unchanged). Prediction: 2 transient wells (no parking to bend into a U), nogo
+        # response sinks, and the cue-coupled pressure pulls the WELLS below the line.
+        # --run_filter sign2w5
+        ("sign2w5",  {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 5.0,
+                      "dpa_ckpt": "results/dual/sweep_r2sign2/s{seed}_sign2/dpa_s{seed}_sign2.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 0.25, "nogo_hinge_thresh": -0.25, "nogo_target": 0.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # ★ SOFTPLUS + AFTER-CUE NOGO (Leon 2026-08-11): every hinge becomes softplus (BCE-with-
+        # logits form — gradient σ(x) never dies on the correct side, so DEPTH is finally rewarded
+        # by the loss shape itself, §21's missing incentive) AND the gng response window moves back
+        # POST-cue (gng_rwd_after_cue): the nogo pressure lands on the RELAXING state near the well —
+        # a nolick-like push on the wells, not the cue transient (the sign2w5 lesson: response-window
+        # pressure gets absorbed by the input-driven excursion). Pairing stays IN-test (keeps the
+        # no-parking benefit). ε=0.25 substrate. Two doses (softplus's persistent gradient makes the
+        # weight bite harder — w5 may basement-shove, w1 is the guard). Full runs from DPA: the
+        # DPA-stage pairing/memory hinges are softplus too, so DPA ckpts don't transfer.
+        # NOTE softplus loss floor >0 ⇒ stop_loss never fires ⇒ full epoch budgets. --run_filter spw
+        ("spw1",     {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "hinge_shape": "softplus", "gng_rwd_after_cue": True,
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        ("spw5",     {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 5.0,
+                      "hinge_shape": "softplus", "gng_rwd_after_cue": True,
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # THRESHOLD CONTROL (= sign2 with ALL hinge thresholds at 1): isolates the threshold
+        # variable causally — same free DPA delay, same one-sided nogo response (≤0), same
+        # response_in_cue, but amplitude-1 demands on holds/go (±1) and pairing (already 1).
+        # If the autonomous rule wells RETURN here, the small-ε thresholds are what dissolved
+        # them in sign2; if they stay gone, it was the freed delay + one-sided structure.
+        # --run_filter th1
+        ("th1",      {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True,
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # NOGO-WEIGHT dose on the th1 base (Leon 2026-08-10): both arms found nogo in-cue means
+        # slightly ABOVE 0 at the honest boundary (sign2 ≈+0.05, th1 ≈+0.3, nogo(<=0) 0.37–0.52)
+        # — the one-sided relu(κ₁)² gradient at +0.05 is ~0.1, no match for the go-side cue
+        # demand; the optimizer parks just above the line. rwd_nogo_weight multiplies that
+        # down-force (applies in GNG too via gng_rwd_onesided). Fresh full runs from DPA.
+        # Score nogo at boundary 0. --run_filter th1w
+        ("th1w5",    {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 5.0,
+                      "dpa_ckpt": "results/dual/sweep_r2th1/s{seed}_th1/dpa_s{seed}_th1.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        ("th1w10",   {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 10.0,
+                      "dpa_ckpt": "results/dual/sweep_r2th1/s{seed}_th1/dpa_s{seed}_th1.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
     ]
     # (rwd_gng needs the last channel → would require attention OFF, which we DON'T want — attention
     # stays on in every arm. So no rwd_gng arm here.) Run these ≤8 at a time (4/GPU) via --run_filter.
     for tag, over in tf_arms:
         kw = {**emergent_lif, **shared_unfrozen, **tf_common, **over}
         for seed in range(4):
-            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, **kw))
+            kw_seed = dict(kw)
+            # per-seed checkpoint template: "{seed}" in dpa_ckpt/gng_ckpt resolves to this run's seed
+            for _ck in ("dpa_ckpt", "gng_ckpt"):
+                if kw_seed.get(_ck):
+                    kw_seed[_ck] = kw_seed[_ck].format(seed=seed)
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, **kw_seed))
 
     return configs
 
