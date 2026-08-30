@@ -146,7 +146,7 @@ def generate_gng_trials(
     baseline_value: float = 0.0,
     cue_on_go_input: bool = False,
     cue_scale: float = 1.0,
-    nogo_target: float = 0.0,
+    nogo_target: float | None = 0.0,   # None -> nogo response FREE (no target; nolick_late_delay covers it)
     go_target: float = 1.0,
     go_on_rwd_input: bool = False,
     input_scale: float = 1.0,
@@ -160,6 +160,7 @@ def generate_gng_trials(
     decay_onesided: bool = False,
     response_in_cue: bool = False,
     gng_rwd_after_cue: bool = False,
+    decay_to_end: bool = False,   # decay pin runs to TRIAL END instead of 1 s (GNG-stage gng_decay_to_zero)
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -212,12 +213,17 @@ def generate_gng_trials(
             # go→go_target, nogo→nogo_target(=0). Scored by the UnifiedLoss rwd group (separately weighted).
             # RESPONSE = readout/lick → dim [-1] (κ₁ in rank-2, κ₂ in rank-3). The RULE stays held on [1].
             targets[idx_go,   r0:r1, -1] = go_target
-            targets[idx_nogo, r0:r1, -1] = nogo_target
+            if nogo_target is not None:   # None → nogo response FREE (don't-lick handled by nolick)
+                targets[idx_nogo, r0:r1, -1] = nogo_target
         if decay_to_zero:
-            targets[:,        r1:r1 + 2*half, -1] = 0.0   # 'none' trials: pin the lick to 0
+            # decay_to_end (Leon 2026-08-12): pin BOTH trial types back to 0 from the response end
+            # to TRIAL END — full return-to-rest, no parked structure survives the GNG stage.
+            # (Under this pin the after-cue span has no free steps → GNG nolick is inert.)
+            _d1 = n_steps if decay_to_end else r1 + 2*half
+            targets[:,        r1:_d1, -1] = 0.0   # pin the lick back to 0 (both sides)
             if decay_onesided:  # go/nogo decay MARKERS on the LICK ([-1]) → loss scores one-sided at thresh 0
-                targets[idx_go,   r1:r1 + 2*half, -1] = -0.5   # go: penalise lick>0 (relax the pulse DOWN)
-                targets[idx_nogo, r1:r1 + 2*half, -1] = +0.5   # nogo: penalise lick<0 (relax the trace UP)
+                targets[idx_go,   r1:_d1, -1] = -0.5   # go: penalise lick>0 (relax the pulse DOWN)
+                targets[idx_nogo, r1:_d1, -1] = +0.5   # nogo: penalise lick<0 (relax the trace UP)
     else:
         dt = co + half
         if ramping_gng:
@@ -226,10 +232,12 @@ def generate_gng_trials(
         else:
             targets[idx_go,   n_off[0]:n_on[1], 1] = 1.0
             targets[idx_nogo, n_off[0]:n_on[1], 1] = -1.0
-        targets[idx_nogo, n_off[1]:dt, 1] = nogo_target
+        if nogo_target is not None:
+            targets[idx_nogo, n_off[1]:dt, 1] = nogo_target
         if target_rank >= 3:
             targets[idx_go,   n_off[1]:dt, 2] = go_target
-            targets[idx_nogo, n_off[1]:dt, 2] = nogo_target
+            if nogo_target is not None:
+                targets[idx_nogo, n_off[1]:dt, 2] = nogo_target
 
     return inputs, targets
 
@@ -243,7 +251,7 @@ def generate_dual_trials(
     baseline_value: float = 0.5,
     cue_on_go_input: bool = False,
     cue_scale: float = 1.0,
-    nogo_target: float = 0.0,
+    nogo_target: float | None = 0.0,   # None -> nogo response FREE (no target; nolick_late_delay covers it)
     go_target: float = 1.0,
     go_on_rwd_input: bool = False,
     input_scale: float = 1.0,
@@ -349,7 +357,8 @@ def generate_dual_trials(
             # go→go_target, nogo→nogo_target(=0). Scored by the UnifiedLoss rwd group (separately weighted).
             # RESPONSE = readout/lick → dim [-1] (κ₁ in rank-2, κ₂ in rank-3). The RULE stays held on [1].
             targets[idx_go,   rg0:rg1, -1] = go_target
-            targets[idx_nogo, rg0:rg1, -1] = nogo_target
+            if nogo_target is not None:   # None → nogo response FREE (don't-lick handled by nolick)
+                targets[idx_nogo, rg0:rg1, -1] = nogo_target
 
         if decay_to_zero:
             targets[:,        rg1:rg1 + 2*half, -1] = 0.0   # 'none' trials: pin the lick to 0
@@ -373,10 +382,12 @@ def generate_dual_trials(
         if ramping_gng:
             targets[idx_go,   n_on[2], 1] = 1.0
             targets[idx_nogo, n_on[2], 1] = -1.0
-        targets[idx_nogo, n_off[2]:dt, 1] = nogo_target
+        if nogo_target is not None:
+            targets[idx_nogo, n_off[2]:dt, 1] = nogo_target
         if target_rank >= 3:
             targets[idx_go,   n_off[2]:dt, -1] = go_target
-            targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
+            if nogo_target is not None:
+                targets[idx_nogo, n_off[2]:dt, -1] = nogo_target
         targets[idx_pair,  n_off[3], -1] = 1.0
         targets[~idx_pair, n_off[3], -1] = -1.0
 

@@ -746,10 +746,14 @@ class UnifiedLoss(nn.Module):
     """ONE loss for all three stages (DPA / GNG / Dual). The task semantics live entirely in
     the TARGETS (src/tasks.py windows); the loss just enforces the value classes:
 
-        +1  → one-sided hinge  relu(thresh − p)²   (beyond +1 free)
-        −1  → one-sided hinge  relu(p + thresh)²   (beyond −1 free)
-         0  → pin              p²  (MSE-to-0)
-        NaN → free             (optional nolick: relu(p)² on free decision windows)
+        +1  → one-sided hinge  h(thresh − p)   (beyond +1 free)
+        −1  → one-sided hinge  h(p + thresh)   (beyond −1 free)
+         0  → pin              q(p)            (p² normally, |p| when hinge_shape="relu")
+        NaN → free             (optional nolick: h(p) on free decision windows)
+
+    where h = hinge_shape ∈ {relu2: relu(x)², relu: relu(x), softplus: softplus(x)} and the pin
+    norm q follows it (L2 with the quadratic shapes, L1 with "relu") so the whole loss uses one
+    norm — see __init__ for how each shapes the force near the target.
 
     gng_thresh (None → thresh) overrides the threshold for the GNG-side terms only (pre-cue
     go/nogo holds + rwd response hinges); pair and memory terms always use `thresh`. gng_thresh=0
@@ -795,7 +799,8 @@ class UnifiedLoss(nn.Module):
                  rwd_nogo_onesided: bool = False, rwd_nogo_l1: bool = False,
                  rwd_keep_go_hinge: bool = False, decay_onesided: bool = False,
                  mem_weight: float = 1.0, bl_weight: float = 1.0,
-                 nolick_weight: float = 0.0):
+                 nolick_weight: float = 0.0,
+                 nolick_window: tuple[int, int] | None = None):
         super().__init__()
         self.timing        = timing
         self.thresh        = thresh
@@ -806,16 +811,32 @@ class UnifiedLoss(nn.Module):
         # only must not lick, its depth stays fully emergent. Pair + memory always use `thresh`.
         self.gng_thresh     = thresh if gng_thresh is None else gng_thresh
         self.gng_neg_thresh = self.gng_thresh if gng_neg_thresh is None else gng_neg_thresh
-        # hinge_shape: "relu2" (legacy, relu(x)² — zero loss/gradient once satisfied) or
-        # "softplus" (BCE-with-logits form, softplus(x) — the gradient σ(x) NEVER vanishes on the
-        # correct side, so margins/depth keep being rewarded with exponentially decaying force).
-        # Applies to every hinge-class term (pos/neg holds, rwd go/nogo, decay markers, nolick);
-        # 0-target PINS stay p². NOTE softplus has a positive floor at satisfied states, so
-        # stop_loss thresholds tuned for relu2 are effectively disabled.
-        assert hinge_shape in ("relu2", "softplus"), hinge_shape
+        # hinge_shape — how the FORCE scales with the size of a violation x (all three are 0 once
+        # satisfied except softplus). Applies to every hinge-class term (pos/neg holds, rwd
+        # go/nogo, decay markers, nolick); 0-target PINS always stay p².
+        #   "relu2"    relu(x)²  — force 2x: vanishes for small violations (0.10 at x=0.05), so
+        #              near-threshold straddling is nearly free; stronger than relu only above
+        #              x=0.5. C¹, and shares quadratic units with the 0-pins.
+        #   "relu"     relu(x)   — force 1 up to the threshold, 0 below (the hinge/SVM form):
+        #              EVERY violation counts equally, so satisfaction is crisp instead of
+        #              asymptotic. Right shape when the target is a BOUNDARY (a lick is a sign
+        #              event), not an amplitude. Same equilibrium as relu2 (zero gradient once
+        #              satisfied) — to place a state strictly BEYOND the threshold, displace the
+        #              threshold, don't change the shape.
+        #   "softplus" BCE-with-logits form — force σ(x) never reaches 0 on the correct side, so
+        #              margin/depth keeps being rewarded. NOTE positive loss floor at satisfied
+        #              states ⇒ stop_loss thresholds tuned for relu2/relu are effectively disabled.
+        assert hinge_shape in ("relu2", "relu", "softplus"), hinge_shape
         self.hinge_shape    = hinge_shape
-        self._hinge         = ((lambda x: torch.relu(x) ** 2) if hinge_shape == "relu2"
-                               else torch.nn.functional.softplus)
+        self._hinge         = {"relu2":    lambda x: torch.relu(x) ** 2,
+                               "relu":     torch.relu,
+                               "softplus": torch.nn.functional.softplus}[hinge_shape]
+        # 0-target PINS follow the hinge's norm so the loss is internally consistent: L2 p² with
+        # the quadratic shapes, L1 |p| with "relu". Same reasoning as the hinge — a quadratic pin's
+        # force (2p) vanishes near 0, so it tolerates a persistent small offset; |p| pulls with
+        # constant force 1 until the state is actually AT zero (then subgradient 0). Applies to the
+        # baseline, the decay/0-hold pins and the rwd nogo pin (rwd_nogo_l1 forces L1 regardless).
+        self._pin           = torch.abs if hinge_shape == "relu" else (lambda x: x ** 2)
         self.readout_index  = readout_index
         self.pair_start    = pair_start
         self.rwd_window    = rwd_window
@@ -838,6 +859,12 @@ class UnifiedLoss(nn.Module):
         self.mem_weight    = mem_weight
         self.bl_weight     = bl_weight
         self.nolick_weight = nolick_weight
+        # nolick_window (steps): restrict the nolick term to this span — e.g. the LATE DELAY
+        # (cue-off, test-onset), the don't-lick imposition (NeuroFlame train_dual.org mechanism:
+        # delay-time down-supervision grades the wells' κ₁ directly — 'none'/pure-DPA trials sit
+        # ON the sample wells there). Still free-(NaN)-steps only, so the finite go/nogo response
+        # targets inside the span keep their own terms. None → all free decision windows (legacy).
+        self.nolick_window = nolick_window
         self.last_components: dict[str, float] = {}
 
     @staticmethod
@@ -850,7 +877,7 @@ class UnifiedLoss(nn.Module):
         pos: p ≥ +pos_thresh (free above); neg: p ≤ −neg_thresh (free below); 0: pinned."""
         pos = self.masked_mean(self._hinge(pos_thresh - p), mask & (tgt > 0))
         neg = self.masked_mean(self._hinge(p + neg_thresh), mask & (tgt < 0))
-        dec = self.masked_mean(p ** 2,                      mask & (tgt == 0))
+        dec = self.masked_mean(self._pin(p),                mask & (tgt == 0))
         return pos, neg, dec
 
     def forward(self, y_pred: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -878,7 +905,7 @@ class UnifiedLoss(nn.Module):
             # pre-sample baseline: pinned term, SEPARATE from decay — per-channel mean (its own
             # mask), summed across channels like every other term
             blm     = finite & pre & (tgt == 0)
-            bl_loss = bl_loss + self.masked_mean(p ** 2, blm)
+            bl_loss = bl_loss + self.masked_mean(self._pin(p), blm)
 
             post = finite & ~pre
             if ch == dec_ch:
@@ -908,7 +935,7 @@ class UnifiedLoss(nn.Module):
                     else:
                         rgo = self.masked_mean(self._hinge(self.gng_thresh - p), rwd_m & (tgt > 0))      # go +1 hinge
                         rn  = self.masked_mean(self._hinge(p + self.gng_neg_thresh), rwd_m & (tgt < 0))  # nogo −1 hinge (≤ −neg_th, free below)
-                        nogo_pin = torch.abs(p) if self.rwd_nogo_l1 else p ** 2                       # L1 |κ₁| or L2 κ₁²
+                        nogo_pin = torch.abs(p) if self.rwd_nogo_l1 else self._pin(p)                 # L1 |κ₁| (forced) or the hinge's own norm
                         rz  = self.masked_mean(nogo_pin, rwd_m & (tgt == 0))                          # nogo pin to 0
                         comp["rwd_go"]   = rgo
                         comp["rwd_nogo"] = rn + rz
@@ -931,11 +958,15 @@ class UnifiedLoss(nn.Module):
                 comp["gng_pos"], comp["gng_neg"], comp["gng_decay"]    = gp, gn, gd
                 comp["pair_pos"], comp["pair_neg"], comp["pair_decay"] = pp, pn, pd
                 if self.nolick_weight:
-                    # one-sided lick penalty relu(κ₁)² over FREE (NaN) decision windows; exclude the
+                    # one-sided lick penalty hinge(κ₁) over FREE (NaN) decision windows; exclude the
                     # pre-sample baseline AND the sample window (the go lick-ramp floor lives there).
+                    # nolick_window set → restricted to that span (the late-delay don't-lick).
                     sample = ((t >= int(self.timing.n_stim_on[0])) &
                               (t <  int(self.timing.n_stim_off[0])))[None, :]
                     freem = torch.isfinite(pred) & ~torch.isfinite(target) & ~pre & ~sample
+                    if self.nolick_window is not None:
+                        w0, w1 = self.nolick_window
+                        freem = freem & ((t >= int(w0)) & (t < int(w1)))[None, :]
                     pfree = torch.where(freem, pred, torch.zeros_like(pred))
                     comp["nolick"] = self.masked_mean(self._hinge(pfree), freem)
             else:

@@ -37,9 +37,13 @@ every report with it. Figures come AFTER the table, as illustration — the tabl
    `bifurcation_probe.py`) returned spurious FPs (claimed wells at ±2.8 with |F|≈1.4).
    The tool uses the scipy finder AND re-checks |F(κ*)| directly. If you compute FPs any
    other way, spot-verify with `low_rank_field_np` before claiming anything.
-5. **Search/plot box: ±4.5 for softplus/relu/inflated runs.** The default ±2 window clips
-   real structure (softplus parked wells at ±3.8). If any attractor sits within 15% of the
-   box edge, widen and re-run. For figures: `plot_sweep --xlim -4.5 4.5`.
+5. **Match the box to the run's hinge shape — it is NOT one number.** The loss `hinge_shape`
+   sets the κ scale as much as φ does: `softplus` keeps rewarding overshoot so wells inflate
+   to |κ₀| ≈ 2.6–3.3 (extras to ±4) → use **±4.5**; `relu2` releases at threshold and wells
+   sit at |κ₀| ≈ 1.1–1.5 → use **±2.0**. Too narrow clips real structure; too wide makes a
+   relu² portrait unreadable (everything in the middle quarter). Widen if any attractor sits
+   within 15% of the box edge, narrow if the outermost sits inside half the box. Same flag
+   for figures: `plot_sweep --xlim -4.5 4.5` / `--xlim -2 2`. (Table: `docs/analysis.md`.)
 6. **fp_stages figure gotchas:** the cyan markers at ≈(0.9, −1.4) in some panels are the
    LEGEND, not fixed points; `--field_input_noise` OVERWRITES `fp_stages.png` (rename to
    `fp_stages_noise.*` before publishing both).

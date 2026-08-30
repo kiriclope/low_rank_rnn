@@ -797,3 +797,38 @@ New flags: `hinge_shape` ("relu2"/"softplus"), `gng_rwd_after_cue`. New tool: `f
 Softplus loss floor ≈ ln2/satisfied-class ⇒ val≈1.8 at dpa=1.0 is converged; stop_loss dead there.
 Housekeeping: pre-2026-08 checkpoints deleted (~1.7 GB, incl. EISTP reference runs — retraining needed
 to revisit §11 flows); **cuda:0 ONLY** (cuda:1 belongs to another user; one OOM casualty on 08-10).
+
+## 2026-08-12/13 — delay supervision (NeuroFlame port), hinge-shape ladder, and the corrected scoreboard
+
+Six sweeps taking the §24f decision ("supervise the delay"). All lif rank-2, N=1024, gain 2.0, noise 1.0,
+in-cue go response / in-test pairing, `dpa_prelick_free`, 250/100/300 epochs, `stop_loss` 0.005.
+ALL-DOWN = every memory well κ₁<0 (`flow_verdict.py`, fixed boundary 0). Science: `ring_lowerplane_log` §25.
+
+| sweep | levers vs previous | ALL-DOWN | geometry | nogo@0 |
+|---|---|---|---|---|
+| `sweep_r2spnl` (spnl1/5) | **`nolick_late_delay`** (nolick term restricted to cue-off→test-on), `nogo_target=None`, softplus, post-cue go | 2/8 | w1 wells hug the line; w5 −1.4…−2.2 but 2/4 NO PAIR, dpa 0.65–0.79 | .64–1.00 |
+| `sweep_r2spnlc` (c1/c5) | go response back **IN-cue** | 3/8 | up wells die in some seeds only; w5 kills the lick (go .47–.50) | .44–.98 |
+| `sweep_r2spnld` (spnld1) | **`gng_decay_to_zero`** (GNG pins BOTH types to 0, response-end→trial end) | **3/4** | **up wells gone in ALL seeds**; s1/s3 exactly 2 wells + origin | .73–.99 |
+| `sweep_r2renld` (renld1) | = spnld, **relu²** (th1 DPA ckpts) | 2/4 | wells pinned at the line; up-copies + spirals return; \|κ₀\| 1.1–1.5 vs softplus 2.6–3.3 | .66–.98 |
+| `sweep_r2renldw` (w0/w5) | nolick dose ladder on relu² | 1/8 | **w0 → nogo 0.01** (term is the ONLY source of no-lick); w5 saturates at the line | .01–1.00 |
+| `sweep_r2linld` (linld1) | **relu (L1) hinges + L1 pins**, DPA trained fresh | 3/4 | **exactly 2 wells** in the good seeds, `in_well` .96–1.00 | .00–.97 |
+| `sweep_r2linldh` (linldh1) | + **hinged nogo cue response** (`nogo_target=0.0` one-sided) | 3/4 | same 2-well geometry | **.93–1.00** |
+
+**★ Corrected ranking (2026-08-30).** Ranking on geometry + `dual_dpa` was wrong — `dual_dpa` is measured
+after Dual has rebuilt the memory (rank-0 trainable). On the project's key metric `after_gng/dpa`:
+**relu² 0.84 mean ≫ softplus 0.44 ≈ L1 0.42 ≈ L1+hinge 0.45.** And `after_dual/gng` is at chance in every
+arm except `linldh1` (0.69–1.00 vs 0.48–0.76 elsewhere). Well depths (−0.09…−0.38) sit inside σ_eff≈0.37.
+**No arm is good on both axes.**
+
+**Diagnostics (§25d), more consequential than the sweeps:** (1) `g·λ₁ᵉᶠᶠ(κ₀)` = 0.91 at κ₀=0 → **0.03 at
+κ₀=1.1** (φ'<0.05 on 37%→85% of units) ⇒ same weights give **nogo 1.00 in the GNG task, 0.00 in the Dual
+task**; the raw overlap `gain·nᵀm/N`=10–25 is a tanh-convention artefact, effective gain ≈0.9 at rest.
+(2) With `nogo_target=None` the nogo cue window had **0/5632 supervised steps** — the hole `linldh1` closes.
+(3) **No naive-dual evaluation exists** in `_eval` (we score DPA and GNG tasks only), so that 0.00 appears in
+no results field — two-line fix, not yet made.
+
+**New flags:** `nolick_late_delay`, `gng_decay_to_zero`, `nogo_target=None` (nogo response free),
+`hinge_shape="relu"` (L1 hinges AND L1 0-target pins). **sweep.py is now UNIFIED-LOSS ONLY** — the legacy
+multi/separated/threshold paths and `MaskedGNGLoss` were removed (run_one raises on them); `hinge_squared`
+is now dead config. Figures: hinge shape sets the κ scale as much as φ — softplus arms plot at ±4.5,
+relu²/relu arms at ±2 (`docs/analysis.md` §XLIM).

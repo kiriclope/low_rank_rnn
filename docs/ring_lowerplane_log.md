@@ -1362,3 +1362,76 @@ boundary 0, summary k/N. Skill `.claude/skills/flow-verdict/` encodes the 8 trap
 gotchas, inert-term check, per-seed reporting). Housekeeping: pre-Aug checkpoints deleted (~1.7 GB,
 incl. EISTP refs — Leon's call; §11 no longer re-analysable without retraining), cuda:0-ONLY policy
 (cuda:1 = another user's), gallery server wedged once (restart procedure works).
+
+### 25. ★★ Delay supervision: the NeuroFlame port, three hinge shapes, and the metric I was reading wrong (2026-08-12/13)
+
+The §24f cornered decision — *supervise the delay, or accept straddling* — got taken. Six sweeps, and the
+first well-pushdown that actually responds to a knob. Also the correction that reframes all of it: on the
+project's PRIMARY metric (`after_gng/dpa`) the winning-looking arms are the worst (Leon, 2026-08-30).
+
+**25a. Why NeuroFlame's dual training makes 2 lower wells** (`~/models/NeuroFlame/org/train/dual/train_dual.org`).
+Its Dual loss hinges the CHOICE axis DOWN during the memory DELAY on every no-lick trial. `gng_idx` =
+distractor-onset→cue-onset (l.1590) read on the choice axis, `class_bal` hardcoded 1 (l.434) ⇒ full
+two-sided sign hinge; with `bce_alpha=1.0` the BCE part is OFF and `SignBCELoss` reduces to
+`relu(thresh − sign(2t−1)·κ)`, so **class 0 means "≤ −1"**. Labels (l.1639–51): `labels[2]=1` for Go ONLY —
+**NoGo *and* the cue-less DPA trials both get the down-hinge**, and on DPA trials the net is sitting ON the
+sample attractor (no distractor, no cue), so the hinge grades the WELL's κ₁ directly. Its response/cue
+window uses `class_bal=0` → only `0.1·|κ|`, a weak symmetric pull. I.e. all down-force in the delay, none
+in the response — the exact mirror of every arm we had run.
+
+**25b. The port.** `nolick_late_delay` (RunConfig) restricts the existing nolick term to a WINDOW —
+Dual `(cue-off 6.5, test-on 8.0)`, GNG `(cue-off 4.5, end)`. Free-(NaN)-steps only, so finite response
+targets inside the span keep their own rwd terms. Covers nogo + 'none' (pure-DPA) delay and the go
+post-response tail. `UnifiedLoss(nolick_window=…)`; no new target class (Leon: "we don't need a new target").
+Two companions: `nogo_target=None` (nogo response target dropped as REDUNDANT with the nolick hinge —
+same one-sided form) and `gng_decay_to_zero` (GNG stage pins BOTH types to 0 from response-end to trial end,
+`decay_to_end` in `generate_gng_trials`).
+
+**25c. Sweeps** (all lif rank-2, N=1024, gain 2, noise 1.0, in-test pairing, `dpa_prelick_free`; ALL-DOWN =
+every memory well κ₁<0, `flow_verdict`, fixed boundary 0). `sweep_r2spnl` w1/w5 → **2/8** — first ALL-DOWN
+of the project, dose-dependent (w1 wells hug the line, nolick at its ln2 floor; w5 wells −1.4…−2.2 but 2/4
+NO PAIR + dpa 0.65–0.79). `sweep_r2spnlc` (go response back IN-cue) → 3/8; up wells die in some seeds only.
+`sweep_r2spnld` (+`gng_decay_to_zero`) → **3/4, up wells gone in ALL seeds**, s1/s3 exactly 2 wells + origin.
+`sweep_r2renld` (= spnld, relu²) → 2/4, wells pinned at the line, up-copies+spirals return, |κ₀| 1.1–1.5
+(vs softplus 2.6–3.3). `sweep_r2renldw` (w0/w5 ladder) → 1/8; **w0 = 0.01 nogo-correct**, w1 = 0.90 ⇒ the
+delay term is the ONLY source of no-lick behaviour. `sweep_r2linld` (L1) → 3/4, exactly 2 wells in the good
+seeds, `in_well` 0.96–1.00. `sweep_r2linldh` (+ hinged nogo response) → 3/4 and nogo@0 0.65→0.98 mean.
+
+**25d. Three diagnostics that matter more than the sweeps.**
+(i) **The effective decision gain is a strong function of κ₀** — the reason GNG is "so sensitive to what
+happened on κ₀" (Leon). `g·λ₁ᵉᶠᶠ(κ₀) = g·(1/N)Σ nᵢ₁mᵢ₁ φ'(g(mᵢ₀κ₀+Iᵢ))`, measured at the naive ckpt with
+attention on: **0.91 at κ₀=0 → 0.19 at 1.0 → 0.03 at 1.1 → −0.09 at 1.25**; mean φ' 0.117→0.027, units with
+φ'<0.05 **37%→85%**. A κ₀ well is stable BECAUSE it saturates the population, and saturation is not
+mode-selective, so it removes the slope κ₁ needs. Consequence: identical weights score **1.00 nogo in the
+GNG task and 0.00 in the Dual task** — the rule trace is −1.11 at cue-on in GNG but has already crossed to
++0.08 in Dual before the cue, which then pushes it to +0.74 (cue rides input ch.4 = the GO channel at
+`cue_scale`=2×). NOTE this also corrects the raw-overlap reading: `gain·n₁ᵀm₁/N` = 10–25 assumes φ'=1
+(tanh convention); for lif the effective gain is ≈0.9 at rest — near critical, NOT 10× supercritical.
+(ii) **The nogo response window was unsupervised** under `nogo_target=None`: 0/5632 finite target steps in
+5.98–6.48 s while the nolick window starts at 6.48 — nogo crossed into the lick region exactly at decision
+time (+0.17 expert, +0.75 naive). "Windows disjoint" was reported as a feature; it was the hole. Fixed by
+`linldh1` (`nogo_target=0.0` + `rwd_nogo_onesided` = one-sided hinge, not a pin).
+(iii) **No naive-dual evaluation exists.** After GNG we score the DPA and GNG tasks separately (both
+healthy) and never the DUAL task at the naive ckpt — the actual starting condition for Dual. The 0.00 nogo
+above appears in no `results.jsonl` field. Two-line fix in `_eval`, not yet made.
+
+**25e. Hinge shapes = how force scales with violation size** (`hinge_shape`; `relu` added 2026-08-13,
+and the 0-target PINS follow the norm — |p| under relu, p² otherwise). relu² force 2x **vanishes near the
+target** (0.10 at x=0.05, 10× weaker than relu; parity only at 0.5) ⇒ near-threshold straddling is nearly
+free. relu force 1 up to threshold then 0 ⇒ crisp satisfaction. softplus σ(x) never dies ⇒ depth keeps being
+rewarded — the ONLY shape that asks for depth, which is why it was the only one that moved wells; the price
+was inflation of EVERY hinge. **relu and relu² share an equilibrium: zero gradient once satisfied, so
+neither can place a well strictly below 0 — depth needs a DISPLACED threshold (`relu(κ₁+ε)²`), not a
+different shape.** Measured confirmation: 'none' trials rest flat at κ₁ = −0.11 (relu², residual 0.001 = no
+gradient left) vs −1.24 (softplus, still pushing).
+
+**25f. ★ The corrected scoreboard (Leon, 2026-08-30: "you are wrong about your conclusions").** I ranked arms
+on geometry + `dual_dpa`, and `dual_dpa` is measured AFTER Dual has repaired the memory (rank-0 trainable in
+Dual). On the project's stated key metric `after_gng/dpa`: **relu² 0.84 mean (0.57/0.91/1.00/0.88) ≫
+softplus 0.44 ≈ L1 0.42 ≈ L1+hinge 0.45 (three of four seeds at/near chance)**. Also never reported:
+`after_dual/gng` (GNG task after Dual) is **at chance in every arm except linldh1** — spnld 0.50–0.60,
+renld 0.49–0.76, linld 0.48–0.54 vs linldh1 0.69–1.00 — so the earlier "3/4 ALL-DOWN" portraits belong to
+nets that had lost go/nogo standalone. And ALL-DOWN flatters: wells sit at κ₁ −0.09…−0.38 while σ_eff≈0.37,
+i.e. inside one noise SD of the line. **No arm is good on both axes.** relu² retains DPA through GNG but has
+up-copies and loses GNG in Dual; L1+hinged-nogo gives clean 2-well portraits and keeps both tasks within
+Dual but sacrifices DPA retention. Wider box (±4.5) re-run confirms no structure was missed at ±2.

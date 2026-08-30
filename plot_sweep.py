@@ -120,7 +120,7 @@ class RunMeta:
     rwd:            bool  = True
     rwd_scale:      float = 1.0
     cue_scale:      float = 1.0
-    nogo_target:    float = 0.0
+    nogo_target:    float | None = 0.0   # None = nogo response FREE (nolick_late_delay arms)
     attention_input: bool = False
     attention_gated: bool = False
     attention_scale: float = 1.0
@@ -204,7 +204,8 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             rwd             = bool(cfg.get("rwd", True)),
             rwd_scale       = float(cfg.get("rwd_scale", 1.0)),
             cue_scale       = float(cfg.get("cue_scale", 1.0)),
-            nogo_target     = float(cfg.get("nogo_target", 0.0)),
+            nogo_target     = (None if cfg.get("nogo_target", 0.0) is None
+                               else float(cfg.get("nogo_target", 0.0))),
             attention_input = bool(cfg.get("attention_input", False)),
             attention_gated = bool(cfg.get("attention_gated", False)),
             attention_scale = float(cfg.get("attention_scale", 1.0)),

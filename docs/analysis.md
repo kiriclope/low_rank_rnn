@@ -70,14 +70,29 @@ Output: `results/figures/sweep_myrun/{summary,individual}/`
 
 ### XLIM / YLIM
 
-Set via `XLIM = YLIM = (lo, hi)` at line ~65 of `plot_sweep.py`. Choose based on the
-trajectory range for the nonlinearity used:
+Set via `XLIM = YLIM = (lo, hi)` at line ~65 of `plot_sweep.py`, or per-call with
+`--xlim lo hi`. Choose based on the trajectory range for the nonlinearity used:
 
 | Nonlinearity | Typical κ range | Recommended limits |
 |---|---|---|
 | tanh, erf, lif, lif_sc | ±1.0–1.2 | ±1.5 |
 | tanh_reg, erf | ±1.0 | ±2.0 |
 | relu, elu, softplus | up to ±3–5 | ±5.0 |
+
+**The LOSS hinge shape moves the κ scale as much as φ does** (2026-08-12, spnld vs renld —
+same `lif` φ, same design, only `hinge_shape` differing). A softplus hinge keeps paying for
+overshoot after the target is met (gradient σ(x) never dies), so every amplitude inflates;
+relu² releases at threshold and the state stays near ±1:
+
+| `hinge_shape` | Measured well \|κ₀\| (lif, gain 2) | Limits |
+|---|---|---|
+| `softplus` | 2.6–3.3 (extras out to ±4) | **±4.5** |
+| `relu2` | 1.1–1.5 | **±2.0** |
+
+So `--xlim -4.5 4.5` on a relu² sweep wastes the panel (all structure inside the middle
+quarter), and `--xlim -2 2` on a softplus sweep clips real wells. Pick from the run's own
+`flow_verdict.py` well positions — widen if any attractor sits within 15% of the box edge,
+narrow if the outermost is inside half the box.
 
 Always check trajectory plots first to infer the right limits.
 

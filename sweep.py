@@ -36,7 +36,7 @@ import torch.optim as optim
 
 from src.tasks import TaskTiming, make_timings, generate_dpa_trials, generate_gng_trials, generate_dual_trials
 from src.models import LowRankModel, EILowRankModel, EISTPModel
-from src.train  import Optimization, MaskedMultiTargetLoss, MaskedGNGLoss, MaskedMultiTargetDualLoss, ThresholdLoss, UnifiedLoss, train_val_split
+from src.train  import Optimization, UnifiedLoss, train_val_split
 from src.init   import init_dpa_internal_readout_prepost
 
 
@@ -135,7 +135,7 @@ class RunConfig:
     cue_on_go_input:  bool  = False
     go_on_rwd_input:  bool  = False  # route go stim + cue through reward channel; sets input_size=6
     cue_scale:        float = 1.0   # amplitude of the GNG cue signal
-    nogo_target:      float = 0.0   # target value for nogo response window (-1 or 0)
+    nogo_target: float | None = 0.0 # target value for nogo response window (-1 or 0). None → nogo response FREE (no target at all): use with nolick_late_delay, whose don't-lick window then covers the whole after-cue span — "nogo = don't lick", one mechanism (eval boundary falls back to nogo_hinge_thresh)
     go_target:        float = 1.0   # target value for go response window
     input_scale:      float = 1.0   # global multiplier on all stimulus + cue input amplitudes
     attention_input:  bool  = False # tonic attention/context input (last channel, =1 from first stim onset); input_size += 1
@@ -157,20 +157,18 @@ class RunConfig:
     dpa_ckpt: str | None = None  # path to existing DPA checkpoint; skips DPA training if set
     gng_ckpt: str | None = None  # path to existing GNG (naive) checkpoint; skips DPA+GNG if set
 
-    # Loss selection
-    #   "multi"      → MaskedMultiTargetLoss (default; MSE toward ±1/0, all stages identical)
-    #   "separated"  → MaskedMultiTargetDualLoss (MSE, split DPA/GNG components)
-    #   "threshold"  → ThresholdLoss (squared hinge; zero loss once pred is on correct
-    #                  side of thresh; dpa/gng/aux/bl weights ignored)
+    # Loss selection — "unified" is the ONLY loss sweep.py still runs (2026-08-12; the legacy
+    # multi/separated/threshold paths were removed — run_one raises on them. The values remain
+    # accepted by __post_init__ so historical arm dicts in make_configs still construct).
     #   "unified"    → UnifiedLoss at ALL THREE stages: value-based classes (+1/−1 one-sided
     #                  hinges beyond ±thresh, 0 → pin MSE-to-0, NaN free). Baseline is its own
     #                  pinned term (separate from decay); the decision channel splits into
     #                  SEPARATE gng (go/nogo) and pair (match/nonmatch) terms at the test onset,
     #                  and the two decay terms are separately weighted (gng/pair_decay_weight).
     #                  Weights map: gng_weight, dpa_weight→pair, aux_weight→mem, bl_weight, nolick.
-    # The dpa/gng/aux/bl weights below apply when dual_loss ∈ {"separated","unified"}.
-    dual_loss:  str   = "multi"
-    loss_thresh: float = 0.5    # threshold for dual_loss == "threshold"
+    dual_loss:  str   = "unified"   # only runnable value (2026-08-12); legacy names still VALIDATE
+                                    # so stored configs load, but run_single rejects them
+    loss_thresh: float = 0.5    # (legacy "threshold" loss — no longer runnable)
     dpa_weight:      float = 1.0
     gng_weight:      float = 1.0
     gng_decay_weight:  float = 1.0      # unified loss: weight on the gng decay-to-0 term (independent of gng_weight)
@@ -189,11 +187,12 @@ class RunConfig:
     nogo_hinge_thresh: float = -1.0       # hinge_gng no-lick threshold during the memory delay (0 after cue)
     ramping_gng: bool = False             # cue-driven ramping decision (no delay memory-hold; nogo cancels the cue ramp)
     windowed_targets: bool = False        # windowed transient decisions: 0.5 s pre-cue hold + short expression window (gng nogo not reset on cue); was `decay_decision`
+    gng_decay_to_zero: bool = False       # GNG-STAGE-ONLY decay override (Leon 2026-08-12): pin the lick back to 0 on BOTH trial types from the response end to TRIAL END in the GNG stage (even when decay_to_zero=False globally) — full return-to-rest, the softplus epochs cannot park inflated up OR down structure for Dual to inherit; GNG nolick becomes inert under the pin. Down-seating then happens purely in the Dual delay term
     decay_to_zero: bool = True            # within windowed_targets: add explicit decay-back-to-0 targets after the expression window (gng response & pairing). False = express then leave free. Decay zeros are PINNED (MSE-to-0) at all stages (pin_decay_zeros in the GNG/Dual losses; DPA ThresholdLoss pins via dpa_zero_thresh=0) — pre-sample baseline keeps its own separate term
     decay_onesided: bool = False          # decay window scored ONE-SIDED at thresh 0 (go-decay penalises κ₁>0, nogo-decay penalises κ₁<0) instead of pin-to-0 — each trace relaxes to rest from its own side (transient decision). Needs windowed_targets + decay_to_zero
     response_in_cue: bool = False         # score the RESPONSE in the last 0.5 s of its triggering stimulus (gng response cue / DPA test) — cue ON — so the lick is input-DRIVEN, not held from memory. Removes the source of the go-rule "up copies". Needs windowed_targets
     dpa_prelick_free: bool = False        # DPA: pin the readout only PRE-SAMPLE; sample→test FREE (no delay no-lick supervision at all — wells placed by pairing training alone). Default False = legacy two-sided 0-pin to test-on
-    hinge_shape: str = "relu2"            # unified loss hinge form: "relu2" (legacy, free once satisfied) or "softplus" (BCE-with-logits — gradient σ(x) never vanishes on the correct side, depth keeps being rewarded). NOTE softplus has a positive loss floor → stop_loss effectively disabled
+    hinge_shape: str = "relu2"            # unified loss hinge form — how force scales with violation size x: "relu2" (legacy, force 2x → vanishes near the threshold, so straddling is nearly free), "relu" (force 1 up to the threshold then 0 — the hinge/SVM form: every violation counts equally, crisp satisfaction; right shape for a BOUNDARY target like "don't lick"), or "softplus" (force σ(x) never vanishes on the correct side, depth keeps being rewarded; positive loss floor → stop_loss effectively disabled). relu2/relu share the same equilibrium (zero gradient once satisfied) — to sit strictly BEYOND a threshold, displace the threshold rather than change the shape
     gng_rwd_after_cue: bool = False       # move the GNG RESPONSE window back to POST-cue (co, co+half) even when response_in_cue: the nogo pressure then acts on the RELAXING state near the well (a nolick-like push) instead of the cue-driven transient. Pairing stays per response_in_cue
     dpa_hinge_thresh: float | None = None # if set, DPA ±1 decision uses squared hinge toward ±thresh (DPA + dual stages)
     dpa_zero_thresh: float = 0.0   # DPA ThresholdLoss dead-zone for ZERO targets (baselines); 0 ⇒ MSE-to-0 (pins baseline)
@@ -203,7 +202,8 @@ class RunConfig:
     kappa1_reg_weight: float = 0.0  # decision-subcriticality reg, ALL stages (DPA/GNG/Dual): weight*relu(gain·n_dec^T m_dec/N − 1)² — keeps decisions transient (no parking)
     kappa1_clamp:    float | None = None  # HARD constraint: rescale m1,n1 so g·λ₁ ≤ this after each Dual step (vs. soft reg)
     kappa_gain_target: float | None = None  # CRITICALITY: pin ALL modes' g·λ to this value (two-sided) after each step, ALL stages
-    nolick_weight:   float = 0.0   # one-sided no-lick penalty relu(κ₁)² over free decision windows (GNG+Dual)
+    nolick_weight:   float = 0.0   # one-sided no-lick penalty hinge(κ₁≤0, per hinge_shape) over free decision windows (Dual)
+    nolick_late_delay: bool = False # DON'T-LICK imposition (NeuroFlame train_dual.org port): restrict the nolick term to the LATE DELAY (cue-off → test-onset) of the Dual stage. Free-(NaN)-steps only, so the finite go/nogo response targets inside the span keep their own rwd terms; covers nogo + 'none' (pure-DPA) trials' late delay and the go post-response tail. 'none' trials sit ON the sample wells there → the term grades the wells' κ₁ directly (delay-time supervision, the §24f factorization route). Needs nolick_weight > 0.
     hinge_gng:       bool  = False # unified one-sided decision hinge at κ₁=0 (go+nogo & match/nonmatch, all stages)
     nogo_push_memory: bool = False # Dual: True FORCES the nogo memory to κ₁≤−1 (defeats emergent lowering); False (default) = gentle κ₁≤0, well location left to emerge
 
@@ -299,7 +299,8 @@ def _gng_accuracy(model, timing, input_size, noise, device, n_trials=1024, targe
     # decision boundary follows the LOSS: go hinge at go_hinge_thresh (1.0 legacy). With sign-based
     # hinges (go_hinge_thresh=0) the boundary is 0 — a σ-scaled go response must not be mis-scored.
     th_go       = go_hinge_thresh if go_hinge_thresh is not None else 1.0
-    nogo_ref    = max(nogo_target, nogo_hinge_thresh)   # hinge boundary wins over target amplitude
+    nogo_ref    = (nogo_hinge_thresh if nogo_target is None   # None = nogo response FREE (nolick covers it)
+                   else max(nogo_target, nogo_hinge_thresh))   # hinge boundary wins over target amplitude
     thresh      = (th_go + nogo_ref) / 2.0
     return ((pred_final > thresh) == is_go).float().mean().item()
 
@@ -329,7 +330,8 @@ def _gng_accuracy_by_type(model, timing, input_size, noise, device, n_trials=102
     # decision boundary follows the LOSS: go hinge at go_hinge_thresh (1.0 legacy). With sign-based
     # hinges (go_hinge_thresh=0) the boundary is 0 — a σ-scaled go response must not be mis-scored.
     th_go       = go_hinge_thresh if go_hinge_thresh is not None else 1.0
-    nogo_ref    = max(nogo_target, nogo_hinge_thresh)   # hinge boundary wins over target amplitude
+    nogo_ref    = (nogo_hinge_thresh if nogo_target is None   # None = nogo response FREE (nolick covers it)
+                   else max(nogo_target, nogo_hinge_thresh))   # hinge boundary wins over target amplitude
     thresh      = (th_go + nogo_ref) / 2.0
     correct     = (pred_final > thresh) == is_go
     return {
@@ -392,7 +394,8 @@ def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, targ
     # windowed mean just above it (e.g. emergent nolick=0 runs read ~0.2 while behaving correctly).
     # go hinge (go_hinge_thresh, sign-based when 0) overrides go_target as the go-side reference.
     th_go     = go_hinge_thresh if go_hinge_thresh is not None else go_target
-    nogo_ref  = max(nogo_target, nogo_hinge_thresh)     # hinge boundary wins over target amplitude
+    nogo_ref  = (nogo_hinge_thresh if nogo_target is None     # None = nogo response FREE (nolick covers it)
+                 else max(nogo_target, nogo_hinge_thresh))    # hinge boundary wins over target amplitude
     thresh    = (th_go + nogo_ref) / 2.0
     go_acc    = (pred_gng[is_go] >  thresh).float().mean().item() if is_go.any() else float("nan")
     nogo_acc  = (pred_gng[is_ng] <= thresh).float().mean().item() if is_ng.any() else float("nan")
@@ -615,24 +618,15 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         except Exception as e:
             print(f"[{rid}] W&B init failed ({e}); continuing without logging.", flush=True)
 
-    criterion     = MaskedMultiTargetLoss(target_weight=1.0, zero_weight=1.0)
-    # DPA stage: hinge vs MSE under the SAME hinge_gng flag as GNG/Dual → one switch controls
-    # hinge-vs-MSE for all three stages. hinge_gng=True → ThresholdLoss (squared ±thresh margin
-    # on every channel: memory & decision); False → MaskedMultiTargetLoss (pure MSE).
-    _dpa_th = config.dpa_hinge_thresh if config.dpa_hinge_thresh is not None else 1.0
-    dpa_criterion = (ThresholdLoss(thresh=_dpa_th, squared=config.hinge_squared,
-                                   zero_thresh=config.dpa_zero_thresh)
-                     if config.hinge_gng else criterion)
-    pin_decay = config.windowed_targets and config.decay_to_zero   # decay windows → MSE-to-0 (pin), all stages
-    gng_criterion = (MaskedGNGLoss(gng_timing, target_weight=1.0, zero_weight=1.0,
-                                   go_hinge_thresh=config.go_hinge_thresh,
-                                   nolick_weight=0.0,  # nolick is DUAL-ONLY (GNG delay is fully
-                                   # targeted go+1/nogo−1, so nolick there only hits the cue window)
-                                   hinge_gng=config.hinge_gng,
-                                   nogo_hinge_thresh=config.nogo_hinge_thresh,
-                                   pin_decay_zeros=pin_decay)
-                     if config.nogo_target == 0.0 else criterion)
-    # UnifiedLoss params (used at all stage sites when dual_loss == "unified").
+    # UNIFIED-ONLY (2026-08-12): the legacy loss paths (multi = MaskedMultiTargetLoss,
+    # separated = MaskedMultiTargetDualLoss, threshold = ThresholdLoss, MaskedGNGLoss for the
+    # GNG stage) were removed from sweep.py — UnifiedLoss covers all three stages. The classes
+    # remain in src/train.py for old scripts; historical arm dicts in make_configs still
+    # construct but raise here if actually launched.
+    if config.dual_loss != "unified":
+        raise ValueError(f"[{rid}] dual_loss={config.dual_loss!r}: legacy losses removed from "
+                         f"sweep.py (2026-08-12) — only 'unified' is runnable")
+    # UnifiedLoss params (used at all three stage sites).
     # _uth (go_hinge_thresh) = GNG-side hinge threshold (pre-cue holds + rwd response hinges);
     # 0 = sign-based go/nogo. _uth_pair (dpa_hinge_thresh) = pair + memory-hold threshold —
     # kept separate so sign-based gng does NOT silently relax the pairing/κ₀ amplitude supervision.
@@ -658,21 +652,31 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     _uw_gng = ({**_uw} if config.gng_rwd_onesided
                else {**_uw, "rwd_nogo_onesided": False})
     _half_steps = int(round(0.5 / gng_timing.dt))   # response window length in steps
-    if config.dual_loss == "unified":
-        # ONE value-based loss at all three stages (targets carry the semantics). Baseline is its
-        # own pinned term; the decision channel splits into separate gng/pair terms at test onset.
-        dpa_criterion = UnifiedLoss(dpa_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
-                                    pair_start=int(dpa_timing.n_stim_on[1]), **_uw)
-        # rwd_window follows response_in_cue: targets sit IN-cue (co-half:co) when set, else the
-        # legacy post-cue window. (Fixed 2026-08-10: the window was never shifted, so in-cue nogo
-        # 0-targets fell into the gng group's two-sided PIN and rwd_nogo_weight was inert.)
-        _co_g = int(gng_timing.n_stim_off[1])
-        _ric_g = config.response_in_cue and not config.gng_rwd_after_cue
-        _rw_g = (_co_g - _half_steps, _co_g) if _ric_g else (_co_g, _co_g + _half_steps)
-        gng_criterion = UnifiedLoss(gng_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape, pair_start=None,
-                                    rwd_window=_rw_g, **_uw_gng)
-        print(f"[{rid}]  loss=unified (ALL stages): ±1→one-sided hinge(gng th={_uth}, pair/mem th={_uth_pair}),"
-              f" 0→pin, NaN→free  [bl | gng | pair split @ test-on]", flush=True)
+    # ONE value-based loss at all three stages (targets carry the semantics). Baseline is its
+    # own pinned term; the decision channel splits into separate gng/pair terms at test onset.
+    dpa_criterion = UnifiedLoss(dpa_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
+                                pair_start=int(dpa_timing.n_stim_on[1]), **_uw)
+    # rwd_window follows response_in_cue: targets sit IN-cue (co-half:co) when set, else the
+    # legacy post-cue window. (Fixed 2026-08-10: the window was never shifted, so in-cue nogo
+    # 0-targets fell into the gng group's two-sided PIN and rwd_nogo_weight was inert.)
+    _co_g = int(gng_timing.n_stim_off[1])
+    _ric_g = config.response_in_cue and not config.gng_rwd_after_cue
+    _rw_g = (_co_g - _half_steps, _co_g) if _ric_g else (_co_g, _co_g + _half_steps)
+    # nolick_late_delay: restrict the nolick term to the after-cue span — the late-delay
+    # DON'T-LICK imposition. Dual: (cue-off, test-onset). GNG stage (no test): (cue-off, trial
+    # end) — needed once nogo_target=None drops the nogo response target, so "nogo = don't lick
+    # after the cue" stays supervised in the GNG stage too. Without the flag the GNG stage keeps
+    # no nolick (legacy Dual-only behaviour).
+    _nlw_d = ((int(dual_timing.n_stim_off[2]), int(dual_timing.n_stim_on[3]))
+              if config.nolick_late_delay else None)
+    _nlw_g = ((int(gng_timing.n_stim_off[1]), int(gng_timing.n_steps))
+              if config.nolick_late_delay else None)
+    gng_criterion = UnifiedLoss(gng_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape, pair_start=None,
+                                rwd_window=_rw_g,
+                                nolick_weight=(config.nolick_weight if config.nolick_late_delay else 0.0),
+                                nolick_window=_nlw_g, **_uw_gng)
+    print(f"[{rid}]  loss=unified (ALL stages): ±1→one-sided hinge(gng th={_uth}, pair/mem th={_uth_pair}),"
+          f" 0→pin, NaN→free  [bl | gng | pair split @ test-on]", flush=True)
     losses    = {}
     _global_step = [0]   # mutable so the nested helper can increment it
 
@@ -828,7 +832,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                       cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                       nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                       input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
-                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue)
+                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero or config.gng_decay_to_zero, decay_to_end=config.gng_decay_to_zero, gng_response=config.gng_response, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -880,26 +884,14 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         tlp, vlp     = train_val_split(Xp.to(device), yp.to(device), config.batch_size)
         optp, schedp = _opt_and_sched()
         model.noise  = model_noise_sigma
-        if config.dual_loss == "unified":
-            _co_d = int(dual_timing.n_stim_off[2])
-            _ric_d = config.response_in_cue and not config.gng_rwd_after_cue
-            _rw_d = (_co_d - _half_steps, _co_d) if _ric_d else (_co_d, _co_d + _half_steps)
-            paired_criterion = UnifiedLoss(dual_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
-                                           pair_start=int(dual_timing.n_stim_on[3]),
-                                           rwd_window=_rw_d,
-                                           nolick_weight=config.nolick_weight, **_uw)
-        elif config.dual_loss == "separated":
-            paired_criterion = MaskedMultiTargetDualLoss(
-                timing=dual_timing, dpa_weight=config.dpa_weight, gng_weight=config.gng_weight,
-                gng_go_weight=config.gng_go_weight, gng_nogo_weight=config.gng_nogo_weight,
-                aux_weight=config.aux_weight, bl_weight=config.bl_weight,
-                go_hinge_thresh=config.go_hinge_thresh, dpa_hinge_thresh=config.dpa_hinge_thresh,
-                nolick_weight=config.nolick_weight, hinge_gng=config.hinge_gng,
-                nogo_hinge_thresh=config.nogo_hinge_thresh,
-                nogo_push_memory=config.nogo_push_memory,
-                pin_decay_zeros=pin_decay)
-        else:
-            paired_criterion = criterion
+        _co_d = int(dual_timing.n_stim_off[2])
+        _ric_d = config.response_in_cue and not config.gng_rwd_after_cue
+        _rw_d = (_co_d - _half_steps, _co_d) if _ric_d else (_co_d, _co_d + _half_steps)
+        paired_criterion = UnifiedLoss(dual_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
+                                       pair_start=int(dual_timing.n_stim_on[3]),
+                                       rwd_window=_rw_d,
+                                       nolick_weight=config.nolick_weight,
+                                       nolick_window=_nlw_d, **_uw)
         trainer = Optimization(model, tlp, vlp, paired_criterion, optp, schedp,
                                config.grad_clip_norm, num_epochs=config.epochs_dual_paired,
                                freeze_low_rank_cols=dual_mem_freeze,
@@ -932,41 +924,17 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     opt, sched = _opt_and_sched()
     model.noise = model_noise_sigma
 
-    if config.dual_loss == "unified":
-        _co_d = int(dual_timing.n_stim_off[2])
-        _ric_d = config.response_in_cue and not config.gng_rwd_after_cue
-        _rw_d = (_co_d - _half_steps, _co_d) if _ric_d else (_co_d, _co_d + _half_steps)
-        dual_criterion = UnifiedLoss(dual_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
-                                     pair_start=int(dual_timing.n_stim_on[3]),
-                                     rwd_window=_rw_d,
-                                     nolick_weight=config.nolick_weight, **_uw)
-        print(f"[{rid}]  loss=unified  gng_w={config.gng_weight}  pair_w={config.dpa_weight}"
-              f"  nolick_w={config.nolick_weight}", flush=True)
-    elif config.dual_loss == "separated":
-        dual_criterion = MaskedMultiTargetDualLoss(
-            timing=dual_timing,
-            dpa_weight=config.dpa_weight, gng_weight=config.gng_weight,
-            gng_go_weight=config.gng_go_weight, gng_nogo_weight=config.gng_nogo_weight,
-            aux_weight=config.aux_weight, bl_weight=config.bl_weight,
-            go_hinge_thresh=config.go_hinge_thresh,
-            dpa_hinge_thresh=config.dpa_hinge_thresh,
-            nolick_weight=config.nolick_weight,
-            hinge_gng=config.hinge_gng,
-            nogo_hinge_thresh=config.nogo_hinge_thresh,
-            nogo_push_memory=config.nogo_push_memory,
-            pin_decay_zeros=pin_decay,
-        )
-        print(f"[{rid}]  loss=separated"
-              f"  dpa_w={config.dpa_weight}  gng_w={config.gng_weight}"
-              f"  go_w={config.gng_go_weight}  nogo_w={config.gng_nogo_weight}"
-              f"  aux_w={config.aux_weight}  bl_w={config.bl_weight}"
-              f"  go_hinge={config.go_hinge_thresh}  nolick_w={config.nolick_weight}", flush=True)
-    elif config.dual_loss == "threshold":
-        dual_criterion = ThresholdLoss(thresh=config.loss_thresh)
-        print(f"[{rid}]  loss=threshold  thresh={config.loss_thresh}", flush=True)
-    else:
-        dual_criterion = criterion
-        print(f"[{rid}]  loss=multi (MaskedMultiTargetLoss)", flush=True)
+    _co_d = int(dual_timing.n_stim_off[2])
+    _ric_d = config.response_in_cue and not config.gng_rwd_after_cue
+    _rw_d = (_co_d - _half_steps, _co_d) if _ric_d else (_co_d, _co_d + _half_steps)
+    dual_criterion = UnifiedLoss(dual_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
+                                 pair_start=int(dual_timing.n_stim_on[3]),
+                                 rwd_window=_rw_d,
+                                 nolick_weight=config.nolick_weight,
+                                 nolick_window=_nlw_d, **_uw)
+    print(f"[{rid}]  loss=unified  gng_w={config.gng_weight}  pair_w={config.dpa_weight}"
+          f"  nolick_w={config.nolick_weight}"
+          f"{f'  nolick_window={_nlw_d} (late delay)' if _nlw_d else ''}", flush=True)
 
     dual_freeze_rank0 = dual_mem_freeze
 
@@ -987,7 +955,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         print(f"[{rid}]  κ₁ hard clamp: g·λ₁ ≤ {config.kappa1_clamp} after each Dual step", flush=True)
 
     train_l, val_l, _ = trainer.fit()
-    dual_loss_components = (dict(dual_criterion.last_components) if config.dual_loss in ("separated", "unified") else None)
+    dual_loss_components = dict(dual_criterion.last_components)
     if dual_loss_components:
         print(f"[{rid}]  loss components: "
               f"{ {k: round(v, 4) for k, v in dual_loss_components.items()} }", flush=True)
@@ -1139,7 +1107,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
         go_target=1.0,
         go_hinge_thresh=1.0,
         dpa_hinge_thresh=1.0,
-        dual_loss="separated",
+        dual_loss="unified",
         freeze_input_stages=["dual"],
         freeze_rank0_dual=False,
         optimizer="adam",              # no weight decay
@@ -1597,6 +1565,159 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "dpa_ckpt": "results/dual/sweep_r2th1/s{seed}_th1/dpa_s{seed}_th1.pth",
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # ★ SOFTPLUS + LATE-DELAY DON'T-LICK (Leon 2026-08-12, the NeuroFlame train_dual.org
+        # port): its Dual loss hinges the CHOICE axis DOWN during the DELAY on every no-lick
+        # trial — class 0 = NoGo AND the cue-less DPA trials, which sit ON the sample wells
+        # there, so the hinge grades the wells' κ₁ directly (delay-time supervision — the §24f
+        # factorization route; its response window pushes nothing down). Here: the nolick term
+        # restricted to the after-cue span — Dual (cue-off 6.5 s → test-onset 8 s), GNG stage
+        # (cue-off 4.5 s → trial end) — softplus(κ₁) ⇒ κ₁≤0 on all free steps. nogo_target=None
+        # (Leon): the nogo response target is REDUNDANT with the nolick window (same one-sided
+        # hinge(κ₁≤0)) → dropped; "nogo = hold −1 pre-cue, then just don't lick after the cue",
+        # one mechanism covering nogo + 'none' (pure-DPA) trials and the go post-response tail
+        # (the go +1 response hinge 6.5–7 keeps its own rwd term; eval boundary → (1+(−1))/2 = 0,
+        # the honest boundary). spw substrate (all-softplus, post-cue response, th ±1) so the ONLY
+        # new force is the delay term; from spw1's per-seed DPA ckpts (DPA config identical — the
+        # term doesn't touch the DPA stage). Two doses. --run_filter spnl
+        ("spnl1",    {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "hinge_shape": "softplus", "gng_rwd_after_cue": True,
+                      "nolick_late_delay": True, "nolick_weight": 1.0, "nogo_target": None,
+                      "dpa_ckpt": "results/dual/sweep_r2sp/s{seed}_spw1/dpa_s{seed}_spw1.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        ("spnl5",    {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "hinge_shape": "softplus", "gng_rwd_after_cue": True,
+                      "nolick_late_delay": True, "nolick_weight": 5.0, "nogo_target": None,
+                      "dpa_ckpt": "results/dual/sweep_r2sp/s{seed}_spw1/dpa_s{seed}_spw1.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # ★ IN-CUE GO variant (Leon 2026-08-12): = spnl minus gng_rwd_after_cue. The go +1 hinge
+        # moves back IN-cue (6.0-6.5, input-driven) — the only Dual-stage demand for autonomous
+        # κ₁>0 disappears; the nolick window (6.5-8.0, unchanged, no overlap) then actively erodes
+        # inherited up structure. Causal test: do the (κ₀≈0, κ₁≈+3.5) up wells die with the
+        # post-cue go demand? (If they persist → GNG-inherited via the ±1 rule hold.) Softplus
+        # kept (Leon) — the deep down extras may remain at w5. dual_gng_memory stays False (no
+        # rule holds in Dual). Same spw1 DPA ckpts. --run_filter spnlc
+        ("spnlc1",   {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "hinge_shape": "softplus",
+                      "nolick_late_delay": True, "nolick_weight": 1.0, "nogo_target": None,
+                      "dpa_ckpt": "results/dual/sweep_r2sp/s{seed}_spw1/dpa_s{seed}_spw1.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        ("spnlc5",   {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "hinge_shape": "softplus",
+                      "nolick_late_delay": True, "nolick_weight": 5.0, "nogo_target": None,
+                      "dpa_ckpt": "results/dual/sweep_r2sp/s{seed}_spw1/dpa_s{seed}_spw1.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # ★ GNG-DECAY variant (Leon 2026-08-12): = spnlc1 + gng_decay_to_zero. The GNG stage pins
+        # BOTH trial types back to 0 from the response end to TRIAL END (4.5-6.0 s) — the
+        # trajectories showed the rule/lick overlaps softplus-inflated through the delay; full
+        # return-to-rest removes parked structure (up AND down) at its source, so Dual inherits
+        # transient decisions only. GNG nolick inert under the pin; the down-seating happens
+        # purely in Dual's delay term. Dual decay unchanged (off). Same spw1 DPA ckpts.
+        # --run_filter spnld
+        ("spnld1",   {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "hinge_shape": "softplus", "gng_decay_to_zero": True,
+                      "nolick_late_delay": True, "nolick_weight": 1.0, "nogo_target": None,
+                      "dpa_ckpt": "results/dual/sweep_r2sp/s{seed}_spw1/dpa_s{seed}_spw1.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # ★ RELU² control of spnld1 (Leon 2026-08-12): identical design, hinge_shape back to
+        # relu2 — the causal test of the softplus depth-reward. relu² nolick has ZERO gradient at
+        # κ₁≤0 (no depth reward, no basement risk): if the wells still seat below the line, the
+        # decay-to-rest + delay-window STRUCTURE does the work; if they hover at 0, softplus's
+        # never-dying push was load-bearing. stop_loss 0.005 is ACTIVE again (no softplus floor).
+        # DPA from th1's ckpts (relu², th ±1, prelick-free, in-test pairing — the exact DPA this
+        # arm would train; spw1's are softplus-trained). --run_filter renld
+        ("renld1",   {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "gng_decay_to_zero": True,
+                      "nolick_late_delay": True, "nolick_weight": 1.0, "nogo_target": None,
+                      "dpa_ckpt": "results/dual/sweep_r2th1/s{seed}_th1/dpa_s{seed}_th1.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # ★ NOLICK DOSE LADDER on the relu² substrate (Leon 2026-08-12): = renld1 with
+        # nolick_weight 0 and 5. renldw0 is the CONTROL that isolates the delay term — note it
+        # leaves the Dual nogo trials with NO κ₁ supervision at all (no hold: dual_gng_memory
+        # False; no response target: nogo_target None; no decay: decay_to_zero False), so nogo
+        # must survive purely on the GNG-learned structure and the wells sit wherever the
+        # decay-to-rest + pairing put them. renldw5 doses the same term ×5 — under relu² the push
+        # SATURATES at κ₁≤0 (no depth reward, unlike softplus w5 which collapsed pairs), so this
+        # tests whether more weight buys seating without the inflation/collapse. Filter "renldw"
+        # matches both and NOT renld1. --run_filter renldw
+        ("renldw0",  {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "gng_decay_to_zero": True,
+                      "nolick_late_delay": True, "nolick_weight": 0.0, "nogo_target": None,
+                      "dpa_ckpt": "results/dual/sweep_r2th1/s{seed}_th1/dpa_s{seed}_th1.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        ("renldw5",  {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "gng_decay_to_zero": True,
+                      "nolick_late_delay": True, "nolick_weight": 5.0, "nogo_target": None,
+                      "dpa_ckpt": "results/dual/sweep_r2th1/s{seed}_th1/dpa_s{seed}_th1.pth",
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # ★ LINEAR-HINGE (L1) version of renld1 (Leon 2026-08-13): hinge_shape="relu" — every
+        # hinge becomes relu(x) AND every 0-target pin becomes |p| (the norm follows the hinge).
+        # Rationale: relu²'s force 2x vanishes near the target, so the states we care about
+        # (nogo straddling 0 at ±0.05, the GNG go trace parked at +0.4) are priced at ~0 and left
+        # there; L1 pulls with CONSTANT force right up to the target, so satisfaction is crisp
+        # instead of asymptotic. Same equilibrium as relu² (zero gradient once satisfied) — this
+        # buys decisiveness, not depth. DPA trained FRESH (relu²-trained th1 ckpts are a different
+        # norm — the DPA hinges/pins are L1 here too). NOTE L1 loss values sit ~10x higher near
+        # convergence, so stop_loss=0.005 is a much stricter test and likely never fires.
+        # --run_filter linld
+        ("linld1",   {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "hinge_shape": "relu", "gng_decay_to_zero": True,
+                      "nolick_late_delay": True, "nolick_weight": 1.0, "nogo_target": None,
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
+                      "dpa_prelick_free": True,
+                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+        # ★ + HINGED NOGO RESPONSE (Leon 2026-08-13): = linld1 with nogo_target=0.0 instead of
+        # None. With rwd_nogo_onesided the 0-target becomes a ONE-SIDED hinge h(κ₁) in the cue
+        # response window (≤0, free below) — NOT a two-sided pin. Closes the hole measured on
+        # 2026-08-13: with nogo_target=None the nogo trials carry 0/5632 finite target steps in
+        # the cue window (5.98-6.48 s) and the nolick window only starts at cue-OFF, so nogo was
+        # unsupervised at exactly the moment of decision and crossed into the lick region there
+        # (+0.17 expert, +0.75 naive). Now: hinge in the response, hinge through the late delay —
+        # continuous "don't lick" from cue onset to test. Same in the GNG stage (gng_rwd_onesided).
+        # CAVEAT for reading results.jsonl: the eval boundary is (th_go + max(nogo_target,
+        # nogo_hinge_thresh))/2 = (1+0)/2 = 0.5 here vs 0.0 for linld1 — compare arms with
+        # flow_verdict.py, which always scores at the fixed boundary 0. --run_filter linldh
+        ("linldh1",  {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
+                      "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
+                      "hinge_shape": "relu", "gng_decay_to_zero": True,
+                      "nolick_late_delay": True, "nolick_weight": 1.0, "nogo_target": 0.0,
+                      "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
+                      "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
                       "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
     ]

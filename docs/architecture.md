@@ -150,6 +150,25 @@ Three sequential stages with selective freezing:
 - If `freeze_rank0_dual=True`: rank-0 of m/n also frozen.
 - Checkpoint: `expert_{run_id}.pth`
 
+**What is NOT supervised in Dual** (matters when reading results — `ring_lowerplane_log` §25d):
+κ₀ carries only the pre-sample 0, so the sample memory survives only via the pairing readout;
+the go/nogo rule has no pre-cue hold unless `dual_gng_memory=True`. With `freeze_rank0_dual=False`
+Dual can REBUILD a memory that GNG destroyed, so `dual_dpa`≈1.0 does **not** imply retention —
+the project's key metric is `after_gng/dpa`, measured before that repair.
+
+### Delay-window options (2026-08-12)
+
+- `nolick_late_delay` — restrict the nolick term to the after-cue span (Dual `(cue-off, test-on)`,
+  GNG `(cue-off, end)`), free steps only. The NeuroFlame delay-supervision mechanism: on
+  'none'/pure-DPA trials the state sits ON the sample well there, so the term grades the well's κ₁.
+- `gng_decay_to_zero` — GNG stage pins BOTH trial types back to 0 from response-end to trial end
+  (`decay_to_end`), so nothing can park during the GNG epochs for Dual to inherit.
+- `nogo_target=None` — drop the nogo response target entirely (redundant with the nolick hinge).
+  ⚠ leaves the cue window unsupervised for nogo; `nogo_target=0.0` + `rwd_nogo_onesided` gives a
+  one-sided hinge there instead. Also shifts the eval boundary
+  (`(th_go + max(nogo_target, nogo_hinge_thresh))/2`) — compare arms with `flow_verdict.py`, which
+  always scores at the fixed boundary 0.
+
 ### Freezing mechanism
 
 Snapshot frozen params before optimizer step → zero their grads after `backward()` →
@@ -158,14 +177,37 @@ even with AdamW weight decay.
 
 ### Loss functions
 
-| Loss | Used for | Notes |
-|---|---|---|
-| `MaskedMultiTargetLoss` | DPA, GNG | Per-channel masked MSE |
-| `MaskedMultiTargetDualLoss` | Dual (default) | Splits decision channel by time window into DPA/GNG/baseline components; each independently weightable |
-| `MaskedGNGLoss` | GNG variant | Nogo-zero hinge + go_hinge_thresh |
+**`UnifiedLoss` is the only loss `sweep.py` runs** (2026-08-12). The legacy paths
+(`MaskedMultiTargetLoss` "multi", `MaskedMultiTargetDualLoss` "separated", `ThresholdLoss`
+"threshold", and `MaskedGNGLoss` for the GNG stage) were removed from the runner — `run_one`
+raises on `dual_loss != "unified"`. The classes remain in `src/train.py` for older scripts;
+`hinge_squared` is now dead config. Components logged in `.last_components`.
 
-`dual_loss="separated"` selects `MaskedMultiTargetDualLoss`. Loss components logged in
-`.last_components`.
+One loss at all three stages; the task semantics live entirely in the TARGETS (`src/tasks.py`):
+
+| target value | term |
+|---|---|
+| +1 | one-sided hinge `h(θ⁺ − κ)` — free above |
+| −1 | one-sided hinge `h(κ + θ⁻)` — free below |
+| 0 | pin `q(κ)` |
+| NaN | free — *except* inside `nolick_window`, where free steps get `h(κ₁)` under `nolick_weight` |
+
+`hinge_shape` picks `h`, i.e. **how force scales with the size of a violation** — and the pin
+norm `q` follows it, so the loss uses one norm throughout:
+
+| `hinge_shape` | `h(x)` / `q(p)` | force near the target | use |
+|---|---|---|---|
+| `relu2` (default) | `relu(x)²` / `p²` | `2x` → vanishes; 10× weaker than relu at x=0.05, parity at 0.5 | soft margin; tolerates straddling |
+| `relu` | `relu(x)` / `\|p\|` | constant 1 up to the threshold | boundary constraints ("don't lick"); crisp satisfaction |
+| `softplus` | `softplus(x)` / `p²` | `σ(x)`, never 0 | the only shape that rewards *depth* beyond the target — also inflates every amplitude; positive loss floor ⇒ `stop_loss` disabled |
+
+`relu2` and `relu` share an equilibrium (zero gradient once satisfied), so **neither can place a
+state strictly beyond a threshold — displace the threshold instead of changing the shape.**
+
+Thresholds: `go_hinge_thresh` (θ⁺) and `nogo_hinge_thresh` (θ⁻) on the go/nogo terms,
+`dpa_hinge_thresh` on pairing + memory. Groups: baseline `bl`, `gng_*` (pre-`pair_start`),
+`rwd_go`/`rwd_nogo` (response window, carved out), `pair_*` (post-`pair_start`), `mem_*`
+(non-decision channels), `nolick`.
 
 ### Early stopping
 
