@@ -62,6 +62,9 @@ wells or a missing sign (`NO PAIR ✗`), the substrate itself is broken (parking
 
 ## Companion tools
 
+**`traj_verdict.py` (+ the `traj-verdict` skill) — the behavioural half of the verdict**: this file
+scores where the wells are, that one scores what κ(t) does on the task per stage. Neither substitutes
+for the other (trap 2); when asked "is this run good?", cite both tables.
 `bifurcation_probe.py` (g·λ table — but see trap 4), `plot_sweep --plots flow` (portraits),
 `traj_flow.py` (real integrated trajectories), `bifurcation_flows.py` (nullcline figures).
 History and calibration context: `docs/ring_lowerplane_log.md` §23.

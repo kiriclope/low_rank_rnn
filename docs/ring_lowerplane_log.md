@@ -1435,3 +1435,69 @@ nets that had lost go/nogo standalone. And ALL-DOWN flatters: wells sit at κ₁
 i.e. inside one noise SD of the line. **No arm is good on both axes.** relu² retains DPA through GNG but has
 up-copies and loses GNG in Dual; L1+hinged-nogo gives clean 2-well portraits and keeps both tasks within
 Dual but sacrifices DPA retention. Wider box (±4.5) re-run confirms no structure was missed at ±2.
+
+---
+
+## §26 — Scoring the TRAJECTORIES (2026-09-02): the memory doesn't decay, it FLIPS
+
+**26a. `traj_verdict.py` + the `traj-verdict` skill — the behavioural half of the verdict.**
+`flow_verdict.py` answers "where are the wells"; nothing answered "does κ(t) do the right thing on the
+task", so every trajectory read was an eyeball of one panel. The expected κ(t) (Leon, 2026-09-02) now
+lives in ONE place — `EXPECT` at the top of the file — and is scored per stage:
+
+| stage (ckpt) | probe | expected |
+|---|---|---|
+| DPA (`dpa_`) | DPA | A/B memory on κ₀ maintained or decaying, sample-off → test; choice on κ₁ at test offset |
+| GNG (`naive_`) | GNG | go/nogo held on κ₁ at ±θ, maintained or transient; the cue pushes BOTH classes toward +κ₁; a response is expressed (sometimes wrong) |
+| GNG (`naive_`) | DPA | memory maintained or slightly disrupted; choice still on κ₁, sometimes wrong |
+| Dual (`expert_`) | Dual | memory maintained or decaying; go/nogo as in GNG; choice on κ₁, mostly right |
+
+Checks: `mem` (κ₀ hold across the delay → HELD/DECAY/FADE/GROW/LOST/**FLIP**), `rule`, `cue`, `resp`,
+`relax`, `nolick`, `choice`, `prelick`. Sign tests at the FIXED boundary 0 (flow-verdict trap 3), so
+the two tables compose. ~40 s per 4-seed sweep on CPU.
+
+**★ Expectations follow the run's own loss** (`_variant`/`_adapt`, mirroring sweep.py's `UnifiedLoss`
+construction) — Leon's requirement, and the thing that makes the table valid across arms. The spec's
+"±1" is really ±θ: θ⁺=`go_hinge_thresh`, θ⁻=−`nogo_hinge_thresh`, θ_pair=`dpa_hinge_thresh`. Those are
+ONE-SIDED hinges, so a level test is a FLOOR (beyond θ is free), never a band, and at θ=0 the floor is
+σ_eff — otherwise every sign-based arm fails for behaving exactly as designed. Free targets
+(`nogo_target=None`, `rwd_nogo_onesided`, `gng_response=False`) are reported and NOT scored (marked
+`·`); `nogo_target=None` with `nolick_weight=0` is tagged `★nogo-UNCONSTRAINED` because then nothing
+imposes don't-lick at all. `nolick_late_delay` adds its check, scored on exactly the steps the loss
+left free (`isnan(y)`); `decay_to_zero`/`kappa1_reg_weight` make `relax` scored — `gng_decay_to_zero`
+only for the GNG probe, since it is a GNG-STAGE-ONLY flag (getting that wrong imported a Dual
+expectation the loss never imposed). Each run prints a `variants:` line: never quote a level verdict
+without it.
+
+**26b. ★ The finding: GNG INVERTS the sample bit in ~44% of runs.** First fleet run, all eight
+delay-supervision arms (48 run-stages, n=512, trained σ): on the GNG-stage DPA probe the memory splits
+**21 FLIP · 7 LOST · 2 FADE · 11 DECAY · 7 HELD**. FLIP (sep at delay end < 0.45) is not forgetting —
+the A/B code is REVERSED. Trace evidence, s3_linldh1 at `naive_`, κ₀(A)−κ₀(B) through the DPA delay:
+**+1.70 (sample-off) → +0.44 (5 s) → −1.50 (test-on)** — it crosses zero mid-delay and settles in the
+opposite well. Not a start-window artefact: s0_renld1 on the identical measurement merely decays
+(+1.92 → +0.29). Independent corroboration from a different quantity (κ₁ at test): seven runs score
+DPA **below chance** after GNG — s3/s2_linldh1 0.28/0.29, s3/s2_linld1 0.29/0.30, s2_spnld1 0.31,
+s3_spnlc5 0.37, s1_linld1 0.44. Noise-only degradation sits at 0.5; a reversed code does not.
+
+This is what `after_gng/dpa ≈ 0.42` (§25f) was averaging over, and the two failure modes are different
+problems: a decayed memory needs amplitude, an inverted one needs the κ₀ dynamics not to reverse.
+**Mechanism NOT established.** rank-0's own overlap is bit-identical `dpa_`→`naive_` (g·λ₀ = 10.66 both
+— the freezing works), while the rank-1→rank-0 coupling g·n₀ᵀm₁/N grows ~3× during GNG (−1.36 → −4.22
+in linldh) — but it grows the same amount in renld, which only decays (−1.56 → −4.24), so coupling
+alone does not separate flip from decay. These are RAW overlaps (φ′=1, the tanh convention); the
+φ′-weighted effective version at the operating point is the next thing to compute before claiming a
+route. Candidate: the flip needs a sustained κ₁ offset during the delay to drive κ₀ through zero, so
+the arms that hold κ₁ away from 0 in the DPA delay should be the ones that flip — testable against the
+`prelick` column, which the tool already reports.
+
+**26c. Two more things the table surfaced.**
+- **Dual-stage memory GROWS more often than it decays**: 21 GROW · 17 HELD · 7 LOST · 3 DECAY. Most
+  GROW sit at hold 1.28–1.6 (κ₀ ≈ 0.85 after the sample → ≈ 1.2 at test); linldh is extreme at 2.6–3.9
+  (0.19–0.49 → 0.74–1.38). The sample kick lands SHORT of the well and the attractor pulls it out
+  during the delay — neither "maintained" nor "decaying". The DPA stage does not do this (hold
+  1.04–1.10), so it is not the 0.25 s start-window settling bias.
+- **The nolick dose ladder, per seed and per quantity**: nogo response at boundary 0 in Dual goes
+  w0 → **0.00/0.01/0.01/0.03** (κ₁ +0.30…+0.46 — it licks on every nogo trial) vs w5 →
+  0.92/0.49/0.99/0.98 (κ₁ −0.35…+0.03). Same `dpa_`/`naive_` checkpoints, so this is purely the Dual
+  delay term — an independent confirmation of §25c's "the nolick term is the only source of no-lick",
+  now with the κ₁ values rather than a single accuracy.

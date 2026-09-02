@@ -832,3 +832,37 @@ no results field — two-line fix, not yet made.
 multi/separated/threshold paths and `MaskedGNGLoss` were removed (run_one raises on them); `hinge_squared`
 is now dead config. Figures: hinge shape sets the κ scale as much as φ — softplus arms plot at ±4.5,
 relu²/relu arms at ±2 (`docs/analysis.md` §XLIM).
+
+## 2026-09-02 — trajectory scoring (`traj_verdict.py`): the DPA memory FLIPS during GNG
+
+No new sweeps. New tool + a re-read of the eight existing delay-supervision arms.
+
+**Tool.** `traj_verdict.py` + `traj-verdict` skill — the behavioural counterpart of `flow_verdict.py`.
+Scores κ(t) per stage against the expected trajectory (`EXPECT` in the file; DPA task at `dpa_`, GNG
+AND DPA tasks at `naive_`, Dual task at `expert_`, `--all_probes` for standalone retention after
+Dual). Checks: mem / rule / cue / resp / relax / nolick / choice / prelick, all sign tests at the
+fixed boundary 0. ~40 s per 4-seed sweep. **Expectations adapt to each run's own targets and
+regularisers** (θ from the hinge thresholds, free targets reported-not-scored, `nolick_late_delay` /
+decay pins / `kappa1_reg_weight` / `dual_gng_memory` switching checks on and off) and the adaptation
+prints as a per-run `variants:` line. Docs: `docs/analysis.md`; science: `ring_lowerplane_log` §26.
+
+**Result across all 8 arms (48 run-stages, n=512, trained σ).** GNG-stage DPA probe:
+
+| memory after GNG | FLIP | LOST | FADE | DECAY | HELD |
+|---|---|---|---|---|---|
+| runs | **21** | 7 | 2 | 11 | 7 |
+
+**FLIP = the A/B code is inverted, not lost** (sep at delay end < 0.45). s3_linldh1 κ₀(A)−κ₀(B):
++1.70 at sample-off → +0.44 at 5 s → **−1.50** at test-on; s0_renld1 on the same measurement only
+decays (+1.92 → +0.29). Corroborated by a different quantity: 7 runs score DPA BELOW chance after GNG
+(0.28–0.44). So `after_gng/dpa ≈ 0.42` (2026-08-12/13 block) mixes two distinct failures — an
+inverted memory and a decayed one — which need different fixes.
+
+Also: Dual-stage memory GROWS in 21 runs vs HELD 17 / LOST 7 / DECAY 3 (hold 1.28–1.6, linldh
+2.6–3.9) — the sample kick lands short of the well and the attractor pulls it out during the delay.
+And the nolick ladder per seed: Dual nogo@0 = 0.00–0.03 at w0 (κ₁ +0.30…+0.46) vs 0.49–0.99 at w5.
+
+**Mechanism of the flip is NOT established.** rank-0's own overlap is bit-identical dpa→naive
+(freezing verified); the rank-1→rank-0 coupling grows ~3× in GNG but by the same amount in an arm
+that only decays. Next: the φ′-weighted effective coupling at the operating point (the raw overlaps
+assume φ′=1), and testing the flip against the `prelick` column.

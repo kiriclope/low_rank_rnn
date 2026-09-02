@@ -7,6 +7,7 @@
 | want | rank-2 | rank-3 |
 |---|---|---|
 | **SCORE a sweep vs the goal** (memory wells κ₁<0) | **`flow_verdict.py`** (+ `flow-verdict` skill — run this BEFORE interpreting any flow figure) | — |
+| **SCORE the BEHAVIOUR** (κ(t) per stage vs the expected trajectory) | **`traj_verdict.py`** (+ `traj-verdict` skill — run this BEFORE interpreting any trajectory figure) | — |
 | flow portrait (analytic) | `plot_sweep.py --plots flow` | `rank3_flow.py` |
 | + input noise | `plot_sweep.py --field_input_noise` (MC) | `rank3_flow.py --noise` |
 | GENUINE sim trajectories | `traj_flow.py` | `traj_flow.py --stage …` |
@@ -41,6 +42,39 @@ also affects `bifurcation_probe.py` which uses the brainpy pass).
 The split axis: `flow_rank2`/`flow_rank3` = analytic field portraits (by rank); `flow_traj` = integrated
 trajectories (rank-general). All sit on `flow_field` + `flow_fixedpoints`.
 
+
+## Trajectory verdict — `traj_verdict.py` (2026-09-02)
+
+The behavioural counterpart of `flow_verdict.py`: instead of *where the wells are*, it scores *what
+κ(t) actually does on the task*, per stage, against Leon's spec (encoded once in `EXPECT` at the top
+of the file, reproduced in the `traj-verdict` skill). Run it before interpreting any trajectory
+figure — a traj panel shows one condition at one stage; this reads all of them at once.
+
+```bash
+LD_PRELOAD=/home/leon/mambaforge/lib/libstdc++.so.6 python traj_verdict.py \
+    --sweep_dir results/dual/<sweep> [--run_ids …] [--stages dpa gng dual] [--all_probes] [--json out.json]
+```
+Probes: DPA task at `dpa_`; GNG **and** DPA tasks at `naive_` (the second is the `after_gng/dpa`
+story, in trajectory form); Dual task at `expert_`. `--all_probes` adds the standalone DPA/GNG tasks
+at `expert_`. ~10 s/run on CPU.
+
+Checks: `mem` (κ₀ hold across the delay, categorised HELD/DECAY/FADE/GROW/LOST/**FLIP**), `rule`
+(go/nogo sign + ±θ level before the cue), `cue` (Δκ₁ — nogo must go up, go must not go down),
+`resp`, `relax` (transient vs parked), `nolick` (late-delay κ₁≤0, on the steps the loss left free),
+`choice`, `prelick`. All sign tests at the **fixed boundary 0**, as in flow_verdict.
+
+**Expectations adapt to the run's own loss** (`_variant`/`_adapt`, mirroring how `sweep.py` builds
+`UnifiedLoss`): the spec's "±1" is really ±θ with θ⁺=`go_hinge_thresh`, θ⁻=−`nogo_hinge_thresh`,
+θ_pair=`dpa_hinge_thresh`; hinges are one-sided so a level test is a FLOOR, and θ=0 (sign-based
+arms) means the floor is σ_eff, not 1. Free targets (`nogo_target=None`, `rwd_nogo_onesided`,
+`gng_response=False`) are reported but never scored; `nolick_late_delay`, `decay_to_zero`,
+`gng_decay_to_zero` (GNG-stage only!), `kappa1_reg_weight`, `dual_gng_memory`, `dpa_prelick_free`
+and `hinge_shape=softplus` each switch a check on/off or move its threshold. Every adaptation is
+printed as the per-run `variants:` line — **read it before quoting any level verdict**, and note
+`✓/✗` = scored vs `·` = reported only.
+
+Adding a generator flag to `sweep.run_single` means adding it to `_gen` here too, or the probe
+silently drifts from what was trained.
 
 
 ## Main entrypoint: `plot_sweep.py`
