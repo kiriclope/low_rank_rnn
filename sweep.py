@@ -204,6 +204,11 @@ class RunConfig:
     kappa_gain_target: float | None = None  # CRITICALITY: pin ALL modes' g·λ to this value (two-sided) after each step, ALL stages
     nolick_weight:   float = 0.0   # one-sided no-lick penalty hinge(κ₁≤0, per hinge_shape) over free decision windows (Dual)
     nolick_late_delay: bool = False # DON'T-LICK imposition (NeuroFlame train_dual.org port): restrict the nolick term to the LATE DELAY (cue-off → test-onset) of the Dual stage. Free-(NaN)-steps only, so the finite go/nogo response targets inside the span keep their own rwd terms; covers nogo + 'none' (pure-DPA) trials' late delay and the go post-response tail. 'none' trials sit ON the sample wells there → the term grades the wells' κ₁ directly (delay-time supervision, the §24f factorization route). Needs nolick_weight > 0.
+    nolick_full_delay: bool = False # extend the Dual don't-lick to the WHOLE delay (sample-off → test-onset) on the DPA TRIALS ONLY — the Dual-task trials with no go/nogo stimulus and no cue (sample→delay→test; the generator labels them gng="none", condition names "A_C"/"B_D", src/tasks.py:278). They sit ON the sample wells for that entire span, so the hinge grades the wells' κ₁ over ~3x more steps than nolick_late_delay. go/nogo trials keep the late window (a full-delay hinge would fight their +1 rule hold on the SAME κ₁ axis in rank-2). DPA trials are identified by having no finite decision target in the go/nogo span, so this REQUIRES dual_gng_memory=True (else go/nogo trials look like DPA trials); guarded below. Needs nolick_weight > 0.
+    dpa_nolick_weight: float = 0.0  # apply the same one-sided don't-lick over the DPA-STAGE delay (sample-off → test-onset). NOT the legacy two-sided pin (dpa_prelick_free=False), which clamps wells ON the line: one-sided leaves κ₁<0 free, so wells may seat at/below 0 but are never pulled back up. Intent: enter GNG with no up-structure to inherit.
+    nolick_thresh:   float = 0.0   # DISPLACE the no-lick hinge to κ₁ ≤ −thresh (all stages that use nolick). relu/relu² have zero gradient once satisfied, so a hinge at 0 seats wells AT the line no matter how wide the window — this is the only lever that buys DEPTH (§25e).
+    gng_decouple_decision: bool = False # GNG stage: after each step project n[:,dec] ⟂ m[:,0], keeping the decision readout blind to the sample-memory direction. Targets the leakage that INVERTS the DPA memory during GNG (§26/§27): |κ₁(A)−κ₁(B)| ≥ 0.85 → flip in 6/6, ≤ 0.27 → intact in 5/5. m[:,0] is frozen in GNG so n[:,dec] is the only party that can build the overlap.
+    gng_hold_full_delay: bool = False # windowed go/nogo hold spans stim-off → cue-on (GNG stage; go/nogo-stim-off → cue-on in Dual) instead of the 0.25 s pre-cue hold — symmetric with how the A/B memory is supervised across its whole delay. Eval trial generators don't carry it (targets unused in scoring).
     hinge_gng:       bool  = False # unified one-sided decision hinge at κ₁=0 (go+nogo & match/nonmatch, all stages)
     nogo_push_memory: bool = False # Dual: True FORCES the nogo memory to κ₁≤−1 (defeats emergent lowering); False (default) = gentle κ₁≤0, well location left to emerge
 
@@ -654,8 +659,13 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     _half_steps = int(round(0.5 / gng_timing.dt))   # response window length in steps
     # ONE value-based loss at all three stages (targets carry the semantics). Baseline is its
     # own pinned term; the decision channel splits into separate gng/pair terms at test onset.
+    # dpa_nolick_weight: one-sided don't-lick over the DPA-stage delay (sample-off → test-onset).
+    # There is no go/nogo in DPA, so every row gets it and no trial-scoping is needed.
     dpa_criterion = UnifiedLoss(dpa_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
-                                pair_start=int(dpa_timing.n_stim_on[1]), **_uw)
+                                pair_start=int(dpa_timing.n_stim_on[1]),
+                                nolick_weight=config.dpa_nolick_weight,
+                                nolick_window=(int(dpa_timing.n_stim_off[0]), int(dpa_timing.n_stim_on[1])),
+                                nolick_thresh=config.nolick_thresh, **_uw)
     # rwd_window follows response_in_cue: targets sit IN-cue (co-half:co) when set, else the
     # legacy post-cue window. (Fixed 2026-08-10: the window was never shifted, so in-cue nogo
     # 0-targets fell into the gng group's two-sided PIN and rwd_nogo_weight was inert.)
@@ -671,12 +681,32 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
               if config.nolick_late_delay else None)
     _nlw_g = ((int(gng_timing.n_stim_off[1]), int(gng_timing.n_steps))
               if config.nolick_late_delay else None)
+    # nolick_full_delay: the whole delay (sample-off → test-onset) on the 'none' rows only. Those
+    # rows are identified inside the loss by having no finite decision target in the go/nogo span,
+    # which only distinguishes them from go/nogo rows if those rows carry the pre-cue hold.
+    if config.nolick_full_delay and not config.dual_gng_memory:
+        raise ValueError("nolick_full_delay needs dual_gng_memory=True: without the pre-cue hold, "
+                         "go/nogo rows have no finite target in the gng span either, so they would "
+                         "be treated as 'none' and the full-delay hinge would fight the go rule.")
+    if config.nolick_full_delay and config.target_rank != 2:
+        raise ValueError("nolick_full_delay: DPA-trial detection reads the DECISION channel, and the "
+                         "pre-cue hold lands there only for target_rank=2 (rank-3 holds live on ch1, "
+                         "decision on ch2 — go/nogo rows would be misread as DPA trials).")
+    if config.dpa_nolick_weight > 0 and not config.dpa_prelick_free:
+        raise ValueError("dpa_nolick_weight needs dpa_prelick_free=True: the legacy two-sided 0-pin "
+                         "fills the DPA delay with finite targets, leaving the one-sided term no free "
+                         "steps — it would be silently inert (the rwd_window trap, 2026-08-10).")
+    _nlf_d = ((int(dual_timing.n_stim_off[0]), int(dual_timing.n_stim_on[3]))
+              if config.nolick_full_delay else None)
+    _nlg_d = (int(dual_timing.n_stim_on[1]), int(dual_timing.n_stim_off[2]))
     gng_criterion = UnifiedLoss(gng_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape, pair_start=None,
                                 rwd_window=_rw_g,
                                 nolick_weight=(config.nolick_weight if config.nolick_late_delay else 0.0),
-                                nolick_window=_nlw_g, **_uw_gng)
+                                nolick_window=_nlw_g, nolick_thresh=config.nolick_thresh, **_uw_gng)
     print(f"[{rid}]  loss=unified (ALL stages): ±1→one-sided hinge(gng th={_uth}, pair/mem th={_uth_pair}),"
-          f" 0→pin, NaN→free  [bl | gng | pair split @ test-on]", flush=True)
+          f" 0→pin, NaN→free  [bl | gng | pair split @ test-on]"
+          f"{f'  DPA-stage nolick w={config.dpa_nolick_weight} over the delay' if config.dpa_nolick_weight else ''}",
+          flush=True)
     losses    = {}
     _global_step = [0]   # mutable so the nested helper can increment it
 
@@ -832,7 +862,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                       cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                       nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                       input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
-                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero or config.gng_decay_to_zero, decay_to_end=config.gng_decay_to_zero, gng_response=config.gng_response, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue)
+                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero or config.gng_decay_to_zero, decay_to_end=config.gng_decay_to_zero, gng_response=config.gng_response, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue, hold_full_delay=config.gng_hold_full_delay)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -841,6 +871,12 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         gng_regularizer = _kappa1_regularizer(config, model)
         if gng_regularizer is not None:
             print(f"[{rid}]  decision-subcriticality reg (GNG): w={config.kappa1_reg_weight}·relu(g·λ{config.rank-1}−1)²", flush=True)
+        # gng_decouple_decision: keep the decision readout blind to the sample-memory direction —
+        # the leakage that INVERTS the DPA memory during GNG (§26/§27). rank-0 is frozen here, so
+        # n[:,dec] is the only party that can build the overlap.
+        _orth = (config.rank - 1, 0) if config.gng_decouple_decision else None
+        if _orth is not None:
+            print(f"[{rid}]  decoupling (GNG): project n[:,{_orth[0]}] ⟂ m[:,0] after each step", flush=True)
         trainer    = Optimization(model, tl, vl, gng_criterion, opt, sched,
                                   config.grad_clip_norm, num_epochs=config.epochs_gng,
                                   freeze_low_rank_cols=[0],
@@ -848,6 +884,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                   stop_loss=config.stop_loss,
                                   regularizer=gng_regularizer,
                                   kappa_gain_target=config.kappa_gain_target,
+                                  orthogonalize_cols=_orth,
                                   verbose=True)
         train_l, val_l, _ = trainer.fit()
         model.rwd = config.rwd         # restore reward for eval and subsequent stages
@@ -879,7 +916,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                             cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                             go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                             input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
-                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue)
+                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue, hold_full_delay=config.gng_hold_full_delay)
         print(f"[{rid}]  data(paired): {list(Xp.shape)} → {list(yp.shape)}", flush=True)
         tlp, vlp     = train_val_split(Xp.to(device), yp.to(device), config.batch_size)
         optp, schedp = _opt_and_sched()
@@ -891,7 +928,8 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                        pair_start=int(dual_timing.n_stim_on[3]),
                                        rwd_window=_rw_d,
                                        nolick_weight=config.nolick_weight,
-                                       nolick_window=_nlw_d, **_uw)
+                                       nolick_window=_nlw_d, nolick_full_window=_nlf_d,
+                                       nolick_gng_span=_nlg_d, nolick_thresh=config.nolick_thresh, **_uw)
         trainer = Optimization(model, tlp, vlp, paired_criterion, optp, schedp,
                                config.grad_clip_norm, num_epochs=config.epochs_dual_paired,
                                freeze_low_rank_cols=dual_mem_freeze,
@@ -918,7 +956,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                        nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                        input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
-                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue)
+                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue, hold_full_delay=config.gng_hold_full_delay)
     print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
     tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
     opt, sched = _opt_and_sched()
@@ -931,10 +969,13 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                  pair_start=int(dual_timing.n_stim_on[3]),
                                  rwd_window=_rw_d,
                                  nolick_weight=config.nolick_weight,
-                                 nolick_window=_nlw_d, **_uw)
+                                 nolick_window=_nlw_d, nolick_full_window=_nlf_d,
+                                 nolick_gng_span=_nlg_d, nolick_thresh=config.nolick_thresh, **_uw)
     print(f"[{rid}]  loss=unified  gng_w={config.gng_weight}  pair_w={config.dpa_weight}"
           f"  nolick_w={config.nolick_weight}"
-          f"{f'  nolick_window={_nlw_d} (late delay)' if _nlw_d else ''}", flush=True)
+          f"{f'  nolick_window={_nlw_d} (late delay)' if _nlw_d else ''}"
+          f"{f'  nolick_FULL={_nlf_d} on none-rows (gng span {_nlg_d})' if _nlf_d else ''}"
+          f"{f'  nolick_thresh=−{config.nolick_thresh}' if config.nolick_thresh else ''}", flush=True)
 
     dual_freeze_rank0 = dual_mem_freeze
 
@@ -1732,6 +1773,36 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                 if kw_seed.get(_ck):
                     kw_seed[_ck] = kw_seed[_ck].format(seed=seed)
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, **kw_seed))
+
+    # ═══ RESET (Leon 2026-09-02): the simplest two-memory task, NO CUE, gain 1.0. ═══════════════
+    # Strip every lever — no cue push, no response window, no nolick, no decay pins, no decoupling.
+    # Supervision = the two memories + pairing only: A/B on κ₀ (whole delay, as always), go/nogo on
+    # κ₁ with gng_hold_full_delay (stim-off → phantom-cue, symmetric with the A/B supervision;
+    # re-supervised in Dual via dual_gng_memory), pairing 0.25 s at test-off, free tails everywhere
+    # else. cue_scale=0.0 with cue_on_go_input keeps input_size/timings IDENTICAL to the cue
+    # version, so sweep 2 (add the push-up) is a one-scalar delta (cue_scale 0→2). Question: what
+    # geometry do two orthogonal sequential memories converge to BEFORE any asymmetry exists?
+    # (ring_lowerplane_log §27 gap analysis → reset.) --run_filter nocue
+    nocue_common = dict(nonlinearity="lif", gain=1.0, noise=1.0, cue_scale=0.0,
+                        memory_lambda=3.0, decision_readout_mean=0.0,
+                        nogo_push_memory=False, ramping_gng=False,
+                        windowed_targets=True, gng_hold_full_delay=True,
+                        dual_gng_memory=True, gng_response=False, nogo_target=None,
+                        response_in_cue=False, decay_to_zero=False,
+                        attention_gated=True, dpa_prelick_free=True,
+                        epochs_dpa=250, epochs_gng=100, epochs_dual=300, stop_loss=0.005)
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_nocue", seed=seed,
+                                 **{**emergent, **shared_unfrozen, **nocue_common}))
+
+    # cue1 (Leon 2026-09-02): = nocue + cue_scale=1.0 — the cue INPUT returns, NO new targets
+    # (nothing during or after the cue; supervision bit-identical to nocue). DPA stage REUSED from
+    # sweep_r2nocue via dpa_ckpt, so GNG/Dual start from the identical memory solution — any change
+    # vs nocue is attributable to the cue push alone. --run_filter cue1
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_cue1", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_r2nocue/s{seed}_nocue/dpa_s{seed}_nocue.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common, "cue_scale": 1.0}))
 
     return configs
 

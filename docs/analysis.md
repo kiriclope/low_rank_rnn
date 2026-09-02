@@ -69,9 +69,13 @@ Checks: `mem` (κ₀ hold across the delay, categorised HELD/DECAY/FADE/GROW/LOS
 arms) means the floor is σ_eff, not 1. Free targets (`nogo_target=None`, `rwd_nogo_onesided`,
 `gng_response=False`) are reported but never scored; `nolick_late_delay`, `decay_to_zero`,
 `gng_decay_to_zero` (GNG-stage only!), `kappa1_reg_weight`, `dual_gng_memory`, `dpa_prelick_free`
-and `hinge_shape=softplus` each switch a check on/off or move its threshold. Every adaptation is
+and `hinge_shape=softplus` each switch a check on/off or move its threshold; the 2026-09-02 flags
+too — `nolick_full_delay` (κ₁≤0 scored over the WHOLE delay on the DPA trials), `nolick_thresh`
+(ε echoed; scoring stays at boundary 0), `dpa_nolick_weight` (one-sided `prelick`, scored at the
+DPA stage), `gng_decouple_decision` (tagged; expect `leak`≈0). Every adaptation is
 printed as the per-run `variants:` line — **read it before quoting any level verdict**, and note
-`✓/✗` = scored vs `·` = reported only.
+`✓/✗` = scored vs `·` = reported only. The `leak` check (GNG/dpa probe) = |κ₁(A)−κ₁(B)| over the
+early-mid delay — the flip predictor (§26/§27).
 
 Adding a generator flag to `sweep.run_single` means adding it to `_gen` here too, or the probe
 silently drifts from what was trained.

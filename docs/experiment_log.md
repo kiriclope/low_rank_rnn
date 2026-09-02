@@ -866,3 +866,58 @@ And the nolick ladder per seed: Dual nogo@0 = 0.00–0.03 at w0 (κ₁ +0.30…+
 (freezing verified); the rank-1→rank-0 coupling grows ~3× in GNG but by the same amount in an arm
 that only decays. Next: the φ′-weighted effective coupling at the operating point (the raw overlaps
 assume φ′=1), and testing the flip against the `prelick` column.
+
+## 2026-09-02 (later) — ★★ FOUNDATION: `sweep_r2nocue` (the reset baseline we always build on)
+
+After the three-gap analysis of why the cue-era task never produced the target solution
+(`ring_lowerplane_log` §27a: GNG is A/B-blind → degenerate basins, the boundary-hinge objective
+prefers shallow wells, and no term scores retention), Leon reset the program: strip the task to the
+two memories, no cue, then reintroduce levers one at a time.
+
+**`sweep_r2nocue`** (4 seeds, DONE): lif, N=1024, rank 2, **gain 1.0**, noise 1.0, lr 0.01 fixed,
+250/100/300, stop 0.005. `cue_scale=0.0` (identical arch/timings to cue versions — later cue sweeps
+are one-scalar deltas). Supervision ONLY: A/B ±1 on κ₀ (whole DPA delay) + pairing (0.25 s at
+test-off, free tail); go/nogo ±1 on κ₁ stim-off→phantom-cue (new flag **`gng_hold_full_delay`**),
+re-held in Dual (`dual_gng_memory=True`). No response window, no nolick, no decay pins, no reg.
+
+| metric | s0 | s1 | s2 | s3 |
+|---|---|---|---|---|
+| after_gng/dpa | 1.00 | 1.00 | 1.00 | 1.00 |
+| after_dual dpa / gng | 1.00/1.00 | 1.00/1.00 | 1.00/1.00 | 1.00/1.00 |
+| leak at naive | 0.24 | 0.25 | 0.55 | 0.03 |
+| mem after GNG | HELD | HELD | HELD | HELD |
+
+Geometry: wells (±1.2–1.3, ~0) intact through GNG (scrambled-but-not-lost, exactly the target);
+parked pairing attractors (0,±1.5) after DPA double as the go/nogo memory in GNG (MAINT) and
+dissolve during Dual (only the 2 memory wells persist at expert). NO pushdown (offsets ~1 σ_eff,
+no down-pressure in this loss — honest baseline). Couplings never entangle (GNG Δ|n₀ᵀm₁| ≤ 0.4 vs
+−4.2 in the gain-2+cue lineage). by-condition control: none vs cued identical (1.00/1.00/1.00).
+Figures: gallery `rnn/sweep_r2nocue` (70 PNGs, ±2.5 box). Full narrative: `ring_lowerplane_log` §27b.
+
+**`sweep_r2cue1`** (DONE — ★ foundation addon): = nocue + `cue_scale=1.0`, cue input only, NO
+targets during/after the cue; DPA checkpoints reused from nocue per seed (identical memory start —
+every delta is the cue's).
+
+| metric | s0 | s1 | s2 | s3 | nocue range |
+|---|---|---|---|---|---|
+| after_gng/dpa | 1.00 | 1.00 | 0.99 | 1.00 | 1.00 |
+| leak at naive | 0.35 | 0.32 | 0.62 | 0.00 | 0.03–0.55 |
+| pairing by-gng (none/go/nogo) | 1/1/1 | 1/1/1 | 1/1/1 | 1/.99/1 | 1/1/1 |
+| Dual cue Δκ₁ nogo | +0.74 | +0.76 | +0.73 | +0.75 | — (no cue) |
+| nogo late-delay κ₁ (steps>0) | +0.07 (.62) | −0.01 (.49) | +0.16 (.74) | +0.17 (.71) | −0.15…−0.37 (.18–.41) |
+
+Verdict: the cue at scale 1.0 is ABSORBED — retention, scrambling, and pairing indistinguishable
+from nocue — while nogo now LINGERS at/above the lick line through the whole late delay (nothing
+in the loss penalises it; the `dual_gng` eval reads 0.71–0.77 purely from this residue while every
+trained quantity is 1.00). Expert wells go asymmetric (+κ₀ at/above the line, −κ₀ diving in s0/s2;
+s1 −κ₀ attractor not found by the finder, behaviour intact). The safeguard premise is now measured
+on a controlled before/after. Full narrative + caveats: `ring_lowerplane_log` §27c. Figures:
+gallery `rnn/sweep_r2cue1`. Next (Leon's call): no-lick demand on this foundation, or a cue_scale
+ladder.
+
+**New levers implemented this date (coded + unit-tested, NOT yet run):** `nolick_full_delay`
+(whole-delay don't-lick on the DPA trials of Dual; needs `dual_gng_memory=True`, rank-2 only —
+guarded), `dpa_nolick_weight` (one-sided delay hinge in the DPA stage; needs `dpa_prelick_free` —
+guarded), `nolick_thresh` (ε-displaced hinge = imposed depth), `gng_decouple_decision`
+(n_dec⟂m₀ projection after each GNG step; §27a says it should also project m_dec⟂n₀ — pair NOT yet
+implemented), `gng_hold_full_delay` (used by the foundation).

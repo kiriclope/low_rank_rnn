@@ -1501,3 +1501,105 @@ the arms that hold κ₁ away from 0 in the DPA delay should be the ones that fl
   0.92/0.49/0.99/0.98 (κ₁ −0.35…+0.03). Same `dpa_`/`naive_` checkpoints, so this is purely the Dual
   delay term — an independent confirmation of §25c's "the nolick term is the only source of no-lick",
   now with the κ₁ values rather than a single accuracy.
+
+---
+
+## §27 — Why the designed task couldn't give the target solution, the reset, and ★ THE FOUNDATION (2026-09-02)
+
+**27a. The three-gap analysis (why §25's task+loss never produced "wells down, memory retained").**
+Answering Leon's "I want to understand why the task and loss we designed does not provide this
+solution". The target is specified in GEOMETRIC, CROSS-STAGE terms (the A/B bit persists through
+GNG with bounded scrambling; wells sit below the line by a cue-sized margin; frozen pieces stay
+calibrated) — but every optimized term is behavioural and stage-local:
+
+- **Gap 1 (GNG, a SELECTION problem):** the GNG batch contains no A/B trial, so no gradient prices
+  the memory; freezing m₀,n₀ protects parameters, not the attractor. Demonstration: s0 vs s3 of
+  linldh are indistinguishable to every loss term (GNG 1.00 both, dual_dpa 1.00 both) yet s0 kept
+  the bit and s3 inverted it. New measurement (GNG task at `naive_`): the flipper's GNG trials sit
+  IN the sample wells (median |κ₀|=0.43, 50% beyond 0.5) with sign(κ₀) RULE-LOCKED (+κ₀↔nogo −1.09,
+  −κ₀↔go +1.16) — the rule was stored partly along the memory axis; the survivor's trials hover at
+  the origin (median |κ₀|=0.11, 1% in wells). Two degenerate basins; φ′ saturation at visited wells
+  (gain 2) tilts selection toward the entangled one. Correction to the §26 fix: TWO couplings are
+  involved — n_dec⟂m₀ kills only the κ₀→κ₁ readout leak; the κ₁→κ₀ drive is n₀ᵀφ′m_dec, so the
+  projection must also do m_dec⟂n₀ (not yet implemented as a pair).
+- **Gap 2 (Dual, an OBJECTIVE problem):** the nolick hinge is a boundary demand with a 1.5 s
+  recovery window — "recovered by test" is satisfiable by a well at 0⁻; depth ∝ cue-push is never
+  required and is actively expensive (match climb + φ′ gain steal). Observed depths −0.09…−0.38 vs
+  σ_eff≈0.37 = exactly the one-sided-hinge noise equilibrium. The deep-well solution has strictly
+  higher loss.
+- **Gap 3 (the pipeline SEAMS):** each stage relocates geometry other frozen pieces were calibrated
+  to (cue sized under naive geometry then frozen; Dual re-deepens wells → sample kick lands short =
+  the GROW finding; GNG-task routing dies after Dual). Retention (`after_gng/dpa`) is a metric, not
+  a term; rank-0 trainable in Dual lets Dual REBUILD, hiding the damage from every loss.
+
+**27b. ★★ THE FOUNDATION — `sweep_r2nocue` (Leon's reset: simplest two-memory task, NO cue).**
+"Let's first run a sweep without cue in gng and the simplest flags. AB memory, go nogo memory."
+Config (the baseline we ALWAYS build on): lif, N=1024, rank 2, **gain 1.0**, noise 1.0, τ=0.3,
+lr 0.01 fixed, 250/100/300 epochs, stop 0.005; **cue_scale=0.0** (window kept in the timing —
+adding the cue later is a one-scalar delta); supervision = A/B ±1 on κ₀ across the DPA delay +
+pairing (0.25 s at test-off, free tail), go/nogo ±1 on κ₁ over stim-off→phantom-cue (**new flag
+`gng_hold_full_delay`**, symmetric with the A/B supervision; re-supervised in Dual via
+`dual_gng_memory=True`); EVERYTHING else off — no response window (`gng_response=False`,
+`nogo_target=None`), no nolick, no decay pins, no decoupling, no reg; `dpa_prelick_free`; standard
+freezing (GNG: rank-0+DPA inputs; Dual: all inputs; rank-0 trainable in Dual). Verified from the
+artifacts: cue-window input identically 0; Dual loss line `nolick_w=0.0`.
+
+**Result: the stripped task produces the desired solution class, 4/4 seeds.**
+- Behaviour: `after_gng/dpa` = **0.996–1.000** (vs 0.42–0.84 in every cue-era arm); both tasks
+  ≥ 0.999 after Dual.
+- After GNG = exactly "scrambled but not lost": mem HELD 4/4 (hold 0.97–1.00, sep 1.00→1.00),
+  wells at (±1.2–1.3, ·) with small κ₁ offsets — leak 0.03/0.24/0.25/0.55. Even 0.55 flips nothing
+  at gain 1 (the 0.50 flag threshold was calibrated at gain 2 — tolerance is wider here).
+- Geometry: DPA stage ends with 2 memory wells PLUS parked pairing attractors at (0,±1.5) (free
+  tail → ±1 decisions persist); GNG reuses (0,±1.5) as the go/nogo memory (rule@0 = 1.00, relax
+  MAINT 0.93–0.97 — parked, nothing demands transience; caveat: at naive the finder shows only the
+  +κ₁ attractor in s1/s2, nogo may ride a slow transient); at expert the free-standing κ₁
+  attractors DISSOLVE — only the two memory wells remain (s0–s2), rule held semi-transiently
+  (relax 0.70–0.82) on top of them.
+- NO pushdown claim: expert well κ₁ offsets (−0.09…−0.47; s3 diagonal +0.54/−1.21 S) are ~1
+  σ_eff and there is no down-pressure in this loss — incidental, and that's the honest baseline.
+- Couplings never entangle: GNG moves n₀ᵀm₁ by ≤0.4, n₁ᵀm₀ by ≤0.1 (vs growth to −4.2 in the
+  gain-2+cue lineage). Raw g·λ ≈ 6.6–8.6 both modes.
+- Clean control for the cue: pairing and κ₀-at-test IDENTICAL on none vs go/nogo trials
+  (1.00/1.00/1.00; κ₀ ±0.94–0.99 both) — any future by-condition gap is attributable to the cue.
+
+Three things were stripped at once (cue, response window, gain 2), so attribution between them is
+exactly what the next sweep isolates.
+
+**27c. ★ FOUNDATION ADDON — `sweep_r2cue1` (DONE): the cue at scale 1.0 is ABSORBED, and the
+missing safeguard becomes visible.** = nocue + **cue_scale=1.0**, cue INPUT only — no targets
+during or after the cue (Leon: "Don't add any target during or after cue, just the input itself").
+DPA stage REUSED from sweep_r2nocue via `dpa_ckpt` per seed, so GNG/Dual start from the identical
+memory solution — every delta below is attributable to the cue alone.
+
+*What held (per seed vs nocue):*
+- **Retention untouched**: `after_gng/dpa` 0.987–1.000; mem HELD 4/4 (hold 0.97–0.99, sep
+  1.00→1.00); leak at naive 0.35/0.32/0.62/0.00 vs nocue 0.24/0.25/0.55/0.03 — the cue adds only
+  a whisper of scrambling, no flips. Couplings stay clean at naive (|n₀ᵀm₁| ≤ 0.7): no
+  entanglement at gain 1 even with the cue present.
+- **Pairing untouched**: by-condition split 1.00/1.00/1.00 (none/go/nogo), κ₀ at test-on identical
+  cued vs uncued (±0.94–1.04). At scale 1.0 the κ₁ displacement does NOT misroute the test
+  decision — the predicted DPA-pairing damage does not appear at this dose.
+
+*What the cue does (the asymmetry, measured):*
+- Dual cue Δκ₁: **nogo +0.73…+0.76**, go +0.21…+0.29 (already near ceiling), 'none' +0.01…+0.04
+  (clean control). Up-only and rule-indiscriminate, as designed.
+- **After cue-off, nogo lingers AT/ABOVE the line for the whole late delay**: mean κ₁ over
+  cue-off→test-on = +0.07/−0.01/+0.16/+0.17 with 49–76% of steps >0 (nocue: −0.15…−0.37,
+  18–41%). By the task's own (untrained) response criterion this reads as licking — the
+  `dual_gng` eval drops to 0.71–0.77 for exactly this reason, while every TRAINED quantity (rule
+  hold 1.00, choice 1.00) is perfect. Nothing in the loss penalises the lingering, so the net
+  never comes down: **the missing-safeguard premise, now measured on a controlled before/after.**
+
+*Geometry (expert):* the wells go ASYMMETRIC — the +κ₀ well sits at/above the line in all seeds
+(+0.02…+0.23) while the −κ₀ well dives in s0/s2 (−0.71/−1.17); s3 both up (+0.51/+0.23); s1's
+−κ₀ attractor is NOT FOUND by the finder (NO PAIR) though behaviour is intact (sep 1.00,
+dual_dpa 0.999) — likely a slow manifold or narrow basin; flagged, not diagnosed. Dual-stage
+n₁ᵀm₀ grows to +1.4…+1.8 in s0–s2, same as in nocue — a Dual effect, not a cue effect.
+
+*Where this leaves the program:* foundation + cue1 cleanly demonstrate the safeguard PREMISE —
+the cue parks nogo in the lick region through the late delay because nothing asks otherwise, and
+the memory tolerates it at this dose. Next levers (Leon's call): the no-lick demand on this
+foundation (the safeguard experiment proper — watch wells/relaxation vs pairing cost), or a
+cue_scale ladder (2.0, 4.0) to find where the push alone breaks retention/routing.
+Figures: gallery `rnn/sweep_r2cue1` (70 PNGs, ±2.5 box).

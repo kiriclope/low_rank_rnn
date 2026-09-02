@@ -63,9 +63,11 @@ from src.tasks import make_timings, generate_dpa_trials, generate_gng_trials, ge
 #   resp_min  — min go/nogo response accuracy in the trained response window (boundary 0)
 #   cue_push  — the cue must move BOTH go and nogo in the +κ₁ direction
 EXPECT = {
-    ("dpa",  "dpa"):  dict(mem_cats={"HELD", "DECAY"}, sep_min=0.90, choice_min=0.90),
+    ("dpa",  "dpa"):  dict(mem_cats={"HELD", "DECAY"}, sep_min=0.90, choice_min=0.90,
+                           leak_max=None),                       # baseline: no GNG training yet
     ("gng",  "gng"):  dict(rule_min=0.90, cue_push=True, resp_min=0.85),
-    ("gng",  "dpa"):  dict(mem_cats={"HELD", "DECAY"}, sep_min=0.75, choice_min=0.60),
+    ("gng",  "dpa"):  dict(mem_cats={"HELD", "DECAY"}, sep_min=0.75, choice_min=0.60,
+                           leak_max=0.50),                       # ★ predicts the memory inversion
     ("dual", "dual"): dict(mem_cats={"HELD", "DECAY"}, sep_min=0.80, choice_min=0.80,
                            rule_min=0.75, cue_push=True, resp_min=0.70),
 }
@@ -98,6 +100,11 @@ def _variant(cfg):
         go_free=bool(cfg.get("rwd_nogo_onesided", False)) and not bool(cfg.get("rwd_keep_go_hinge", False)),
         no_resp=not bool(cfg.get("gng_response", False)),
         nolick=bool(cfg.get("nolick_late_delay", False)) and float(cfg.get("nolick_weight", 0.0)) > 0,
+        nolick_full=bool(cfg.get("nolick_full_delay", False)) and float(cfg.get("nolick_weight", 0.0)) > 0,
+        nolick_eps=float(cfg.get("nolick_thresh", 0.0) or 0.0),
+        dpa_nolick=float(cfg.get("dpa_nolick_weight", 0.0) or 0.0) > 0,
+        decoupled=bool(cfg.get("gng_decouple_decision", False)),
+        no_cue=float(cfg.get("cue_scale", 2.0)) == 0.0,   # cue_scale=0: no push ever arrives
         prelick_pinned=not bool(cfg.get("dpa_prelick_free", False)),
         # a transient decision is DEMANDED by the decay pins / the subcriticality reg — and
         # gng_decay_to_zero is GNG-STAGE-ONLY (sweep.py passes decay_to_end there alone), so it
@@ -121,6 +128,12 @@ def _variant(cfg):
     if v["go_free"]:     tags.append("go-resp-free")
     if v["no_resp"]:     tags.append("no-response-window")
     if v["nolick"]:      tags.append(f"nolick-late(w={cfg.get('nolick_weight')})")
+    if v["nolick_full"]: tags.append("nolick-FULL-delay(dpa-trials)")
+    if v["nolick_eps"]:  tags.append(f"nolick-ε={v['nolick_eps']:g}")
+    if v["dpa_nolick"]:  tags.append(f"dpa-stage-nolick(w={cfg.get('dpa_nolick_weight')})")
+    if v["decoupled"]:   tags.append("gng-decoupled(n_dec⟂m₀)")
+    if v["no_cue"]:      tags.append("NO-CUE(scale 0)")
+    if cfg.get("gng_hold_full_delay", False): tags.append("full-delay-hold")
     if not v["prelick_pinned"]: tags.append("dpa-delay-free")
     if not v["rule_supervised_dual"]: tags.append("dual-rule-unsupervised")
     v["tags"] = tags
@@ -140,12 +153,25 @@ def _adapt(stage, task, v):
                    score_level=(task == "gng" or v["rule_supervised_dual"]))
         if v["no_resp"]:
             exp.pop("resp_min", None)                    # no response window exists to score
+        if v["no_cue"]:
+            exp.pop("cue_push", None)                    # cue_scale=0: there is no push to check
         exp["relax_max"] = RELAX_TRANS if v[f"transient_{'gng' if task == 'gng' else 'dual'}"] else None
         if task == "dual":
-            exp["nolick"] = True if v["nolick"] else None   # late-delay κ₁≤0 (nogo + 'none' trials)
+            # scored if EITHER don't-lick term is active (late window on nogo, full delay on the
+            # DPA trials, or both); _nolick reads nolick_full/nolick_eps to build the right mask
+            exp["nolick"] = True if (v["nolick"] or v["nolick_full"]) else None
+            exp["nolick_full"] = v["nolick_full"]
+            exp["nolick_late"] = v["nolick"]
+            exp["nolick_eps"] = v["nolick_eps"]
     if task == "dpa":
         exp["th_pair"] = v["th_pair"]
-        exp["prelick_max"] = 0.3 * max(v["th_pair"], 1.0) if v["prelick_pinned"] else None
+        if v["prelick_pinned"]:                    # legacy two-sided 0-pin over the delay
+            exp["prelick_max"], exp["prelick_onesided"] = 0.3 * max(v["th_pair"], 1.0), False
+        elif v["dpa_nolick"] and stage == "dpa":   # one-sided hinge imposed AT the DPA stage:
+            #                                        κ₁<0 free by design, only upward drift violates
+            exp["prelick_max"], exp["prelick_onesided"] = 0.3 * max(v["th_pair"], 1.0), True
+        else:
+            exp["prelick_max"], exp["prelick_onesided"] = None, False
     return exp
 
 
@@ -170,7 +196,8 @@ def _gen(task, cfg, T, n, seed, noise):
                       go_on_rwd_input=cfg.get("go_on_rwd_input", False),
                       ramping_gng=cfg.get("ramping_gng", False),
                       gng_response=cfg.get("gng_response", True),
-                      gng_rwd_after_cue=cfg.get("gng_rwd_after_cue", False))
+                      gng_rwd_after_cue=cfg.get("gng_rwd_after_cue", False),
+                      hold_full_delay=cfg.get("gng_hold_full_delay", False))
     if task == "dpa":
         X, y = generate_dpa_trials(n, T, decay_to_zero=cfg.get("decay_to_zero", False),
                                    prelick_free=cfg.get("dpa_prelick_free", False), **common)
@@ -233,6 +260,7 @@ def _windows(task, cfg, T):
     if task == "dual":
         to = int(off[3])
         w["mem"] = (int(off[0]), int(on[3]))                         # sample-off → test-on
+        w["nolick_full"] = (int(off[0]), end)                        # sweep.py's _nlf_d (DPA trials)
         w["choice"] = (to - half, to) if ric else (to, to + quarter)
     return w
 
@@ -263,6 +291,16 @@ def _memory(k0, k1, lab, w, exp, free):
     s = np.sign(out["amp0"]) or 1.0
     for tag in ("0", "1"):
         out["sep" + tag] = float((((mm[tag] * s) > 0).numpy() == lab["A"]).mean())
+    if lab.get("none") is not None:
+        # ★ cue-perturbation cost on the memory (Leon 2026-09-02): the cue lifts κ₁ by ~1 on
+        # cued trials mid-delay; κ₁ excursions destabilise κ₀ (the flip mechanism), so the A/B
+        # bit at delay END should be degraded on cued (go/nogo) trials relative to uncued.
+        ok1 = ((mm["1"] * s) > 0).numpy() == lab["A"]
+        cued = lab["go"] | lab["nogo"]
+        for tag, msk in (("none", lab["none"]), ("cued", cued)):
+            m1 = mm["1"].numpy()[msk]
+            out["sep1_" + tag] = float(ok1[msk].mean())
+            out["amp1_" + tag] = float(m1[lab["A"][msk]].mean() - m1[lab["B"][msk]].mean()) / 2.0
     h = out["amp1"] / out["amp0"] if abs(out["amp0"]) > 1e-9 else float("nan")
     sep1 = out["sep1"]
     out["hold"] = h
@@ -272,6 +310,9 @@ def _memory(k0, k1, lab, w, exp, free):
     out["ok"] = bool(out["cat"] in exp["mem_cats"] and sep1 >= exp["sep_min"])
     out["txt"] = (f"mem {out['cat']:5s} {out['amp0']:+.2f}→{out['amp1']:+.2f} "
                   f"(hold {h:.2f}) sep {out['sep0']:.2f}→{sep1:.2f}")
+    if "amp1_cued" in out:
+        out["txt"] += (f" [end: none κ₀±{out['amp1_none']:.2f}/sep {out['sep1_none']:.2f}"
+                       f" vs cued ±{out['amp1_cued']:.2f}/{out['sep1_cued']:.2f}]")
     return out
 
 
@@ -283,6 +324,14 @@ def _choice(k0, k1, lab, w, exp, free):
                unpair=float(corr[~lab["pair"]].mean()))
     out["ok"] = out["acc"] >= exp["choice_min"]
     out["txt"] = f"choice@0 {out['acc']:.2f} (P {out['pair']:.2f} U {out['unpair']:.2f})"
+    if lab.get("none") is not None:
+        # ★ pairing split by gng condition (Leon 2026-09-02): if the cue's up-push damages the
+        # held A/B memory, cued trials pair WORSE than uncued. Reported, not scored.
+        for tag in ("none", "go", "nogo"):
+            msk = lab[tag]
+            out["acc_" + tag] = float(corr[msk].mean()) if msk.any() else float("nan")
+        out["txt"] += (f" [by-gng: none {out['acc_none']:.2f} go {out['acc_go']:.2f}"
+                       f" nogo {out['acc_nogo']:.2f}]")
     return out
 
 
@@ -354,44 +403,77 @@ def _relax(k0, k1, lab, w, exp, free):
 
 
 def _nolick(k0, k1, lab, w, exp, free):
-    """nolick_late_delay: the loss hinges κ₁ ≤ 0 over (cue-off, test-on) on exactly the steps whose
-    target it left FREE — so score exactly those steps (`free`), not the whole window: the go
-    response and any decay pins inside the span are governed by their own terms.
+    """The don't-lick imposition, scored on exactly the (trial, step) pairs the loss constrains:
+    the late delay (cue-off → test-on) of nogo + DPA trials under nolick_late_delay, and — in
+    nolick_full_delay arms — the WHOLE delay (sample-off → test-on) of the DPA trials (the rows
+    with no go/nogo stimulus and no cue). Only FREE (NaN-target) steps count: the go response and
+    any decay pins inside a span are governed by their own terms.
     Reported as the mean AND the fraction of violating steps/trials, because the loss is a MEAN and
-    a large violating minority hides behind a negative average (the trap Leon hit on 2026-08-13)."""
+    a large violating minority hides behind a negative average (the trap Leon hit on 2026-08-13).
+    ok stays at the fixed boundary 0 even when nolick_thresh ε>0 displaces the hinge — cross-arm
+    comparability; ε buys DEPTH, which flow_verdict measures. ε is echoed in the txt."""
+    rows_none = lab.get("none")
+    sel = np.zeros(tuple(k1.shape), bool)
     a, b = int(w["nolick"][0]), int(w["nolick"][1])
-    sel = free[:, a:b].numpy() if free is not None else np.ones((k1.shape[0], b - a), bool)
-    k = k1[:, a:b].numpy()
-    rows = (lab["nogo"] | lab["none"]) if lab.get("none") is not None else lab["nogo"]
-    sel = sel & rows[:, None]
-    n_per_trial = sel.sum(1)
+    if exp.get("nolick_full") and rows_none is not None:
+        f0, f1 = int(w["nolick_full"][0]), int(w["nolick_full"][1])
+        sel[rows_none, f0:f1] = True                     # DPA trials: the whole delay
+        if exp.get("nolick_late", True):
+            sel[lab["nogo"], a:b] = True                 # go/nogo trials keep the late window
+    else:
+        rows = (lab["nogo"] | rows_none) if rows_none is not None else lab["nogo"]
+        sel[rows, a:b] = True
+    if free is not None:
+        sel &= free.numpy()
     if not sel.any():
         return dict(mean=float("nan"), frac_up=float("nan"), trials_up=float("nan"), ok=False,
                     txt="nolick — NO free steps in the window (term inert)")
-    tmean = np.where(n_per_trial > 0, (k * sel).sum(1) / np.maximum(n_per_trial, 1), np.nan)
+    k = k1.numpy()
+    n_per = sel.sum(1)
+    tmean = (k * sel).sum(1)[n_per > 0] / n_per[n_per > 0]
     out = dict(mean=float(k[sel].mean()), frac_up=float((k[sel] > 0).mean()),
-               trials_up=float(np.nanmean(tmean > 0)), n_steps=int(sel.sum()))
+               trials_up=float((tmean > 0).mean()), n_steps=int(sel.sum()))
     out["ok"] = bool(out["mean"] <= 0 and out["trials_up"] <= 0.1)
-    out["txt"] = (f"nolick κ₁ {out['mean']:+.2f} (steps>0 {out['frac_up']:.2f}, "
-                  f"trials>0 {out['trials_up']:.2f})")
+    eps = exp.get("nolick_eps", 0.0)
+    tag = "[full] " if exp.get("nolick_full") else ""
+    out["txt"] = (f"nolick {tag}κ₁ {out['mean']:+.2f} (steps>0 {out['frac_up']:.2f}, "
+                  f"trials>0 {out['trials_up']:.2f}" + (f", ε=−{eps:g}" if eps else "") + ")")
+    return out
+
+
+def _leak(k0, k1, lab, w, exp, free):
+    """★ Sample memory leaking onto the DECISION axis: |κ₁(A) − κ₁(B)| over the early-mid delay,
+    BEFORE any crossing. This is the single best predictor of the GNG memory inversion (§26/§27):
+    across 12 runs of three arms, leak ≥ 0.85 flipped the code in 6/6 and leak ≤ 0.27 kept it in
+    5/5, with one 'lost' run at 0.53 in between — monotone, no overlap. The raw overlap g·n₁ᵀm₀
+    does NOT predict it (it assumes φ′=1), so measure the realised leak, not the weights.
+    Threshold calibrated on those 12 runs only — treat as a strong indicator, not a constant."""
+    a, b = w["mem"]
+    win = (a + w["quarter"], min(b, a + 8 * w["quarter"]))      # ~0.25–2 s into the delay
+    m = _mean(k1, win).numpy()
+    out = dict(A=float(m[lab["A"]].mean()), B=float(m[lab["B"]].mean()))
+    out["leak"] = abs(out["A"] - out["B"])
+    out["ok"] = bool(exp["leak_max"] is None or out["leak"] <= exp["leak_max"])
+    out["txt"] = f"leak {out['leak']:.2f} (κ₁ A {out['A']:+.2f} B {out['B']:+.2f})"
     return out
 
 
 def _prelick(k0, k1, lab, w, exp, free):
-    """DPA pins the readout to 0 through the delay (unless dpa_prelick_free): the network should be
-    holding the sample on κ₀, not drifting into the lick region on κ₁."""
+    """DPA-delay drift on κ₁. Two-sided when the legacy 0-pin supervises the delay
+    (dpa_prelick_free=False); ONE-SIDED when the dpa_nolick hinge does — κ₁<0 is then free by
+    design, so only upward drift violates; reported-only otherwise."""
     v = float(_mean(k1, w["delay"]).mean())
-    out = dict(k1=v, ok=bool(exp["prelick_max"] is None or abs(v) <= exp["prelick_max"]))
-    out["txt"] = f"prelick {v:+.2f}"
-    return out
+    lim = exp["prelick_max"]
+    ok = True if lim is None else (v <= lim if exp.get("prelick_onesided") else abs(v) <= lim)
+    return dict(k1=v, ok=bool(ok), txt=f"prelick {v:+.2f}")
 
 
 # check → the EXPECT key that switches it on (absent key ⇒ the check does not apply)
-CHECKS = {"mem": (_memory, "mem_cats"), "rule": (_rule, "rule_min"), "cue": (_cue, "cue_push"),
-          "resp": (_resp, "resp_min"), "relax": (_relax, "relax_max"),
+CHECKS = {"mem": (_memory, "mem_cats"), "leak": (_leak, "leak_max"), "rule": (_rule, "rule_min"),
+          "cue": (_cue, "cue_push"), "resp": (_resp, "resp_min"), "relax": (_relax, "relax_max"),
           "nolick": (_nolick, "nolick"), "choice": (_choice, "choice_min"),
           "prelick": (_prelick, "prelick_max")}
-ORDER = ["mem", "rule", "cue", "resp", "relax", "nolick", "choice", "prelick"]
+ORDER = ["mem", "leak", "rule", "cue", "resp", "relax", "nolick", "choice", "prelick"]
 
 
 # ── driver ────────────────────────────────────────────────────────────────────────────────

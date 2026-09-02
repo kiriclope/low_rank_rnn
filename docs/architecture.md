@@ -169,6 +169,24 @@ the project's key metric is `after_gng/dpa`, measured before that repair.
   (`(th_go + max(nogo_target, nogo_hinge_thresh))/2`) — compare arms with `flow_verdict.py`, which
   always scores at the fixed boundary 0.
 
+Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
+
+- `gng_hold_full_delay` — the windowed go/nogo hold spans stim-off → cue-on (GNG; go/nogo-off →
+  cue-on in Dual) instead of the 0.25 s pre-cue hold — symmetric with the A/B supervision. Used by
+  the `nocue` foundation arm.
+- `cue_scale=0.0` — no cue input at all, with `cue_on_go_input` keeping input_size/timings
+  identical to cue versions (cue sweeps become one-scalar deltas).
+- `nolick_full_delay` — extend the Dual don't-lick to the WHOLE delay on the DPA trials only
+  (rows identified by no finite decision target in the go/nogo span; guarded: needs
+  `dual_gng_memory=True` and `target_rank=2`). go/nogo trials keep the late window.
+- `dpa_nolick_weight` — the same one-sided hinge over the DPA-stage delay (guarded: needs
+  `dpa_prelick_free=True`, else the legacy pin leaves no free steps and the term is silently inert).
+- `nolick_thresh` — displace every nolick hinge to κ₁ ≤ −ε (relu/relu² stop pushing at the
+  boundary, so ε is the only imposed-depth lever).
+- `gng_decouple_decision` — GNG stage projects `n[:,dec] ⟂ m[:,0]` after each optimizer step
+  (kills the κ₀→κ₁ readout leak). ⚠ §27a: the κ₁→κ₀ drive needs the second projection
+  `m[:,dec] ⟂ n[:,0]` — not yet implemented. None of the nolick/decoupling levers has been run.
+
 ### Freezing mechanism
 
 Snapshot frozen params before optimizer step → zero their grads after `backward()` →

@@ -39,6 +39,11 @@ side is FREE → reported, not scored), `gng_response=False` (no response window
 (adds the late-delay κ₁≤0 check), `dpa_prelick_free`, `decay_to_zero` / `gng_decay_to_zero` /
 `kappa1_reg_weight` (demand a transient → `relax` becomes scored), `dual_gng_memory=False` (the Dual
 rule level is unsupervised → sign scored, level reported), `hinge_shape="softplus"` (raised ceiling).
+2026-09-02 flags: `nolick_full_delay` (the κ₁≤0 check covers the WHOLE delay on the DPA trials —
+the rows with no go/nogo stimulus and no cue), `nolick_thresh` (ε echoed in the txt; scoring stays
+at boundary 0 — depth is flow_verdict's job), `dpa_nolick_weight` (`prelick` becomes a ONE-SIDED
+scored check at the DPA stage — κ₁<0 is free by design), `gng_decouple_decision` (tagged; expect
+`leak` ≈ 0).
 
 **Never quote a level/threshold verdict without reading that line.** A ±1 band copied from a th=1
 arm fails every sign-based arm for behaving exactly as designed — that is the mistake this
@@ -60,6 +65,10 @@ adaptation exists to prevent.
   trials>0 = 0.35 is failing the constraint on a third of its trials.
 - The nolick check scores exactly the steps whose target the loss left **free** (`isnan(y)`), not
   the whole window — the go response and decay pins inside the span have their own terms.
+- **`leak`** (GNG/dpa probe) = |κ₁(A)−κ₁(B)| over the early-mid delay: the sample memory leaking
+  onto the decision axis. It is the sharpest predictor of the GNG memory INVERSION (§26/§27:
+  ≥0.85 → flip 6/6, ≤0.27 → intact 5/5; threshold 0.50 calibrated on 12 runs — indicator, not
+  constant). The raw overlap g·n₁ᵀm₀ does NOT predict it; measure the realised leak.
 - `cue`: nogo must be driven strictly up; go only has to not be pushed DOWN (it's usually already
   at its hinge ceiling before the cue, where Δ≈0 is correct behaviour).
 

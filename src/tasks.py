@@ -161,6 +161,7 @@ def generate_gng_trials(
     response_in_cue: bool = False,
     gng_rwd_after_cue: bool = False,
     decay_to_end: bool = False,   # decay pin runs to TRIAL END instead of 1 s (GNG-stage gng_decay_to_zero)
+    hold_full_delay: bool = False,  # windowed hold spans stim-off → cue-on (symmetric with A/B supervision)
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -201,8 +202,9 @@ def generate_gng_trials(
         # Transient decision. HOLD the go/nogo identity (go=+1 / nogo=−1) for 0.5 s ENDING at the cue
         # onset, so nogo learns to sit at −1 BEFORE the go-push cue; then a 0.5 s response 0.5 s after
         # cue-off (go→go_target; nogo NOT reset on cue — held free); then optionally decay to 0.
-        targets[idx_go,   cu - quarter:cu, 1] =  1.0             # pre-cue hold: 0.25 s before the cue
-        targets[idx_nogo, cu - quarter:cu, 1] = -1.0
+        _h0 = int(n_off[0]) if hold_full_delay else cu - quarter   # full-delay or 0.25 s pre-cue hold
+        targets[idx_go,   _h0:cu, 1] =  1.0
+        targets[idx_nogo, _h0:cu, 1] = -1.0
         # response_in_cue: score in the last 0.5 s of the response cue (cue ON, r0:r1 = co-half:co) so the
         # lick is cue-DRIVEN; else the legacy 0.5 s window starting at cue-off. Decay follows at r1.
         # gng_rwd_after_cue: response targets POST-cue (nogo pressure lands on the relaxing state
@@ -267,6 +269,7 @@ def generate_dual_trials(
     decay_onesided: bool = False,
     response_in_cue: bool = False,
     gng_rwd_after_cue: bool = False,
+    hold_full_delay: bool = False,  # gng_memory hold spans go/nogo-stim-off → cue-on
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -346,8 +349,9 @@ def generate_dual_trials(
         if gng_memory:
             # the go/nogo working memory (pre-cue hold). Optional in Dual: with it off, the go/nogo
             # identity is NOT re-supervised — it must survive on the GNG-learned (frozen) structure.
-            targets[idx_go,   cu - quarter:cu, 1] =  1.0         # pre-cue hold: 0.25 s before the cue
-            targets[idx_nogo, cu - quarter:cu, 1] = -1.0
+            _h0 = int(n_off[1]) if hold_full_delay else cu - quarter   # full-delay or pre-cue hold
+            targets[idx_go,   _h0:cu, 1] =  1.0
+            targets[idx_nogo, _h0:cu, 1] = -1.0
 
         # response_in_cue: gng response in the last 0.5 s of the response cue (cue ON, rg0:rg1 = co-half:co)
         # → lick is cue-DRIVEN; else legacy 0.5 s after cue-off. Decay follows at rg1.

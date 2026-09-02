@@ -52,6 +52,8 @@ class Optimization:
         hebb_lr: float = 0.0,
         kappa1_clamp: float | None = None,
         kappa_gain_target: float | None = None,
+        # Hard orthogonality (n_col, m_col): after each step project n[:, n_col] ⟂ m[:, m_col].
+        orthogonalize_cols: tuple[int, int] | None = None,
     ):
         self.model         = model
         self.train_loader  = train_loader
@@ -87,6 +89,7 @@ class Optimization:
             freeze_low_rank_cols = zero_low_rank_grad
         self.freeze_low_rank_cols = self._normalize_low_rank_cols(freeze_low_rank_cols)
         self.freeze_input_dims    = freeze_input_dims
+        self.orthogonalize_cols   = orthogonalize_cols
 
         self._frozen_m  = None
         self._frozen_n  = None
@@ -152,6 +155,25 @@ class Optimization:
                 self.model.wi.weight[:, self.freeze_input_dims] = (
                     self._frozen_wi[:, self.freeze_input_dims]
                 )
+
+    def _orthogonalize_cols(self):
+        """Hard constraint: n[:, a] ⟂ m[:, b], re-imposed after every optimizer step.
+
+        Used in the GNG stage as (a=decision, b=memory): it keeps the decision READOUT blind to the
+        sample-memory direction, so the A/B state cannot drive κ₁ apart. That leakage is what
+        inverts the DPA memory during GNG — |κ₁(A)−κ₁(B)| ≥ 0.85 flips the code in 6/6 runs, ≤0.27
+        keeps it in 5/5 (ring_lowerplane_log §26/§27). m[:, b] is frozen in that stage, so n is the
+        only party that can build the overlap; projecting removes the first-order term (the residual
+        is the φ′-weighted part, which is why the sweep is the real test).
+        Runs AFTER _restore_frozen_weights so it projects against the restored (frozen) m."""
+        if self.orthogonalize_cols is None:
+            return
+        a, b = self.orthogonalize_cols
+        with torch.no_grad():
+            mb = self.model.m[:, b]
+            na = self.model.n[:, a]
+            denom = mb.dot(mb).clamp_min(1e-12)
+            self.model.n[:, a] = na - (na.dot(mb) / denom) * mb
 
     def _clamp_kappa1_gain(self):
         """Hard constraint (vs. the soft kappa1 penalty): after each step, if the
@@ -258,6 +280,7 @@ class Optimization:
                         nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm)
                     self.optimizer.step()
                     self._restore_frozen_weights()
+                    self._orthogonalize_cols()
                     self._clamp_kappa1_gain()
                     self._pin_kappa_gains()
                     if use_hebb:
@@ -800,7 +823,10 @@ class UnifiedLoss(nn.Module):
                  rwd_keep_go_hinge: bool = False, decay_onesided: bool = False,
                  mem_weight: float = 1.0, bl_weight: float = 1.0,
                  nolick_weight: float = 0.0,
-                 nolick_window: tuple[int, int] | None = None):
+                 nolick_window: tuple[int, int] | None = None,
+                 nolick_full_window: tuple[int, int] | None = None,
+                 nolick_gng_span: tuple[int, int] | None = None,
+                 nolick_thresh: float = 0.0):
         super().__init__()
         self.timing        = timing
         self.thresh        = thresh
@@ -865,6 +891,15 @@ class UnifiedLoss(nn.Module):
         # ON the sample wells there). Still free-(NaN)-steps only, so the finite go/nogo response
         # targets inside the span keep their own terms. None → all free decision windows (legacy).
         self.nolick_window = nolick_window
+        # nolick_full_window (steps): the FULL-DELAY don't-lick, applied to the pure-DPA ('none')
+        # rows only — identified as rows with no finite decision target inside nolick_gng_span.
+        # go/nogo rows fall back to nolick_window. nolick_thresh ε>0 displaces the hinge to κ₁≤−ε
+        # (the only lever that produces DEPTH: relu/relu² stop pushing the moment κ₁<0).
+        self.nolick_full_window = nolick_full_window
+        self.nolick_gng_span    = nolick_gng_span
+        self.nolick_thresh      = float(nolick_thresh)
+        if nolick_full_window is not None and nolick_gng_span is None:
+            raise ValueError("nolick_full_window needs nolick_gng_span to identify 'none' trials")
         self.last_components: dict[str, float] = {}
 
     @staticmethod
@@ -958,16 +993,40 @@ class UnifiedLoss(nn.Module):
                 comp["gng_pos"], comp["gng_neg"], comp["gng_decay"]    = gp, gn, gd
                 comp["pair_pos"], comp["pair_neg"], comp["pair_decay"] = pp, pn, pd
                 if self.nolick_weight:
-                    # one-sided lick penalty hinge(κ₁) over FREE (NaN) decision windows; exclude the
-                    # pre-sample baseline AND the sample window (the go lick-ramp floor lives there).
+                    # one-sided lick penalty hinge(κ₁ + nolick_thresh) over FREE (NaN) decision
+                    # windows; exclude the pre-sample baseline AND the sample window (the go
+                    # lick-ramp floor lives there).
                     # nolick_window set → restricted to that span (the late-delay don't-lick).
                     sample = ((t >= int(self.timing.n_stim_on[0])) &
                               (t <  int(self.timing.n_stim_off[0])))[None, :]
                     freem = torch.isfinite(pred) & ~torch.isfinite(target) & ~pre & ~sample
-                    if self.nolick_window is not None:
+                    if self.nolick_full_window is not None:
+                        # FULL-DELAY don't-lick on the DPA TRIALS only — the Dual-task trials with
+                        # no go/nogo stimulus and no cue (the generator's gng="none" level). They
+                        # sit ON the sample well for the whole delay, so the hinge grades the well's
+                        # κ₁ directly over 3× more steps than the late window. A row is a DPA trial
+                        # iff it has NO finite decision target in `nolick_gng_span` (the go/nogo
+                        # hold + response span) — no new target class needed, but it REQUIRES that
+                        # go/nogo rows actually carry that hold (dual_gng_memory=True), else they
+                        # look like DPA trials here and the hinge fights their +1 rule. sweep.py
+                        # guards this. go/nogo rows keep the late window.
+                        g0, g1 = self.nolick_gng_span
+                        is_none = ~torch.isfinite(target[:, int(g0):int(g1)]).any(1)      # (B,)
+                        f0, f1 = self.nolick_full_window
+                        span = ((t >= int(f0)) & (t < int(f1)))[None, :] & is_none[:, None]
+                        if self.nolick_window is not None:
+                            w0, w1 = self.nolick_window
+                            span = span | (((t >= int(w0)) & (t < int(w1)))[None, :]
+                                           & ~is_none[:, None])
+                        freem = freem & span
+                    elif self.nolick_window is not None:
                         w0, w1 = self.nolick_window
                         freem = freem & ((t >= int(w0)) & (t < int(w1)))[None, :]
-                    pfree = torch.where(freem, pred, torch.zeros_like(pred))
+                    # nolick_thresh ε > 0 DISPLACES the hinge to κ₁ ≤ −ε. relu/relu² have zero
+                    # gradient once satisfied, so a hinge at 0 seats wells AT the line (κ₁≈0⁻) no
+                    # matter how many steps it covers — depth needs the displaced threshold, not a
+                    # bigger window or a different shape (ring_lowerplane_log §25e).
+                    pfree = torch.where(freem, pred + self.nolick_thresh, torch.zeros_like(pred))
                     comp["nolick"] = self.masked_mean(self._hinge(pfree), freem)
             else:
                 mp, mn, md = self._class_terms(p, tgt, post, self.thresh, self.thresh)
