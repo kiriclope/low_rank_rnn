@@ -1603,3 +1603,38 @@ the memory tolerates it at this dose. Next levers (Leon's call): the no-lick dem
 foundation (the safeguard experiment proper — watch wells/relaxation vs pairing cost), or a
 cue_scale ladder (2.0, 4.0) to find where the push alone breaks retention/routing.
 Figures: gallery `rnn/sweep_r2cue1` (70 PNGs, ±2.5 box).
+
+**27d. ★ FOUNDATION ADDON 2 — `sweep_r2cue2` (2026-09-03): the dose–response of the push; the
+wells drift INTO the lick region.** = cue1 with **cue_scale=2.0**; same nocue DPA ckpts, same
+everything else. Note first an internal consistency check: the GNG stage has NO supervised step
+after cue onset (the hold ends there; no response/decay), so cue amplitude has no gradient path in
+that stage — cue1/cue2 naive checkpoints agree up to float nondeterminism (leak matches to two
+decimals), and every dose effect below lives in the DUAL stage (where the cue precedes the
+pairing supervision).
+
+The three-point ladder (per-seed ranges, one shared memory start per seed):
+
+| | cue 0 | cue 1 | cue 2 |
+|---|---|---|---|
+| Dual cue Δκ₁ nogo | — | +0.73…+0.76 | **+1.25…+1.35** |
+| nogo late-delay κ₁ (steps>0) | −0.15…−0.37 (.18–.41) | +0.07…+0.17 (.49–.76) | **+0.25…+0.46 (.81–.96)** |
+| untrained no-lick criterion (dual_gng) | ~1.00 | 0.71–0.77 | **0.50–0.52 (chance)** |
+| after_gng/dpa | 0.996–1.00 | 0.987–1.00 | 0.987–1.00 |
+| pairing by-gng (none/go/nogo) | 1/1/1 | 1/1/1 | **1/1/1** |
+| +κ₀ expert well κ₁ | ≈0 | +0.02…+0.23 | **+0.27…+0.68** |
+
+- **What doubles with the dose:** the push, the residue (at cue 2 nogo spends 81–96% of the late
+  delay above the line — every nogo trial reads as a lick at the untrained criterion), and the
+  well UP-DRIFT: with nothing opposing it, Dual training re-equilibrates the wells where the
+  cue-displaced states live, pulling the memory structure INTO the lick region (s3: both wells at
+  +0.68/+0.69; s0 grows a third memory-carrying attractor (+0.82,−1.39) — proliferation; s1 again
+  single-well by the finder, behaviour intact — the same fragile seed at every dose). The exact
+  inverse of the target geometry, for exactly the §27a Gap-2 reason: no down-pressure exists.
+- **What refuses to break:** retention (mem HELD 4/4, sep 1.00 at every dose) and — against the
+  §27-era prediction — PAIRING: by-condition 1.00/1.00/1.00 with κ₀ at test ±0.94–1.10 even with
+  nogo parked at +0.4 through the late delay. At dose ≤2 the κ₁ displacement does NOT misroute
+  the test decision. The routing-damage mechanism is NOT yet observed; only the no-lick vacancy is.
+
+Figures: gallery `rnn/sweep_r2cue2`. Next arm (designed, not launched): the no-lick demand on top
+of cue 2, where the vacancy is maximal — prediction: it must reverse the well up-drift, and any
+suboptimality should finally appear in pairing.

@@ -1804,6 +1804,13 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  dpa_ckpt=f"results/dual/sweep_r2nocue/s{seed}_nocue/dpa_s{seed}_nocue.pth",
                                  **{**emergent, **shared_unfrozen, **nocue_common, "cue_scale": 1.0}))
 
+    # cue2 (Leon 2026-09-03): the cue dose ladder continues — identical to cue1 but cue_scale=2.0.
+    # Same nocue DPA ckpts, same everything else. --run_filter cue2
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_cue2", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_r2nocue/s{seed}_nocue/dpa_s{seed}_nocue.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common, "cue_scale": 2.0}))
+
     return configs
 
 

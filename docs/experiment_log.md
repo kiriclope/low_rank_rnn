@@ -921,3 +921,17 @@ guarded), `dpa_nolick_weight` (one-sided delay hinge in the DPA stage; needs `dp
 guarded), `nolick_thresh` (ε-displaced hinge = imposed depth), `gng_decouple_decision`
 (n_dec⟂m₀ projection after each GNG step; §27a says it should also project m_dec⟂n₀ — pair NOT yet
 implemented), `gng_hold_full_delay` (used by the foundation).
+
+## 2026-09-03 — foundation addon 2: `sweep_r2cue2` (cue dose 2.0 — the up-drift)
+
+= cue1 with `cue_scale=2.0` (4 seeds, nocue DPA ckpts, DONE). GNG stage is gradient-blind to cue
+amplitude (no supervised step after cue onset) → naive ckpts ≈ cue1's; all dose effects are
+Dual-stage. Ladder (cue 0 → 1 → 2): Dual nogo push — → +0.75 → **+1.3**; nogo late-delay κ₁
+−0.15…−0.37 → +0.07…+0.17 → **+0.25…+0.46** (steps>0 .18–.41 → .49–.76 → **.81–.96**); untrained
+no-lick criterion 1.00 → 0.74 → **chance**. UNBROKEN at every dose: retention (after_gng/dpa
+0.987–1.00, mem HELD 4/4) and pairing (by-gng 1/1/1, κ₀ at test intact) — the predicted routing
+damage is NOT observed at dose ≤2. Geometry: expert wells DRIFT UP with dose (+κ₀ well κ₁ ≈0 →
++0.1 → **+0.27…+0.68**; s3 both wells up; s0 proliferates a third attractor; s1 single-well by the
+finder at every dose, behaviour intact) — the cue pulls the memory structure into the lick region
+because nothing opposes it (§27a Gap 2). Full table + caveats: `ring_lowerplane_log` §27d.
+Figures: gallery `rnn/sweep_r2cue2`. Next (designed, not launched): no-lick demand on cue 2.
