@@ -935,3 +935,16 @@ damage is NOT observed at dose ≤2. Geometry: expert wells DRIFT UP with dose (
 finder at every dose, behaviour intact) — the cue pulls the memory structure into the lick region
 because nothing opposes it (§27a Gap 2). Full table + caveats: `ring_lowerplane_log` §27d.
 Figures: gallery `rnn/sweep_r2cue2`. Next (designed, not launched): no-lick demand on cue 2.
+
+## 2026-09-03 (later) — foundation addon 3: the cue elongates the slow manifold (no new sweeps)
+
+Leon's reading of the cue2 geometry, confirmed by measurement (`scratchpad/slow_manifold_dose.py`,
+new): the cue does NOT move point attractors — each expert well ELONGATES with dose into a 1-D slow
+groove (|F|<0.05) spanning the lick boundary (κ₁-extent +κ₀ side: ~[−0.6,+0.1] → [−1.2,+0.2] →
+[−1.6,+0.8]; transversal check = genuine slow manifold). §27d's "well up-drift" is SUPERSEDED —
+point language for the groove's top end (also the "proliferation"/"missing well" artefacts). The
+nogo trajectory rides the groove up during the cue and stalls above the line because the descent
+timescale ≫ the late delay: **the residue is transit time — the no-lick branch already exists.**
+Next-lever prediction (falsifiable): a SMALL nolick weight should suffice, acting by repositioning
+the landing point along the existing groove, not by creating structure. Figure:
+`slow_manifold_dose.png` (gallery `rnn/sweep_r2cue2/flow`). Full table + caveats: §27e.

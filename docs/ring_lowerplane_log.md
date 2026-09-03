@@ -1630,6 +1630,9 @@ The three-point ladder (per-seed ranges, one shared memory start per seed):
   +0.68/+0.69; s0 grows a third memory-carrying attractor (+0.82,−1.39) — proliferation; s1 again
   single-well by the finder, behaviour intact — the same fragile seed at every dose). The exact
   inverse of the target geometry, for exactly the §27a Gap-2 reason: no down-pressure exists.
+  **⚠ SUPERSEDED by §27e (Leon, same day): "well up-drift" is point-attractor language for the top
+  end of what is actually an elongating SLOW MANIFOLD — the FP finder was sampling near-roots
+  along a groove (that is also what the "proliferation" and the "missing well" were). Read §27e.**
 - **What refuses to break:** retention (mem HELD 4/4, sep 1.00 at every dose) and — against the
   §27-era prediction — PAIRING: by-condition 1.00/1.00/1.00 with κ₀ at test ±0.94–1.10 even with
   nogo parked at +0.4 through the late delay. At dose ≤2 the κ₁ displacement does NOT misroute
@@ -1638,3 +1641,40 @@ The three-point ladder (per-seed ranges, one shared memory start per seed):
 Figures: gallery `rnn/sweep_r2cue2`. Next arm (designed, not launched): the no-lick demand on top
 of cue 2, where the vacancy is maximal — prediction: it must reverse the well up-drift, and any
 suboptimality should finally appear in pairing.
+
+**27e. ★ FOUNDATION ADDON 3 — the cue does not move wells, it ELONGATES the slow manifold across
+the lick boundary (Leon's reading, confirmed 2026-09-03).** Leon: "increasing cue_scale does not
+push the attractors down but reshapes the manifold… a slow manifold that with increasing cue
+strength occupies more and more of the no-lick region." Measured with
+`scratchpad/slow_manifold_dose.py`: the slow set (|F| < 0.05, exact analytic autonomous field,
+attention on) of every expert checkpoint across the dose ladder, transversal stability at slow
+points, and the mean A-nogo trajectory (cue-on → test-on) overlaid. Figure:
+`results/figures/sweep_r2cue2/slow_manifold_dose.png` (gallery `rnn/sweep_r2cue2/flow`).
+
+| slow set at expert | cue 0 | cue 1 | cue 2 |
+|---|---|---|---|
+| total area (κ²/seed) | 0.06–0.25 | 0.20–0.29 | 0.22–0.50 |
+| κ₁-extent, +κ₀ side | ~[−0.6, +0.1] (compact) | [−1.2, +0.2] | **[−1.6, +0.8]** |
+| manifold signature (fast eig < −0.2, slow ≈ 0) | 0–17% of slow pts | 30–57% | up to 56% |
+
+- **Confirmed:** each compact well elongates with dose into a slow GROOVE spanning ≈2 κ-units of
+  κ₁; the transversal check says a genuine 1-D slow manifold (attracting across, near-marginal
+  along), not a shallow basin. The §27d "up-drift", s0's "proliferation" and s1's "missing well"
+  were all the FP finder sampling near-roots along this groove — point language the data outgrew.
+- **Refinement to the claim:** the groove grows into the no-lick region AND above the line — a
+  symmetric stretching of the slow direction across the boundary, not a downward migration. The
+  deep reach is monotone in dose in every seed (slow-set bottom ≈ −0.6 → −1.2 → −1.5), while the
+  FRACTION below the line can fall at cue 2 (91→60% s1, 87→50% s2) because the up-side invades too.
+- **The trajectory rides the groove:** the cue drives nogo from the rule hold (≈−0.85) UP the slow
+  direction; at test-on the state sits at the groove's upper end, above the line — the flow there
+  is <0.05, so the descent timescale ≫ the 1.5 s late delay. **The late-delay residue is TRANSIT
+  TIME, not missing structure: the no-lick branch of the manifold already exists at cue 2.**
+- Consequence for the next lever: a no-lick demand on this substrate does not need to CREATE
+  κ₁<0 attractors — it needs to move the state's LANDING POINT down an existing slow direction
+  (or steepen the return flow). Falsifiable form: a SMALL nolick weight should suffice, and its
+  effect should appear as a repositioning along the groove rather than new structure.
+- Caveats: ε=0.05 is one threshold (the dose ORDERING is robust; absolute areas scale with ε);
+  clean-field maps (σ_eff≈0.37 blurs transit, not the slow direction). Watch item: at cue 2 the
+  lower branches nearly CONNECT the two memory sides through the no-lick region (a partial
+  lower arc, cf. the old 270°-U) — a potential A↔B drift channel; sep is 1.00 at this delay
+  length, so it is slow enough for now.
