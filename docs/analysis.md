@@ -12,6 +12,8 @@
 | + input noise | `plot_sweep.py --field_input_noise` (MC) | `rank3_flow.py --noise` |
 | GENUINE sim trajectories | `traj_flow.py` | `traj_flow.py --stage …` |
 | autonomous well table | `scratchpad/wells3.py <sweep>` | same |
+| slow-manifold dose ladder (+ sgd2 column) | `scratchpad/slow_manifold_dose.py` / `scratchpad/slow_manifold_sgd2.py` | `results/figures/sweep_r2cue2/slow_manifold_dose.png`, `results/figures/sweep_r2sgd2/slow_manifold_sgd2.png` |
+| memory-axis field profile F₀/κ₀ + κ₀ traces + rate scale, relu vs lif | `scratchpad/relu_field_profiles.py` | `results/figures/sweep_r2rr01/field_profiles_relu_vs_lif.png` |
 | EISTP / backbone | `ei_flow.py` | — |
 
 **Gotchas:** plot_sweep's rank-2 FP finder **asserts rank==2** → never point plain `plot_sweep` at a

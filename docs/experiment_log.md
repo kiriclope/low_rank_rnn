@@ -948,3 +948,55 @@ timescale ≫ the late delay: **the residue is transit time — the no-lick bran
 Next-lever prediction (falsifiable): a SMALL nolick weight should suffice, acting by repositioning
 the landing point along the existing groove, not by creating structure. Figure:
 `slow_manifold_dose.png` (gallery `rnn/sweep_r2cue2/flow`). Full table + caveats: §27e.
+
+## 2026-09-03/04 — foundation addons 4–6 (gain 2 · cue push · lick-vs-hold), all GNG-stage probes
+
+| sweep | delta vs foundation | result |
+|---|---|---|
+| `sweep_r2g2cue1` | gain 2.0, cue 1.0 (DPA retrained) | weight-level interference in 2/4 seeds (s2 pure-DPA 0.73, d′ 0.33, m₁ 48 % restructured); proliferation at expert |
+| `sweep_r2atc1` | + `attention_through_cue` (GNG only, dual=0) | naive weights identical to cue1 (4 decimals); push +0.30 vs +0.25 |
+| `sweep_r2cuego` | + `gng_response`, `response_in_cue`, `rwd_go_thresh=2`, nogo free (GNG only) | hold parked at +1.8, cue idle (nogo push +0.35); hold inflation damages pure DPA |
+| `cuegop` (not run) | + `gng_hold_pin` | pin rejected (go correct whenever ≥1); fork: pre-cue ceiling vs rank-3 lick axis |
+
+Analyses: cue-push factorial (Dual training makes the push, ×2.5), drive decomposition (cue effect =
+input × local φ′; gain-dead at the go hold). New flags: `attention_through_cue`, `rwd_go_thresh`,
+`gng_hold_pin`. Narrative + numbers: `ring_lowerplane_log` §27g. Figures: gallery `rnn/sweep_r2g2cue1`,
+`rnn/sweep_r2atc1`, `rnn/sweep_r2cuego`.
+
+## 2026-09-07 — foundation addons 7–8: the safeguard arm `sweep_r2sgd2` and the go-tail negative `sweep_r2sgd2g`
+
+Leon closed the lick-axis fork: **rank 2 only, no engineered loss constraints** (`gng_hold_ceiling`
+implemented, unused). The standing rule: forbid κ₁>0 wherever a lick would be wrong, never trade
+against the task's pushes, let the network relocate the wells.
+
+| sweep | delta vs cue2 | result |
+|---|---|---|
+| `sweep_r2sgd2` | + `nolick_weight=1`, `nolick_full_delay` (DPA rows, whole delay), **`nolick_nogo_in_cue`** (new: nogo rows from cue ONSET → test-on), go rows free | hinge seats everything AT the line: DPA rows −0.02…−0.07 (42–51 % >0), nogo late delay +0.17…+0.20 (was +0.39…+0.61), cue-end +0.03…+0.11; push and nogo hold unchanged; **go hold pays** (+0.81…+0.95 < θ); pairing 1/1/1, retention 0.99–1.00, mem HELD 4/4; flow 0/4 all-down; ⚠ Dual NOT converged at 300 (val 0.11–0.16, still falling) → `sgd2x` continuation in sweep.py, not launched |
+| `sweep_r2sgd2g` | sgd2 + `nolick_late_delay` (go rows hinged after cue-off, both stages) | **NEGATIVE:** `after_gng/dpa` 0.69/0.92/0.90/0.36 (DECAY ×3, FLIP ×1) via n₀ᵀm₁ = −2.5…−3.6 (the §26 mechanism at gain 1); Dual rebuilds (dpa 0.995–1.00, the trap) but the go tail stays unmet (+0.60…+0.75), DPA rows end above the line, NO PAIR ×2, loss 3× sgd2. Go rows stay free after the cue — settled |
+
+Per-class breakdown tool: `$CLAUDE_JOB_DIR/tmp/nolick_split.py`. Manifold view with sgd2 as a column
+beside the dose ladder: `scratchpad/slow_manifold_sgd2.py` → `slow_manifold_sgd2.png`. Narrative
++ tables: `ring_lowerplane_log` §27h/§27i. Galleries `rnn/sweep_r2sgd2`, `rnn/sweep_r2sgd2g`.
+
+## 2026-09-08 — transfer-function control: `sweep_r2fdrelu` (the foundation with relu)
+
+= nocue with `nonlinearity="relu"` (one-field delta; DPA retrained). DPA 1.000 but the memory is an
+exponential RUNAWAY (κ₀ +2 → +28…+41 by test-on, rates to 330; F₀/κ₀ → +0.25…+0.37 at large κ₀ =
+λ⁺ − 1 exactly, λ⁺ the half-population overlap 1.25–1.37); GNG: `after_gng/dpa` 0.58–0.69 (GROW ×3,
+LOST ×1, pairing breaks without coupling growth); Dual rebuilds to 1.00 on a still-runaway substrate.
+Relu is positively homogeneous ⇒ the memory field is linear on each half-line ⇒ no fixed point off
+the origin; in this loss the well exists because φ saturates. Also: review of all eight φ (torch vs
+numpy mirrors verified), `nonlinearities.md` stale conclusion corrected. Gallery `rnn/sweep_r2fdrelu`
+(auto xlim). Narrative: `ring_lowerplane_log` §28a–b.
+
+## 2026-09-09 — relu + activity L2, DPA stage only: `rr01` (w=0.01) · `rr1` (w=0.1) · `rrb01` (w=0.01 + unit biases)
+
+New: `rate_reg_weight` (w·⟨rates²⟩ on train+val, ⟨r²⟩ printed per epoch), `max_val_loss` as a
+RunConfig field (1e6 for these arms — the first launch died at epoch 1 because the penalty alone
+exceeded the default 100 at the unstable init). Result: **bounded ≠ attractor** — w=0.01 slows the
+escape (κ₀ → 2.6–3.4, ⟨r²⟩ 14–25) but λ⁺ 1.09–1.30 > 1 and no zero crossing of F₀/κ₀ in any seed;
+w=0.1 kills the task (pairing at chance, memory decays below a REPELLER at κ₀≈0.5–1); biases change
+nothing (λ⁺ never taken below 1 — no term asks for zero growth at the target). Figure:
+`field_profiles_relu_vs_lif.png` (`scratchpad/relu_field_profiles.py`; gallery `rnn/sweep_r2rr01/flow`).
+Galleries `rnn/sweep_r2rr01`, `rnn/sweep_r2rr1`, `rnn/sweep_r2rrb01`. Narrative: §28c. Open:
+two-sided memory pin, half-population gain constraint, or EI inhibition — none run.

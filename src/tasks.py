@@ -43,7 +43,7 @@ def make_timings(dt: float) -> dict:
     }
 
 
-def _attn_window(inputs, timing, input_scale, gated, attention_scale=1.0):
+def _attn_window(inputs, timing, input_scale, gated, attention_scale=1.0, end=None):
     """Add the tonic attention/context input on the LAST channel.
     gated=False (default): on from the first-stim ONSET to trial end (the original behaviour).
     gated=True: on ONLY over the RETENTION DELAY — from the first-stim OFFSET (n_off[0]) to the
@@ -52,11 +52,15 @@ def _attn_window(inputs, timing, input_scale, gated, attention_scale=1.0):
     maintenance signal, released by the probe.
     attention_scale multiplies the tonic value (default 1.0 = input_scale): the amplitude of the
     readout-plane symmetry-breaking bias b_attn, i.e. the lever that pushes the memory wells' κ₁ down
-    (attention-direct term ⟨n₁,φ(g·b_attn)⟩/N). See ring_lowerplane_log §19."""
+    (attention-direct term ⟨n₁,φ(g·b_attn)⟩/N). See ring_lowerplane_log §19.
+    end: override the gated OFF step. In the GNG task the last stimulus IS the cue, so the generic
+    rule drops attention exactly at cue onset — unlike Dual, where attention runs through the cue
+    to test onset. generate_gng_trials(attention_through_cue=True) passes end=cue-off to make the
+    two tasks consistent about the cue (Leon 2026-09-03)."""
     n_on, n_off = timing.n_stim_on, timing.n_stim_off
     val = attention_scale * input_scale
     if gated:
-        inputs[:, int(n_off[0]):int(n_on[-1]), -1] += val
+        inputs[:, int(n_off[0]):int(n_on[-1] if end is None else end), -1] += val
     else:
         inputs[:, n_on[0]:, -1] += val
 
@@ -162,6 +166,7 @@ def generate_gng_trials(
     gng_rwd_after_cue: bool = False,
     decay_to_end: bool = False,   # decay pin runs to TRIAL END instead of 1 s (GNG-stage gng_decay_to_zero)
     hold_full_delay: bool = False,  # windowed hold spans stim-off → cue-on (symmetric with A/B supervision)
+    attention_through_cue: bool = False,  # gated attention stays ON through the cue (off at cue-off, as in Dual)
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -171,7 +176,8 @@ def generate_gng_trials(
     targets = torch.zeros(n_trials, n_steps, target_rank) * torch.nan
 
     if attention_input:   # tonic attention on the LAST channel
-        _attn_window(inputs, timing, input_scale, attention_gated, attention_scale=attention_scale)
+        _attn_window(inputs, timing, input_scale, attention_gated, attention_scale=attention_scale,
+                     end=int(timing.n_stim_off[1]) if attention_through_cue else None)
 
     idx_go   = torch.rand(n_trials) > 0.5
     idx_nogo = ~idx_go

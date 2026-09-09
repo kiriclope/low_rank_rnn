@@ -95,6 +95,7 @@ def _variant(cfg):
         th_go=float(th_go if th_go is not None else 1.0),           # gng +1 hinge
         th_nogo=float(-cfg.get("nogo_hinge_thresh", -1.0)),         # gng −1 hinge magnitude
         th_pair=float(cfg.get("dpa_hinge_thresh") or 1.0),          # pair + memory hold
+        th_resp=float(cfg.get("rwd_go_thresh") or (th_go if th_go is not None else 1.0)),  # response-window go hinge
         softplus=cfg.get("hinge_shape", "relu2") == "softplus",
         nogo_free=cfg.get("nogo_target", 0.0) is None,
         go_free=bool(cfg.get("rwd_nogo_onesided", False)) and not bool(cfg.get("rwd_keep_go_hinge", False)),
@@ -102,6 +103,7 @@ def _variant(cfg):
         nolick=bool(cfg.get("nolick_late_delay", False)) and float(cfg.get("nolick_weight", 0.0)) > 0,
         nolick_full=bool(cfg.get("nolick_full_delay", False)) and float(cfg.get("nolick_weight", 0.0)) > 0,
         nolick_eps=float(cfg.get("nolick_thresh", 0.0) or 0.0),
+        nolick_nogo_cue=bool(cfg.get("nolick_nogo_in_cue", False)) and float(cfg.get("nolick_weight", 0.0)) > 0,
         dpa_nolick=float(cfg.get("dpa_nolick_weight", 0.0) or 0.0) > 0,
         decoupled=bool(cfg.get("gng_decouple_decision", False)),
         no_cue=float(cfg.get("cue_scale", 2.0)) == 0.0,   # cue_scale=0: no push ever arrives
@@ -114,6 +116,7 @@ def _variant(cfg):
         transient_dual=bool(cfg.get("decay_to_zero", True))
                        or float(cfg.get("kappa1_reg_weight", 0.0)) > 0,
         rule_supervised_dual=bool(cfg.get("dual_gng_memory", True)),
+        hold_ceiling=(float(cfg["gng_hold_ceiling"]) if cfg.get("gng_hold_ceiling") is not None else None),
     )
     tags = [f"θ=({v['th_go']:g},−{v['th_nogo']:g},pair {v['th_pair']:g})",
             cfg.get("hinge_shape", "relu2")]
@@ -124,16 +127,21 @@ def _variant(cfg):
     if v["nogo_free"]:
         # nogo_target=None hands don't-lick to the nolick term; with that off too, NOTHING imposes
         # it — the nogo response is then unscoreable by construction, not merely unmet.
-        tags.append("nogo-resp-free" if v["nolick"] else "★nogo-UNCONSTRAINED (no target, no nolick)")
+        tags.append("nogo-resp-free" if (v["nolick"] or v["nolick_nogo_cue"]) else "★nogo-UNCONSTRAINED (no target, no nolick)")
     if v["go_free"]:     tags.append("go-resp-free")
     if v["no_resp"]:     tags.append("no-response-window")
     if v["nolick"]:      tags.append(f"nolick-late(w={cfg.get('nolick_weight')})")
     if v["nolick_full"]: tags.append("nolick-FULL-delay(dpa-trials)")
+    if v["nolick_nogo_cue"]: tags.append("nolick-nogo-from-CUE-ON")
     if v["nolick_eps"]:  tags.append(f"nolick-ε={v['nolick_eps']:g}")
     if v["dpa_nolick"]:  tags.append(f"dpa-stage-nolick(w={cfg.get('dpa_nolick_weight')})")
     if v["decoupled"]:   tags.append("gng-decoupled(n_dec⟂m₀)")
     if v["no_cue"]:      tags.append("NO-CUE(scale 0)")
     if cfg.get("gng_hold_full_delay", False): tags.append("full-delay-hold")
+    if cfg.get("attention_through_cue", False): tags.append("attn-through-cue")
+    if cfg.get("rwd_go_thresh") is not None: tags.append(f"lick-thresh={cfg['rwd_go_thresh']:g}>hold")
+    if cfg.get("gng_hold_pin", False): tags.append("hold-PINNED(±θ)")
+    if cfg.get("gng_hold_ceiling") is not None: tags.append(f"go-hold-CEILING≤{cfg['gng_hold_ceiling']:g}")
     if not v["prelick_pinned"]: tags.append("dpa-delay-free")
     if not v["rule_supervised_dual"]: tags.append("dual-rule-unsupervised")
     v["tags"] = tags
@@ -148,9 +156,10 @@ def _adapt(stage, task, v):
     exp = dict(EXPECT[(stage, task)])
     exp.update(sigma=v["sigma"], ceil_mult=(2 * LEVEL_CEIL if v["softplus"] else LEVEL_CEIL))
     if task in ("gng", "dual"):
-        exp.update(th_go=v["th_go"], th_nogo=v["th_nogo"],
+        exp.update(th_go=v["th_go"], th_nogo=v["th_nogo"], th_resp=v["th_resp"],
                    score_go=not v["go_free"], score_nogo=not v["nogo_free"],
-                   score_level=(task == "gng" or v["rule_supervised_dual"]))
+                   score_level=(task == "gng" or v["rule_supervised_dual"]),
+                   hold_ceiling=v["hold_ceiling"])
         if v["no_resp"]:
             exp.pop("resp_min", None)                    # no response window exists to score
         if v["no_cue"]:
@@ -159,9 +168,10 @@ def _adapt(stage, task, v):
         if task == "dual":
             # scored if EITHER don't-lick term is active (late window on nogo, full delay on the
             # DPA trials, or both); _nolick reads nolick_full/nolick_eps to build the right mask
-            exp["nolick"] = True if (v["nolick"] or v["nolick_full"]) else None
+            exp["nolick"] = True if (v["nolick"] or v["nolick_full"] or v["nolick_nogo_cue"]) else None
             exp["nolick_full"] = v["nolick_full"]
             exp["nolick_late"] = v["nolick"]
+            exp["nolick_nogo_cue"] = v["nolick_nogo_cue"]
             exp["nolick_eps"] = v["nolick_eps"]
     if task == "dpa":
         exp["th_pair"] = v["th_pair"]
@@ -205,7 +215,9 @@ def _gen(task, cfg, T, n, seed, noise):
     if task == "gng":
         _d2e = cfg.get("gng_decay_to_zero", False)
         X, y = generate_gng_trials(n, T, decay_to_zero=cfg.get("decay_to_zero", False) or _d2e,
-                                   decay_to_end=_d2e, **common, **gng_common)
+                                   decay_to_end=_d2e,
+                                   attention_through_cue=cfg.get("attention_through_cue", False),
+                                   **common, **gng_common)
         return X, y, None
     X, y, _, names = generate_dual_trials(n, T, decay_to_zero=cfg.get("decay_to_zero", False),
                                           gng_memory=cfg.get("dual_gng_memory", False),
@@ -257,6 +269,7 @@ def _windows(task, cfg, T):
     end = int(on[3]) if task == "dual" else T.n_steps                # dual: stop before the test
     w["post"] = (max(int(w["resp"][1]), end - quarter), end)         # where a transient has relaxed
     w["nolick"] = (co, end)                                          # sweep.py's _nlw_d / _nlw_g
+    w["nolick_nogo"] = (cu, end)                                     # sweep.py's _nln_d / _nln_g (nogo rows from cue-on)
     if task == "dual":
         to = int(off[3])
         w["mem"] = (int(off[0]), int(on[3]))                         # sample-off → test-on
@@ -346,9 +359,13 @@ def _rule(k0, k1, lab, w, exp, free):
                go=float(go.mean()), nogo=float(ng.mean()))
     ok_g, fl_g = _level(out["go"], exp["th_go"], exp)
     ok_n, fl_n = _level(out["nogo"], exp["th_nogo"], exp)
+    ceil = exp.get("hold_ceiling")
+    if ceil is not None:   # premature-lick ceiling: the go hold must also sit BELOW ceiling (+½σ slack)
+        ok_g = bool(ok_g and out["go"] <= ceil + 0.5 * exp["sigma"])
     out["level_ok"] = bool(ok_g and ok_n)
     out["ok"] = bool(out["acc"] >= exp["rule_min"] and (out["level_ok"] or not exp["score_level"]))
     lvl = "" if out["level_ok"] else (f"  [level≠±θ, floors {fl_g:.2f}/{fl_n:.2f}"
+                                      f"{f', go ceiling {ceil:g}' if ceil is not None else ''}"
                                       f"{'' if exp['score_level'] else ', unsupervised'}]")
     out["txt"] = f"rule@0 {out['acc']:.2f} (go {out['go']:+.2f} nogo {out['nogo']:+.2f}){lvl}"
     return out
@@ -383,7 +400,7 @@ def _resp(k0, k1, lab, w, exp, free):
         accs.append(out["nogo_acc"])
     out["acc"] = float(np.mean(accs)) if accs else float("nan")
     out["ok"] = bool(accs) and out["acc"] >= exp["resp_min"]
-    out["level_ok"] = _level(go, exp["th_go"], exp)[0] if exp["score_go"] else True
+    out["level_ok"] = _level(go, exp.get("th_resp", exp["th_go"]), exp)[0] if exp["score_go"] else True
     free = ("" if exp["score_go"] else " go=free") + ("" if exp["score_nogo"] else " nogo=free")
     out["txt"] = (f"resp@0 go {out['go_acc']:.2f} nogo {out['nogo_acc']:.2f} "
                   f"(κ₁ {go:+.2f}/{ng:+.2f}){free}")
@@ -423,6 +440,9 @@ def _nolick(k0, k1, lab, w, exp, free):
     else:
         rows = (lab["nogo"] | rows_none) if rows_none is not None else lab["nogo"]
         sel[rows, a:b] = True
+    if exp.get("nolick_nogo_cue"):                       # nogo rows from cue ONSET (in-cue + late)
+        c0, c1 = int(w["nolick_nogo"][0]), int(w["nolick_nogo"][1])
+        sel[lab["nogo"], c0:c1] = True
     if free is not None:
         sel &= free.numpy()
     if not sel.any():

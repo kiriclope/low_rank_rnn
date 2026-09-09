@@ -52,6 +52,7 @@ class Optimization:
         hebb_lr: float = 0.0,
         kappa1_clamp: float | None = None,
         kappa_gain_target: float | None = None,
+        rate_reg: float = 0.0,
         # Hard orthogonality (n_col, m_col): after each step project n[:, n_col] ⟂ m[:, m_col].
         orthogonalize_cols: tuple[int, int] | None = None,
     ):
@@ -64,6 +65,13 @@ class Optimization:
         self.hebb_lr       = hebb_lr       # three-factor Hebbian lr for reward input (0 = disabled)
         self.kappa1_clamp  = kappa1_clamp  # hard cap on decision self-gain g·λ₁ after each step (None=off)
         self.kappa_gain_target = kappa_gain_target  # pin ALL modes' g·λ to this value each step (None=off)
+        # rate_reg: ACTIVITY L2, w·⟨rates²⟩ over all units/steps, added to the objective (train AND
+        # val, so printed losses are comparable). Penalises divergence itself — the rates — not the
+        # readout, so growth cannot hide orthogonally to n. Needed for non-saturating φ (relu: the
+        # memory field is linear on each half-line, and a one-sided hinge is free above threshold, so
+        # nothing else prices the runaway; Leon 2026-09-08). last_rate_sq = ⟨rates²⟩ of the last epoch.
+        self.rate_reg      = float(rate_reg)
+        self.last_rate_sq  = float("nan")
         self.num_epochs    = num_epochs
         self.warmup_epochs = warmup_epochs
         self.stop_loss     = stop_loss
@@ -236,6 +244,7 @@ class Optimization:
     def _run_epoch(self, loader: DataLoader, train: bool) -> float:
         self.model.train(train)
         total_loss, total_n, n_seen = 0.0, 0, 0
+        rate_sq_sum = 0.0
         context = torch.enable_grad() if train else torch.no_grad()
         use_hebb = self.hebb_lr > 0 and train
 
@@ -248,12 +257,16 @@ class Optimization:
                 if train:
                     self.optimizer.zero_grad(set_to_none=True)
 
-                if use_hebb:
+                if use_hebb or self.rate_reg > 0:
                     y_pred, rates, _ = self.model(X, y, ret_rates=True)
                 else:
                     y_pred = self.model(X, y)
                     rates  = None
                 loss   = self.criterion(y_pred, y)
+                if self.rate_reg > 0:                      # activity L2 (see __init__)
+                    r2 = rates.pow(2).mean()
+                    rate_sq_sum += float(r2.detach()) * X.size(0)
+                    loss = loss + self.rate_reg * r2
 
                 # Skip a non-finite batch (don't corrupt weights / abort the run) rather than
                 # returning NaN — lets training survive a transient instability.
@@ -293,6 +306,8 @@ class Optimization:
             raise ValueError("Dataloader produced zero examples.")   # genuinely empty loader
         if total_n == 0:
             return float("nan")   # every batch was non-finite (diverged) → fit() stops gracefully
+        if self.rate_reg > 0 and train:
+            self.last_rate_sq = rate_sq_sum / total_n
         return total_loss / total_n
 
     def _step_scheduler(self, val_loss: float):
@@ -332,7 +347,8 @@ class Optimization:
                 print(
                     f"Epoch {epoch:03d}/{self.num_epochs} | "
                     f"lr: {self.learning_rate:.5f} | "
-                    f"train: {train_loss:.4f} | val: {val_loss:.4f}",
+                    f"train: {train_loss:.4f} | val: {val_loss:.4f}"
+                    + (f" | ⟨r²⟩: {self.last_rate_sq:.3f}" if self.rate_reg > 0 else ""),
                     flush=True,
                 )
 
@@ -794,7 +810,7 @@ class UnifiedLoss(nn.Module):
         (everything decision-side is pairing); for Dual use n_on[3].
 
     Component values are exposed in .last_components after each forward:
-        bl · gng_pos/gng_neg/gng_decay · rwd_go/rwd_nogo · pair_pos/pair_neg/pair_decay ·
+        bl · gng_pos/gng_neg/gng_decay/gng_ceil · rwd_go/rwd_nogo · pair_pos/pair_neg/pair_decay ·
         mem_pos/mem_neg/mem_decay (non-decision channels, summed) · nolick
 
     Weights: gng_weight (pre-cue holds), gng_decay_weight, rwd_go_weight/rwd_nogo_weight
@@ -826,7 +842,11 @@ class UnifiedLoss(nn.Module):
                  nolick_window: tuple[int, int] | None = None,
                  nolick_full_window: tuple[int, int] | None = None,
                  nolick_gng_span: tuple[int, int] | None = None,
-                 nolick_thresh: float = 0.0):
+                 nolick_thresh: float = 0.0,
+                 nolick_nogo_window: tuple[int, int] | None = None,
+                 rwd_go_thresh: float | None = None,
+                 hold_pin: bool = False,
+                 hold_ceiling: float | None = None):
         super().__init__()
         self.timing        = timing
         self.thresh        = thresh
@@ -898,14 +918,42 @@ class UnifiedLoss(nn.Module):
         self.nolick_full_window = nolick_full_window
         self.nolick_gng_span    = nolick_gng_span
         self.nolick_thresh      = float(nolick_thresh)
+        # nolick_nogo_window (steps): on the NOGO rows (a negative hold target inside nolick_gng_span)
+        # the don't-lick span starts at CUE ONSET — the cue is the lick window, and a nogo trial must
+        # not be in κ₁>0 during it, not only after it. Leon 2026-09-07: forbid κ₁>0 wherever a lick
+        # would be wrong and let the network relocate the wells to satisfy it — the pushes (go
+        # stimulus, cue on both trial types) are the task's and are never traded against. go rows
+        # keep nolick_window (the post-cue tail: the in-cue lick is allowed). Needs nolick_gng_span.
+        self.nolick_nogo_window = nolick_nogo_window
+        # rwd_go_thresh: the RESPONSE-window go hinge threshold, decoupled from gng_thresh (the hold).
+        # A lick threshold ABOVE the hold gives the cue a job the parked rule cannot do for it — the
+        # cue must supply the difference in its 0.5 s, so the go column / κ₁ mode get trained to make
+        # the cue a genuine push (which then lands on nogo too). None → gng_thresh (legacy).
+        self.rwd_go_thresh      = float(rwd_go_thresh) if rwd_go_thresh is not None else None
+        # hold_pin: score the gng-group ±1 HOLD targets two-sided (pinned to ±θ) instead of one-sided.
+        # Needed with rwd_go_thresh > θ: a one-sided hold is free above θ, so the net just parks the
+        # go rule at the lick threshold (cuego: hold +1.8, cue push unchanged). Pinning caps the hold
+        # so the CUE has to carry the lick − hold difference.
+        self.hold_pin           = bool(hold_pin)
+        # hold_ceiling: PREMATURE-LICK ceiling on the go HOLD (absolute κ₁ value). One-sided hinge
+        # from ABOVE on the go-hold steps only (pre-cue, tgt>0): hinge(p − ceiling). Keeps the hold
+        # one-sided at θ (a lick is a threshold event, ≥θ is correct — Leon 2026-09-04, pin rejected)
+        # but bounds it from above so "lick at the cue" (rwd_go_thresh > ceiling) is well defined:
+        # the cue must supply rwd_go_thresh − ceiling in its window. nogo untouched (depth emergent).
+        self.hold_ceiling       = float(hold_ceiling) if hold_ceiling is not None else None
         if nolick_full_window is not None and nolick_gng_span is None:
             raise ValueError("nolick_full_window needs nolick_gng_span to identify 'none' trials")
+        if nolick_nogo_window is not None and nolick_gng_span is None:
+            raise ValueError("nolick_nogo_window needs nolick_gng_span to identify the nogo rows")
         self.last_components: dict[str, float] = {}
 
     @staticmethod
     def masked_mean(loss: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         mask = mask.to(dtype=loss.dtype)
         return (loss * mask).sum() / mask.sum().clamp_min(1.0)
+
+    def _rwd_th(self):
+        return self.gng_thresh if self.rwd_go_thresh is None else self.rwd_go_thresh
 
     def _class_terms(self, p, tgt, mask, pos_thresh, neg_thresh):
         """(pos, neg, decay) — each its own masked_mean over `mask` ∩ its value class.
@@ -924,7 +972,7 @@ class UnifiedLoss(nn.Module):
 
         zero_f  = y_pred.sum() * 0.0            # 0-scalar carrying grad/device/dtype
         comp: dict[str, torch.Tensor] = {
-            k: zero_f for k in ("gng_pos", "gng_neg", "gng_decay",
+            k: zero_f for k in ("gng_pos", "gng_neg", "gng_decay", "gng_ceil",
                                 "rwd_go", "rwd_nogo",
                                 "pair_pos", "pair_neg", "pair_decay",
                                 "mem_pos", "mem_neg", "mem_decay", "nolick")}
@@ -963,12 +1011,12 @@ class UnifiedLoss(nn.Module):
                         # one-sided; under the shared response cue that forces the nogo memory below the
                         # lick line (emergent well-push). rwd_keep_go_hinge=False drops it (go free too
                         # → the never-lick collapse).
-                        comp["rwd_go"]   = (self.masked_mean(self._hinge(self.gng_thresh - p),
+                        comp["rwd_go"]   = (self.masked_mean(self._hinge(self._rwd_th() - p),
                                                              rwd_m & (tgt > 0))
                                             if self.rwd_keep_go_hinge else zero_f)
                         comp["rwd_nogo"] = self.masked_mean(self._hinge(p), rwd_m & (tgt == 0))
                     else:
-                        rgo = self.masked_mean(self._hinge(self.gng_thresh - p), rwd_m & (tgt > 0))      # go +1 hinge
+                        rgo = self.masked_mean(self._hinge(self._rwd_th() - p), rwd_m & (tgt > 0))      # go +1 hinge
                         rn  = self.masked_mean(self._hinge(p + self.gng_neg_thresh), rwd_m & (tgt < 0))  # nogo −1 hinge (≤ −neg_th, free below)
                         nogo_pin = torch.abs(p) if self.rwd_nogo_l1 else self._pin(p)                 # L1 |κ₁| (forced) or the hinge's own norm
                         rz  = self.masked_mean(nogo_pin, rwd_m & (tgt == 0))                          # nogo pin to 0
@@ -986,6 +1034,12 @@ class UnifiedLoss(nn.Module):
                     g_mask = g_mask & ~dcy_go & ~dcy_nogo
                     p_mask = p_mask & ~dcy_go & ~dcy_nogo
                 gp, gn, gd = self._class_terms(p, tgt, g_mask, self.gng_thresh, self.gng_neg_thresh)
+                if self.hold_pin:   # two-sided hold: (p ∓ θ)² instead of the one-sided hinges
+                    gp = self.masked_mean(self._pin(p - self.gng_thresh),     g_mask & (tgt > 0))
+                    gn = self.masked_mean(self._pin(p + self.gng_neg_thresh), g_mask & (tgt < 0))
+                if self.hold_ceiling is not None:   # premature-lick ceiling: go hold ≤ ceiling
+                    comp["gng_ceil"] = self.masked_mean(self._hinge(p - self.hold_ceiling),
+                                                        g_mask & (tgt > 0))
                 pp, pn, pd = self._class_terms(p, tgt, p_mask, self.thresh, self.thresh)
                 if self.decay_onesided:
                     gd = gd + self.masked_mean(self._hinge(p),  dcy_go) \
@@ -1000,24 +1054,34 @@ class UnifiedLoss(nn.Module):
                     sample = ((t >= int(self.timing.n_stim_on[0])) &
                               (t <  int(self.timing.n_stim_off[0])))[None, :]
                     freem = torch.isfinite(pred) & ~torch.isfinite(target) & ~pre & ~sample
-                    if self.nolick_full_window is not None:
-                        # FULL-DELAY don't-lick on the DPA TRIALS only — the Dual-task trials with
-                        # no go/nogo stimulus and no cue (the generator's gng="none" level). They
-                        # sit ON the sample well for the whole delay, so the hinge grades the well's
-                        # κ₁ directly over 3× more steps than the late window. A row is a DPA trial
-                        # iff it has NO finite decision target in `nolick_gng_span` (the go/nogo
-                        # hold + response span) — no new target class needed, but it REQUIRES that
-                        # go/nogo rows actually carry that hold (dual_gng_memory=True), else they
-                        # look like DPA trials here and the hinge fights their +1 rule. sweep.py
-                        # guards this. go/nogo rows keep the late window.
+                    if self.nolick_full_window is not None or self.nolick_nogo_window is not None:
+                        # Trial-scoped spans. Rows are classified from their own targets inside
+                        # `nolick_gng_span` (the go/nogo hold + response span): a DPA ('none') row
+                        # has NO finite decision target there; a nogo row has a NEGATIVE one; a go
+                        # row a positive one. This REQUIRES that go/nogo rows actually carry the
+                        # hold (dual_gng_memory=True), else they look like DPA trials here and the
+                        # hinge fights their +1 rule. sweep.py guards this.
+                        #   nolick_full_window — FULL-DELAY don't-lick on the DPA rows: they sit ON
+                        #     the sample well for the whole delay, so the hinge grades the well's
+                        #     κ₁ directly over 3× more steps than the late window.
+                        #   nolick_nogo_window — nogo rows from CUE ONSET (in-cue + late delay).
+                        #   nolick_window      — the late window on every non-DPA row (go rows'
+                        #     post-cue tail; nogo rows too when no nogo window is given).
                         g0, g1 = self.nolick_gng_span
-                        is_none = ~torch.isfinite(target[:, int(g0):int(g1)]).any(1)      # (B,)
-                        f0, f1 = self.nolick_full_window
-                        span = ((t >= int(f0)) & (t < int(f1)))[None, :] & is_none[:, None]
+                        tg_span = target[:, int(g0):int(g1)]
+                        fin     = torch.isfinite(tg_span)
+                        is_none = ~fin.any(1)                                              # (B,)
+                        is_nogo = (torch.where(fin, tg_span, torch.zeros_like(tg_span)) < 0).any(1)
+                        span = torch.zeros_like(freem)
+                        if self.nolick_full_window is not None:
+                            f0, f1 = self.nolick_full_window
+                            span = span | (((t >= int(f0)) & (t < int(f1)))[None, :] & is_none[:, None])
                         if self.nolick_window is not None:
                             w0, w1 = self.nolick_window
-                            span = span | (((t >= int(w0)) & (t < int(w1)))[None, :]
-                                           & ~is_none[:, None])
+                            span = span | (((t >= int(w0)) & (t < int(w1)))[None, :] & ~is_none[:, None])
+                        if self.nolick_nogo_window is not None:
+                            c0, c1 = self.nolick_nogo_window
+                            span = span | (((t >= int(c0)) & (t < int(c1)))[None, :] & is_nogo[:, None])
                         freem = freem & span
                     elif self.nolick_window is not None:
                         w0, w1 = self.nolick_window
@@ -1035,7 +1099,7 @@ class UnifiedLoss(nn.Module):
                 comp["mem_decay"] = comp["mem_decay"] + md
 
         total = (self.bl_weight   * bl_loss
-                 + self.gng_weight        * (comp["gng_pos"] + comp["gng_neg"])
+                 + self.gng_weight        * (comp["gng_pos"] + comp["gng_neg"] + comp["gng_ceil"])
                  + self.gng_decay_weight  * comp["gng_decay"]
                  + self.rwd_go_weight     * comp["rwd_go"]
                  + self.rwd_nogo_weight   * comp["rwd_nogo"]

@@ -85,11 +85,38 @@ failure mode.
 
 ## Conclusion so far
 
-The one-sided LIF nonlinearity is fundamentally incompatible with the ring attractor
-required for DPA. The B-sample cannot be encoded as a negative-κ₀ state because LIF
-output is always ≥ 0, so the recurrent drive at κ₀ < 0 is suppressed.
+**⚠ SUPERSEDED (2026-09-08).** The paragraph below was wrong: sign in κ = rates·n/N comes from n,
+not from the rates, and every foundation seed (`sweep_r2nocue`, lif, gain 1) holds a symmetric
+pair of memory wells at κ₀ ≈ ±1.2 (`ring_lowerplane_log` §27b). What lif cannot do is the RING —
+the current target is the two-well geometry, which it does. Kept for the record:
+
+> The one-sided LIF nonlinearity is fundamentally incompatible with the ring attractor
+> required for DPA. The B-sample cannot be encoded as a negative-κ₀ state because LIF
+> output is always ≥ 0, so the recurrent drive at κ₀ < 0 is suppressed.
 
 The most promising approaches remain:
 1. **tanh/erf with freeze_rank0_dual + kappa1_reg**: explicitly protects the ring.
 2. **tanh with structured init + low gain**: structure enforces λ₀ > 1 > λ₁ without
    needing a regularizer.
+
+## 2026-09-08/09 — the foundation's φ, and relu as a control (see `ring_lowerplane_log` §28)
+
+**What `lif` is.** Φ(x) = ½(1+erf(x/√2)), the Gaussian CDF: the exact mean-field rate of
+binary/threshold units under Gaussian input (van Vreeswijk & Sompolinsky), the high-noise erfc limit
+of the LIF Siegert rate (Amit & Brunel 1997; Brunel 2000), the probit sigmoid. Range (0,1), REST
+RATE 0.5, slope 0.40 at rest (so the "gain·λ = 1" chaos line in `architecture.md` is off by 0.4 for
+lif), φ′→0 at both ends (the gain-steal mechanism behind the cue's state-dependent push). All eight
+torch φ agree with the numpy mirrors in `src/flow_field.py` to machine precision, φ′ included.
+
+**relu at the foundation's parameters (`sweep_r2fdrelu`) has no memory well.** Relu is positively
+homogeneous, so on the memory axis the active set depends only on sign(m₀ᵢκ₀) and the autonomous
+field is linear on each half-line, F₀ = (λ⁺ − 1)·κ₀ with λ⁺ = g·Σ_{m₀ᵢ>0} n₀ᵢm₀ᵢ/N (measured
+1.25–1.37 = the asymptotic slope to 3 decimals). One fixed point (the origin): the memory is an
+exponential escape (κ₀ → 30–40 by test-on, rates to 330) that the one-sided hinge never prices.
+Retention breaks in GNG (0.58–0.69) because retraining m₁/n₁ shifts the active set and hence the
+growth rate the amplitude-dependent readout was calibrated on. Activity L2 (`rate_reg_weight`)
+bounds it (w=0.01: slower escape; w=0.1: task dies below a repeller) but cannot create a well;
+trainable unit biases did not either, because no term asks for λ⁺ < 1 at the target. A relu well
+needs λ_full > 1 > λ⁺ (the threshold-linear bump mechanism) — via a two-sided memory pin, a
+half-population gain constraint, or EI inhibition (what the EISTP model's depression supplies).
+Figure: `results/figures/sweep_r2rr01/field_profiles_relu_vs_lif.png`.

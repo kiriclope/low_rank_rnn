@@ -176,6 +176,23 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
   the `nocue` foundation arm.
 - `cue_scale=0.0` — no cue input at all, with `cue_on_go_input` keeping input_size/timings
   identical to cue versions (cue sweeps become one-scalar deltas).
+- `nolick_nogo_in_cue` (2026-09-07) — the NOGO rows' don't-lick span starts at CUE ONSET (Dual:
+  cue-on → test-on; GNG: cue-on → end) instead of cue-off — the cue is the lick window and a nogo
+  trial must not sit in κ₁>0 during it. Rows are classified from their own hold target inside the
+  gng span (negative = nogo, positive = go, none = DPA row), so it needs `dual_gng_memory=True`
+  (guarded) and `nolick_weight>0`. Combine with `nolick_full_delay` (DPA rows) and, if wanted,
+  `nolick_late_delay` (go rows after the cue — measured NEGATIVE, §27i). The GNG-stage nolick weight
+  is gated on `nolick_late_delay OR nolick_nogo_in_cue`. Loss component: `nolick`.
+- `gng_hold_ceiling` (2026-09-07, default None, UNUSED) — one-sided hinge from ABOVE on the go hold
+  (`hinge(κ₁ − ceiling)` on pre-cue go steps; component `gng_ceil`). Needs `rwd_go_thresh` above it.
+  Implemented for the premature-lick fork, then judged the wrong question (§27g/h).
+- `rate_reg_weight` (2026-09-09) — ACTIVITY L2: `w·⟨rates²⟩` over all units and steps, added to
+  the train AND val objective at every stage (`Optimization(rate_reg=w)`; the epoch line prints
+  `⟨r²⟩`). Needed for a non-saturating φ (relu), whose memory field is linear on each half-line so
+  nothing else prices a runaway; it bounds activity but cannot create a well (§28c).
+- `max_val_loss` (2026-09-09, default 100) — the trainer's abort threshold on the val loss, now a
+  RunConfig field. Relu + activity L2 needs ~1e6: at the unstable init ⟨r²⟩≈1e4, so the penalty
+  alone exceeds 100 before the first step.
 - `nolick_full_delay` — extend the Dual don't-lick to the WHOLE delay on the DPA trials only
   (rows identified by no finite decision target in the go/nogo span; guarded: needs
   `dual_gng_memory=True` and `target_rank=2`). go/nogo trials keep the late window.

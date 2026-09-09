@@ -1678,3 +1678,208 @@ points, and the mean A-nogo trajectory (cue-on → test-on) overlaid. Figure:
   lower branches nearly CONNECT the two memory sides through the no-lick region (a partial
   lower arc, cf. the old 270°-U) — a potential A↔B drift channel; sep is 1.00 at this delay
   length, so it is slow enough for now.
+
+**27e′. ⚠ REVIEW CORRECTION (2026-09-03, fresh-eyes pass): the "transit time" claim in §27e is
+WRONG under the trained noise, and only partly true deterministically.** Tested by integrating the
+TRUE autonomous dynamics (delay condition, attention on) for 10 s from the actual nogo test-on
+states (`integrate_kappa_trajectories`, 64 trials/seed):
+
+| nogo κ₁ from test-on | t=0 | 1.5 s | 10 s deterministic | 10 s at trained σ |
+|---|---|---|---|---|
+| cue1 s0/s1/s2 | +0.13/+0.10/+0.36 | +0.05/−0.01/+0.18 | −0.11/−0.50/−0.35 | **+0.17/+0.09/+0.29** |
+| cue1 s3 | +0.32 | +0.35 | **+0.35 (up-attractor)** | +0.43 |
+| cue2 s0/s1/s2 | +0.40/+0.52/+0.69 | +0.35/+0.45/+0.52 | +0.17/+0.18/+0.22 (never <0) | **+0.26/+0.33/+0.47** |
+| cue2 s3 | +0.67 | +0.69 | **+0.68 (up-attractor)** | +0.64 |
+
+- Deterministically, cue1 s0–s2 DO drift down — on a 5–10 s timescale (≫ the 1.5 s late delay),
+  so "transit time" was right there; cue2 s0–s2 descend so slowly they never cross 0 in 10 s; and
+  s3 at both doses sits in a GENUINE up-attractor (flow_verdict had verified it: (+1.24,+0.68)).
+- **Under the trained noise, NO seed at either dose ever comes down** (κ₁ = +0.09…+0.64 at 10 s).
+  The upper end of the groove is an attracting plateau that noise cannot leave. Waiting would
+  never fix the false lick.
+- Corrected reading: the cue TRANSPORTS the state (input-driven, not along the autonomous flow)
+  from the lower slow region to the groove's UPPER END, which is a shallow (cue1) to firm (cue2)
+  attractor. The deep no-lick branch exists as slow structure but is NOT the state's fate. So the
+  next lever's job is RESHAPING (destabilise/remove the upper plateau, seat the state on the lower
+  branch), not speeding transit. The "small nolick weight suffices" prediction is downgraded from
+  expectation to hypothesis — it may still hold because the down-structure exists, but the
+  mechanism claimed for it was wrong.
+- Also verified this pass (naive-dual, §27f below): the go-trial pairing failure is specifically
+  NONMATCH-on-go (nocue 0.52/0.52/0.60/0.98; cue2 0.02–0.26 — systematically WRONG, the held/pushed
+  +1 answers "match"), and at cue2 nonmatch-on-nogo also fails (0.67–0.70) as the cue lifts nogo.
+  The pairing readout is a κ₁-position readout; whatever sits up at test says "match".
+
+**27f. The interference the standard eval never showed (Leon: "dpa accuracy is not dropping…
+I would expect it to drop together with nogo").** `_eval` probes only the standalone tasks. On the
+DUAL task at the NAIVE checkpoint: dpa = 0.91–0.97 (nocue), 0.79–0.88 (cue2); by condition none
+0.99–1.00 / go 0.76–0.99 (cue2: 0.51–0.66) / nogo 0.92–1.00 (cue2: 0.87–0.96); nogo response at
+cue2 0.00–0.10. On the standalone DPA task the drop exists as MARGIN erosion under the 1.00
+ceiling: pairing d′ 5–13 → 2.7–4.8, mean margin +0.77 → +0.62…+0.71. Why the standalone number
+stays 1.00: margins ≫ decision noise (sign criterion saturates); the standalone task never
+populates the rule structure GNG built; everything DPA reads is frozen in GNG. The conflict only
+exists when the rule is actually held — the dual task. Consequence: `after_gng/dpa` is saturated
+in the foundation regime; **naive-dual dpa (and its go:nonmatch cell) is the interference metric
+for this line** and should be added to `_eval` and to traj_verdict as a standard stage.
+
+**27g. FOUNDATION ADDONS 4–6 (2026-09-03/04): gain 2 · the cue's push · the lick-vs-hold degeneracy.**
+- **`sweep_r2g2cue1`** (foundation at gain 2.0, cue 1.0, DPA retrained): WEIGHT-level interference
+  returns in 2/4 seeds — s2: pure-DPA acc 1.00→0.73, pairing d′ 5.3→0.33, m₁ restructured 48 %
+  (cos 0.90), memory hold 0.61, −κ₀ well missing at naive, even 'none' dual trials fail nonmatch
+  (0.46); s1: d′ 12→2.7; s0/s3 foundation-like. Attribution is clean: the GNG stage is
+  gradient-blind to the cue epoch (no supervised step after cue onset), so everything at naive is
+  gain-only. Expert: attractor proliferation (s1/s2 four wells, s2 a spiral). ⇒ §27a's saturation
+  mechanism is causal on its own; gain 1 = state-level interference only, gain 2 = weight-level.
+- **Cue-push factorial** (weights × attention × memory): at NAIVE weights the nogo push is the same
+  ~+0.3 in the GNG task and the Dual task; the +0.75 (§27c) is made by DUAL TRAINING (×2.5 with the
+  input column frozen — the retrained κ₁ mode un-stiffens the held states). Attention through the
+  cue adds ~+0.3 at expert, ~0 at naive; the held κ₀ memory adds nothing (removing the sample slightly
+  INCREASES the push).
+- **`attention_through_cue`** (new flag; GNG-task gated attention runs to cue-OFF instead of dropping
+  at cue onset — the generic 'off at last-stim onset' rule made GNG inconsistent with Dual) +
+  `sweep_r2atc1` (GNG stage only, `epochs_dual=0`): naive weights IDENTICAL to cue1's to 4 decimals
+  (m₁, n₁, Wi) — the GNG stage sees nothing after cue onset; push +0.30 vs +0.25. A task-consistency
+  fix, consequential only once a post-cue target exists. (Trap caught: `--run_filter` is a
+  substring match; `attn1` collided with the old `wp_attn1` arm — check the match list before launch.)
+- **Drive decomposition (why the cue — which IS the go input — barely pushes nogo):** exact via the
+  analytic field, direct drive = F₁(κ; attn+cue) − F₁(κ; attn). At rest +0.65 (and the unstable
+  origin amplifies: the go stimulus only TIPS, a 0.5 s stimulus reaches +0.65 and the attractor
+  carries it to +1.2); at the nogo hold (0,−1.4) +0.21 with the well pulling back −0.1 → net ≈ +0.1/τ
+  ≈ the measured +0.25 over the 0.5 s cue; at the go hold (0,+1.3) +0.05–0.11 — the column is
+  gain-dead at the very state it built. Same input, effect = input × local φ′ + local flow: the
+  §25d gain-steal on the κ₁ axis.
+- **`rwd_go_thresh`** (new: response-window go hinge threshold decoupled from the hold) +
+  **`sweep_r2cuego`** (lick ≥ 2 in-cue, hold ±1 one-sided, nogo free, GNG only): the network parked
+  the GO HOLD at +1.66…+1.84 and let the cue idle — push go +0.1, nogo +0.32…+0.39 (vs +0.30),
+  Wi[:,4] unchanged, drive decomposition unchanged. One-sided holds are free above θ, so "lick above
+  hold" degenerated into "hold above lick threshold". SIDE FINDING: inflating the κ₁ hold damaged
+  pure DPA at gain 1 (choice 0.65–0.95, unpair side; κ₁ delay rest +0.26…+0.52; s2 mem DECAY, leak
+  0.67) — AMPLITUDE is a second route to the same m₁κ₁ saturation that gain 2 gives.
+- **`gng_hold_pin`** (new: hold scored two-sided at ±θ) + arm `cuegop` — implemented, unit-tested,
+  NOT launched. Leon: a go response is correct whenever ≥ 1 (a lick is a threshold event), so
+  pinning is the wrong shape. The real issue: on a single κ₁ axis a held go rule ≥1 already IS a
+  lick-level state; "lick at the cue" is undefined without an upper bound on the pre-cue state.
+  **Open fork:** (1) premature-lick ceiling — one-sided hinge from above on go trials before the
+  cue (κ₁ ≤ 1+δ), lick ≥ 2 in-cue; or (2) rank 3 — rule on κ₁, lick on κ₂ (`target_rank=3`, a new
+  foundation). Decision pending.
+  **RESOLVED 2026-09-07 (Leon): rank 2 only, and no engineered constraint on the loss** — see §27h.
+  `gng_hold_ceiling` (the premature-lick ceiling, arm `cuegoc`) was implemented, then judged the wrong
+  question: the cue push is an INPUT property (naive GNG-task nogo push +0.25 at cue 1 → +0.65 at
+  cue 2), so a loss term that forces a push the amplitude gives for free only buys distortion. It
+  stays in the tree default-off, unused.
+
+**27h. ★★ THE SAFEGUARD ARM — `sweep_r2sgd2` (2026-09-07): the no-lick rule seats the wells AT the
+line, not below.** Leon's framing, which is now the standing rule for this line: "prevent the network
+from being in the κ₁>0 region when it should not; the pushes (go stimulus, cue on both trial types)
+are the task's and are never traded against; the network should tune the location of the wells."
+Implemented as ONE one-sided hinge κ₁ ≤ 0 (relu², weight 1, threshold 0) wherever a lick would be
+wrong and nothing else: nogo rows from CUE ONSET → test-on (new flag `nolick_nogo_in_cue`; rows
+classified from their own hold target in the gng span, needs `dual_gng_memory`), DPA rows the whole
+delay (`nolick_full_delay`), go rows FREE after the cue (Leon: a post-cue stop-lick on go is a
+transience demand on the go attractor — the decay-pin lineage — and would confound attribution).
+= cue2 + those flags; nocue DPA ckpts; GNG retrained but the term is inert there at dose 2 (nogo
+lands at −0.4 at cue-off): naive ≡ cue2's to two decimals. 4/4 DONE; gallery `rnn/sweep_r2sgd2`.
+
+| Dual task, expert (mean κ₁; fraction of steps > 0) | cue2 | sgd2 |
+|---|---|---|
+| nogo pre-cue hold | −0.92 … −1.06 | −1.04 … −1.10 |
+| cue push on nogo | +1.25 … +1.35 | +1.11 … +1.21 |
+| nogo at cue-end | +0.20 … +0.37 (.73–.89) | **+0.03 … +0.11** (.55–.65) |
+| nogo late delay | +0.39 … +0.61 (.94–1.00) | **+0.17 … +0.20** (.76–.81) |
+| DPA rows, whole delay | +0.07 … +0.22 (.60–.76) | **−0.02 … −0.07** (.42–.51) |
+| go hold pre-cue | +0.98 … +1.03 | **+0.81 … +0.95** (below θ) |
+| pairing by-gng · retention · memory | 1/1/1 · 0.99–1.00 · HELD (s2 GROW) | 1/1/1 · 0.99–1.00 · HELD 4/4 |
+| flow_verdict (+κ₀ FP κ₁) | 0/4 (+0.27/+0.48/+0.32/+0.68) | 0/4 (+0.18/+0.75/+0.20/+0.30) |
+
+- The push is intact and the nogo hold did not deepen: the network did NOT trade against the task's
+  pushes. It relocated the LANDING: the cue-end point dropped ≈0.25 and the DPA rows sit exactly on
+  the line, straddling it half the time. That is the relu² hinge at 0 (§25e): no force once κ₁ ≤ 0,
+  so the wells equilibrate at 0⁻ and never acquire depth. The nogo rows are the residual violator,
+  on BOTH memory sides equally (A +0.15…+0.26, B +0.10…+0.23): after the cue they drift from +0.05 up
+  to +0.2 — the §27e′ upper plateau, still there a few tenths lower (slow-manifold figure
+  `slow_manifold_sgd2.png`: the A-nogo path parks at (+1.1, +0.2)). The lower arc at κ₁≈−1.5
+  connecting the two memory sides is now prominent in s0–s2 (the A↔B drift channel flagged in §27e;
+  sep still 1.00). The +κ₀ slow set reaches +2.2…+2.5 (go structure).
+- The cost Leon predicted appeared on the GO side, not in pairing: on one κ₁ axis the wells and the
+  go rule move together, so the go hold is below θ in every seed (gng_pos residual 0.017–0.085).
+- ⚠ NOT CONVERGED: Dual val loss 0.11–0.16 at 300 (cue2 0.07–0.10), still falling, nolick the largest
+  residual in 3/4. A snapshot of a descent. `sgd2x` (continue from sgd2's expert ckpts, +300 epochs,
+  identical loss) is in sweep.py, NOT launched. Epochs note: every foundation Dual loss is still
+  falling at 300 (0.36–0.52 @100 → 0.07–0.10 @300); stop_loss 0.005 never fires at noise 1.0.
+- "Impose no-lick in the early delay too?" — measured, not needed: the early delay (sample-off →
+  go/nogo on) already sits at −0.05…−0.12 in every seed, even in cue2 (−0.02…−0.07); the only
+  violating epoch is the post-cue nogo. A hinge there has no gradient to give.
+- Tool: `$CLAUDE_JOB_DIR/tmp/nolick_split.py` (per-class + A/B split of κ₁ on the Dual task, mirrors
+  `traj_verdict.probe`); `traj_verdict` tags `nolick-nogo-from-CUE-ON`.
+
+**27i. `sweep_r2sgd2g` (2026-09-07): the go post-cue stop-lick is a measured NEGATIVE — settled.**
+Leon asked to try it after all: = sgd2 + `nolick_late_delay` (go rows hinged cue-off → test-on; GNG
+stage cue-off → end), both stages. 4/4 DONE; gallery `rnn/sweep_r2sgd2g`.
+- **GNG stage breaks retention: `after_gng/dpa` 0.69 / 0.92 / 0.90 / 0.36** (sgd2 1.00 ×4); memory
+  DECAY ×3 (hold 0.47/0.79/0.75), **FLIP in s3** (hold −0.41, sep 0.27, DPA 0.34 below chance — the
+  §26 inversion); go rule made TRANSIENT (relax 0.02–0.35), go hold +0.67…+0.88 < θ. Mechanism = the
+  §27a entanglement: g·n₀ᵀm₁/N = −2.5 … −3.6 at naive (sgd2 −0.01…−0.64; every foundation arm
+  ≤ 0.7 in magnitude), m₁ restructured 39–61 % (cos 0.83–0.87). The decay-pin lineage reappearing at
+  GAIN 1 from a task-shaped term.
+- **Dual rebuilds the memory (dpa 0.995–1.00 — the primary-metric trap) and nothing improves:** go
+  late delay +0.60…+0.75 with 100 % of steps > 0 (the hinge is simply unmet), DPA rows +0.02…+0.07
+  (WORSE than sgd2), nogo late +0.08…+0.19, go hold +0.58…+0.70, mem GROW s1/s2, flow_verdict 0/4
+  with NO PAIR in s0/s2 (single +κ₀ well + a κ₀≈0 basement) and 4 wells in s3; Dual val loss
+  0.27–0.42 at 300 (3× sgd2), nolick residual 0.09–0.15. Go rows stay free after the cue.
+
+## §28 — Transfer-function control: the foundation with relu is a RUNAWAY, and a loss cannot make it a well (2026-09-08/09)
+
+**28a. Review of the implemented φ.** Eight functions in `src/models.py`, numpy mirrors in
+`src/flow_field.py` verified to machine precision incl. φ′: tanh, erf, relu, softplus, elu,
+**lif = Φ(x) = ½(1+erf(x/√2))** (the foundation's φ, gain 1: range (0,1), REST RATE 0.5, slope 0.40
+at rest, φ′→0 at both ends), lif_sc (Φ rescaled, slope 1), tanh_asym (+γ tanh²). `lif` is the
+Gaussian CDF: the exact mean-field rate of binary/threshold units with Gaussian input (van Vreeswijk
+& Sompolinsky), the high-noise erfc limit of the LIF Siegert rate (Amit & Brunel 1997, Brunel 2000),
+the probit. "lif" is a slight misnomer. Consequences: the chaos line "gain·λ = 1" in
+`architecture.md` assumes φ′(0)=1 and is off by 0.4 for lif; saturation at BOTH ends is the
+gain-steal mechanism (cue drive +0.65 at rest vs +0.21 at the nogo hold); sign in κ comes entirely
+from n (rates ≥ 0). **`nonlinearities.md`'s old conclusion ("LIF cannot encode B as −κ₀") was STALE**
+— every foundation seed has wells at κ₀ ≈ ±1.2; corrected there. Literature check (Barbosa): his
+2026 Nat Commun model is a SPIKING LIF bump attractor (Brian2, AMPA/NMDA/GABA + Mongillo STP); his
+low-rank RNN work (2023) uses tanh; the 2026 multi-area lrRNN work has no located preprint.
+
+**28b. `sweep_r2fdrelu` — the foundation with relu (one-field delta, DPA retrained), 4/4, gallery
+`rnn/sweep_r2fdrelu` (κ runs to ±20).** DPA acc 1.000 but NO memory well: κ₀ +2 at sample-off →
++28…+41 at test-on, mean unit rate 16–22 (max 220–330; lif 0.5/1.0), autonomous F₀/κ₀ → +0.25…+0.37
+at large κ₀ (lif: zero crossing at κ₀≈1.25, → −1 beyond). **Why (exact):** relu is positively
+homogeneous, so on the memory axis the active set depends only on sign(m₀ᵢκ₀) and the field is
+LINEAR on each half-line, F₀ = (λ⁺ − 1)κ₀ with λ⁺ = g·Σ_{m₀ᵢ>0} n₀ᵢm₀ᵢ/N — verified: λ⁺ = 1.25–1.37
+from the weights equals the measured asymptotic slope to 3 decimals. A linear field has one fixed
+point (the origin): λ⁺<1 decay, λ⁺>1 escape, λ⁺=1 a measure-zero line attractor. The structured init
+gives λ⁺≈1.5, the one-sided hinge (κ₀ ≥ 1, free above) never prices growth (DPA loss 0.08 vs lif
+0.23 — margin is free), and the linear pairing readout works at any amplitude. The tonic attention
+input breaks homogeneity only near the origin (F₀/κ₀ +0.05…+0.23 at κ₀≈0.5–1). **In this loss the
+well exists because φ saturates.** GNG: `after_gng/dpa` 0.58/0.64/0.61/0.69, mem GROW ×3 + LOST ×1,
+pairing 0.58–0.67 — WITHOUT coupling growth (n₀ᵀm₁ within ±0.4): retraining m₁/n₁ changes the active
+set, hence the κ₀ growth rate, hence the test-time amplitude the non-scale-invariant readout was
+calibrated on. Dual rebuilds both tasks to 1.00 on a still-runaway substrate (F₀/κ₀ → +0.4, rates
+to 190). Not a comparison substrate.
+
+**28c. relu + ACTIVITY L2 (`rr01` w=0.01 · `rr1` w=0.1 · `rrb01` w=0.01 + trainable unit biases),
+DPA stage only, 2026-09-09, 4 seeds each, galleries `rnn/sweep_r2rr01` etc. + the comparison figure
+`field_profiles_relu_vs_lif.png` (`scratchpad/relu_field_profiles.py`).** New machinery:
+`rate_reg_weight` → `Optimization(rate_reg=w)` adds w·⟨rates²⟩ to train AND val loss (⟨r²⟩ printed
+per epoch); `max_val_loss` is now a RunConfig field (default 100 — at the unstable relu init
+⟨r²⟩≈1e4, so the penalty alone aborted the first launch at epoch 1; these arms use 1e6).
+
+| DPA ckpt, DPA task | fdrelu | rr01 | rr1 | rrb01 |
+|---|---|---|---|---|
+| DPA acc | 1.00 | 1.00 (s3 .92) | **0.50–0.55** | 1.00 (s3 .88) |
+| κ₀ sample-off → test-on | +2 → +28…41 | +1.0…1.3 → +2.6…3.4 | +0.6…1.0 → +0.7…0.9 (DECAY) | +1.0…1.8 → +2.3…2.8 |
+| ⟨r²⟩ (max unit rate) | 1200–4400 (1500–2900) | 14–25 (190–330) | 2–5 (110–240) | 17–22 (180–340) |
+| λ⁺ | 1.25–1.37 | 1.09–1.30 | 1.06–1.34 | 1.12–1.33 |
+| F₀/κ₀ zero crossing + → − | none | none | none | none |
+
+- **Bounded ≠ attractor.** w=0.01 slows the escape (15× → 2.5× over the delay) but λ⁺ stays > 1 and
+  F₀/κ₀ > 0 for all κ₀ ≥ 1 — still an escape. w=0.1 kills the task: the profile is negative near
+  the origin and positive beyond κ₀≈0.5–1, i.e. the tonic input + penalty made a REPELLER (a
+  threshold), the state parks below it and decays, pairing at chance. The L2 is on the MEAN, so a
+  few units still fire at 200–300. Trainable biases changed nothing: the mechanism that would give
+  relu a genuine well (active set shrinking with amplitude ⇒ λ_full > 1 > λ⁺, the threshold-linear
+  bump) needs λ⁺ < 1, and no term asks for zero growth AT the target amplitude — the one-sided hinge
+  still pays for margin. Open (not run): a two-sided memory pin |κ₀| ≈ θ, a weight-side constraint
+  on the half-population overlap, or EI inhibition — each engineers the bound Φ provides for free.

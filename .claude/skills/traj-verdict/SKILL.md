@@ -45,6 +45,12 @@ at boundary 0 — depth is flow_verdict's job), `dpa_nolick_weight` (`prelick` b
 scored check at the DPA stage — κ₁<0 is free by design), `gng_decouple_decision` (tagged; expect
 `leak` ≈ 0).
 
+2026-09-07 flags: `nolick_nogo_in_cue` (tag `nolick-nogo-from-CUE-ON`; the `nolick` check then
+covers the nogo rows from cue ONSET, and `nogo-resp-free` replaces the `★nogo-UNCONSTRAINED` tag),
+`gng_hold_ceiling` (tag `go-hold-CEILING≤c`; the go level check also requires go ≤ c + ½σ).
+The `nolick` check POOLS DPA rows and nogo rows — for the per-class / per-sample split use
+`$CLAUDE_JOB_DIR/tmp/nolick_split.py` (mirrors `probe()`).
+
 **Never quote a level/threshold verdict without reading that line.** A ±1 band copied from a th=1
 arm fails every sign-based arm for behaving exactly as designed — that is the mistake this
 adaptation exists to prevent.

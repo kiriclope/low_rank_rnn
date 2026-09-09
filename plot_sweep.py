@@ -124,6 +124,7 @@ class RunMeta:
     attention_input: bool = False
     attention_gated: bool = False
     attention_scale: float = 1.0
+    attention_through_cue: bool = False
     tau:            float = 0.3
     dt_base:        float = 0.03
     tau_rec_frac:   float = 0.75
@@ -209,6 +210,7 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             attention_input = bool(cfg.get("attention_input", False)),
             attention_gated = bool(cfg.get("attention_gated", False)),
             attention_scale = float(cfg.get("attention_scale", 1.0)),
+            attention_through_cue = bool(cfg.get("attention_through_cue", False)),
             tau             = float(cfg.get("tau", 0.3)),
             dt_base         = float(cfg.get("dt_base", 0.03)),
             tau_rec_frac    = float(cfg.get("tau_rec_frac", 0.75)),
@@ -430,7 +432,7 @@ def _eval_gng_by_trialtype(model, meta: RunMeta, device: str,
         n_trials, timing=timing, input_size=meta.input_size,
         noise=meta.noise_sigma(), target_rank=meta.rank,
         cue_on_go_input=meta.cue_on_go_input, cue_scale=meta.cue_scale,
-        nogo_target=meta.nogo_target, attention_input=meta.attention_input, attention_gated=meta.attention_gated, attention_scale=meta.attention_scale,
+        nogo_target=meta.nogo_target, attention_input=meta.attention_input, attention_gated=meta.attention_gated, attention_scale=meta.attention_scale, attention_through_cue=meta.attention_through_cue,
     )
     X, y = X.to(device), y.to(device)
     pred  = model(X, y)[..., -1].cpu()
@@ -475,7 +477,7 @@ def _make_gng_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None =
         n_batch, timing=timing, input_size=ref_meta.input_size,
         noise=n_sigma, target_rank=ref_meta.rank, cue_on_go_input=ref_meta.cue_on_go_input,
         cue_scale=ref_meta.cue_scale, nogo_target=ref_meta.nogo_target,
-        attention_input=ref_meta.attention_input, attention_gated=ref_meta.attention_gated, attention_scale=ref_meta.attention_scale,
+        attention_input=ref_meta.attention_input, attention_gated=ref_meta.attention_gated, attention_scale=ref_meta.attention_scale, attention_through_cue=ref_meta.attention_through_cue,
         ramping_gng=ref_meta.ramping_gng, windowed_targets=ref_meta.windowed_targets,
         decay_to_zero=ref_meta.decay_to_zero, gng_response=ref_meta.gng_response,
     )
@@ -1550,7 +1552,7 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
                 n_batch, timing, input_size=meta.input_size, target_rank=meta.rank,
                 noise=meta.noise_sigma(), cue_on_go_input=cue,
                 cue_scale=meta.cue_scale, nogo_target=meta.nogo_target,
-                attention_input=meta.attention_input, attention_gated=meta.attention_gated, attention_scale=meta.attention_scale,
+                attention_input=meta.attention_input, attention_gated=meta.attention_gated, attention_scale=meta.attention_scale, attention_through_cue=meta.attention_through_cue,
                 ramping_gng=meta.ramping_gng, windowed_targets=meta.windowed_targets,
                 decay_to_zero=meta.decay_to_zero, gng_response=meta.gng_response)
         else:
