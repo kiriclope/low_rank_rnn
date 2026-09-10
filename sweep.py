@@ -1152,6 +1152,11 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     Tips
     ----
     - run_id must be unique across all configs (it names the checkpoint files).
+    - NAME ARMS READABLY (Leon 2026-09-10). The arm tag lands in every run_id, checkpoint filename,
+      log line and results.jsonl row — so use the same tokens as the gallery title, short form:
+      `<phi>_<init>_<what this arm adds>`, e.g. `pin_cue_nolick`, `sub_cue`, `relu_sub`. NOT
+      initialisms like k1zcnl / sclnl / w5rl2. Write the gallery title to
+      results/dual/<sweep>/TITLE at launch; publish with scratchpad/publish_gallery.sh.
     - Add / remove loops to vary more or fewer axes.
     - Use dataclasses.replace(base_cfg, seed=s, ...) to share defaults cleanly.
     """
@@ -2222,6 +2227,135 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  **{**emergent, **shared_unfrozen, **nocue_common,
                                     "dpa_hold_window": 0.5, "memory_lambda": 1.6, "cue_scale": 2.0,
                                     "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": False, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ k1zero (Leon 2026-09-10): pin κ₁ = 0 until TEST during the DPA stage. ═════════════════════
+    # = scl16 (subcritical lif, λ₀ init 1.6, terminal 0.5 s memory window) with dpa_prelick_free
+    # FALSE — the legacy two-sided 0-pin, `targets[:, :n_on[1], -1] = 0.0` in generate_dpa_trials:
+    # the readout κ₁ is held at 0 from trial start through the whole delay, released only at test
+    # onset where the pairing decision is made. One field; the DPA stage is RETRAINED (its loss
+    # changes), so no dpa_ckpt. Full sequence after it (GNG 100 + Dual 300, stop_loss 0.005).
+    # WHY THIS IS THE LEVER §29d ASKED FOR. The subcritical memory is BORN ENTANGLED: at the DPA
+    # ckpt g·n₀ᵀm₁ = −2.18/−3.76/+0.28/−0.61 (s0/s1/s2/s3), equivalently the memory wells sit
+    # anti-symmetrically OFF the κ₁=0 axis (mean|κ₁| 0.34/0.49/0.12/0.29 vs the foundation's 0.11).
+    # Everything downstream followed from that number, in seed order: the retention loss (κ₁ LEAK,
+    # not memory loss), the cue's damage to GNG, and the no-lick hinge's repair — and the hinge,
+    # acting in GNG, fixed the behaviour WITHOUT moving the wells or reducing the coupling. The
+    # coupling is created in the DPA stage, so the constraint has to act there. Pinning κ₁ to 0
+    # across the delay forbids the memory from carrying a rank-1 component in the first place.
+    # PRE-REGISTERED: g·n₀ᵀm₁ at the DPA ckpt (target: |·| ≤ 0.4, the foundation's range, in 4/4
+    # instead of 2/4) · memory-well tilt mean|κ₁| (scl16 0.31 → foundation-like 0.11?) · then whether
+    # that buys retention: after_gng/dpa vs sclf16's 0.886/0.939/1.000/0.929 and nocue's 0.996–1.000.
+    # ⚠ THE KNOWN COST, stated in the field's own docstring: a two-sided pin "clamps wells ON the
+    # line" — it does not merely forbid the tilt, it also removes the freedom for the wells to sit
+    # BELOW κ₁=0, which is the project's actual goal. So a clean result here is a diagnostic (it
+    # would prove the coupling is what costs retention), NOT the target geometry. Watch also whether
+    # the pin fights the pairing readout: κ₁ must still express the decision at test, and the pin
+    # runs right up to test onset.
+    # --run_filter k1zero
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_k1zero", seed=seed,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "stop_loss": 0.005}))
+
+    # ═══ k1zcue (Leon 2026-09-10): the κ₁-pinned substrate WITH THE CUE ON. ═══════════════════════
+    # = k1zero + cue_scale 2.0, one scalar. Reuses k1zero's OWN DPA checkpoints (the DPA task has no
+    # cue, so the memory solution is bit-identical and the delta is GNG+Dual only) — the same move
+    # sclc2 made on top of sclf16, so the two ladders are directly comparable.
+    # THE TEST. sclc2 showed the cue destroying GNG accuracy in exact TILT order (tilt 0.12→0.988,
+    # 0.29→0.958, 0.34→0.802, 0.49→0.700) because the cue pushes κ₁ up on BOTH trial types and the
+    # tilted wells sat on opposite sides of the lick line. k1zero flattened those wells onto the axis
+    # (tilt 0.34/0.49/0.12/0.29 → 0.11/0.19/0.02/0.06). If the tilt was the vulnerability, the cue's
+    # symmetric push should now be ABSORBED — GNG accuracy holding near 0.98 across all four seeds,
+    # the way it does on the foundation (cue2: 0.943–0.984), instead of collapsing to 0.700.
+    # ⚠ s1 is expected to stay broken on the MEMORY side regardless: its rank1→memory coupling
+    # survived the pin (n₀ᵀm₁ = −2.56 vs −0.51/+0.28/−0.08) and it already lost the memory without a
+    # cue (after_gng/dpa 0.534, mem LOST, sep 0.45). The cue cannot repair that, and a further drop
+    # there is not evidence about the tilt. Read s0/s2/s3 for the tilt question.
+    # Pre-registered: after_gng/gng vs sclc2's 0.802/0.700/0.988/0.958 and the foundation's
+    # 0.943–0.984 · after_gng/dpa vs k1zero's 0.988/0.534/0.994/0.998 (does the cue cost retention
+    # on a clean substrate at all — on the foundation it costs nothing) · leak, A vs B.
+    # --run_filter k1zcue
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_k1zcue", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_lif_sub_k1zero/s{seed}_k1zero/dpa_s{seed}_k1zero.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False, "cue_scale": 2.0,
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005}))
+
+    # ═══ k1zcnl (Leon 2026-09-10): the FULL recipe — κ₁ pinned in DPA + cue + no-lick on nogo. ═════
+    # = k1zcue + nolick_weight 1.0 + nolick_nogo_in_cue (nogo rows only, cue-on → test-on in Dual and
+    # cue-on → end in GNG; go rows free after the cue per §27i; DPA rows NOT included). Same k1zero
+    # DPA checkpoints as k1zcue, so all four cells of the 2x2 load a ckpt and are RNG-matched:
+    #                        no hinge        + no-lick nogo
+    #   tilted wells         sclc2           sclnl
+    #   κ₁ pinned in DPA     k1zcue          k1zcnl  (this arm)
+    # WHAT THE OTHER THREE CELLS SAID. On TILTED wells the hinge was a rescue with a bill: GNG
+    # 0.802/0.700/0.988/0.958 → 0.981/0.972/0.991/0.982, but retention 0.886/0.939/1.000/0.929 →
+    # 0.802/0.761/1.000/0.946 (−0.08, −0.18 in the entangled seeds), and it neither moved the wells
+    # (tilt 0.38→0.41) nor cut the coupling (−0.99→−0.97) — it treated the symptom. Pinning κ₁ in the
+    # DPA stage instead treats the cause: it cuts n₀ᵀm₁ (−2.18→−0.51, −0.61→−0.08) and already gives
+    # GNG 0.979/0.985/0.986 and retention 0.964/0.999/0.998 in the three seeds where it took.
+    # THE QUESTION: with the wells already ON the axis and the coupling already cut, is the no-lick
+    # rule now FREE? There is little left for it to repair (GNG is already ~0.98), so this measures
+    # its COST on a clean substrate. Two outcomes, both informative:
+    #   (a) near-inert — retention and GNG unchanged, nolick residual small. Then the §27h/sclnl cost
+    #       was a property of the ENTANGLED substrate, not of the hinge, and the task's own no-lick
+    #       contingency can be imposed for free once the memory is built right. That is the recipe.
+    #   (b) it still bills the memory (retention drops as in sclnl). Then the cost is intrinsic to
+    #       sharing one κ₁ axis between the rule and the wells, and rank 2 cannot have both.
+    # ⚠ s1 stays broken either way (n₀ᵀm₁ = −2.56 survived the pin; memory LOST at 0.534/0.591 with
+    # and without the cue). Read s0/s2/s3.
+    # Pre-registered: after_gng/dpa vs k1zcue 0.964/0.591/0.999/0.998 — ANY drop is the hinge's bill ·
+    # after_gng/gng vs 0.979/0.770/0.985/0.986 · the `nolick` loss component (inert ⇒ ~0) · well tilt
+    # and n₀ᵀm₁ at naive (does the hinge disturb what the pin achieved) · go hold vs θ (§27h's cost).
+    # --run_filter k1zcnl
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_k1zcnl", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_lif_sub_k1zero/s{seed}_k1zero/dpa_s{seed}_k1zero.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False, "cue_scale": 2.0,
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": False, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ pin_cue1_nolick (Leon 2026-09-10): the full recipe at CUE DOSE 1. ═════════════════════════
+    # = the cue-2 full recipe (κ₁ pinned in DPA + cue + no-lick on nogo) with cue_scale 2.0 → 1.0 and
+    # stop_loss 0.005 → 0.1, starting from the PREVIOUS sweep's DPA checkpoints
+    # (sweep_lif_sub_k1zero_cue_nolick_nogo/s*/dpa_*.pth — the κ₁-pinned memory, unchanged since it
+    # was trained: the DPA task has no cue, so dose is irrelevant to that stage).
+    # ⚠ stop_loss 0.1 WILL truncate, and this is measured, not guessed: the previous sweep's GNG
+    # stage passes val 0.1 between epoch 30 and 35 (1.44@5 → 0.197@20 → 0.113@30 → 0.094@35), so the
+    # GNG stage will run ~32 of its 100 epochs and the Dual stage will stop early too. `after_gng/*`
+    # here is therefore measured on a LESS-TRAINED GNG net than the cue-2 arm (which ran 100/300 at
+    # stop_loss 0.005) — the dose comparison is confounded by training length, and any retention
+    # difference cannot be attributed to the cue dose alone. Kept because Leon asked for 0.1.
+    # WHY DOSE 1 IS INTERESTING HERE. On the foundation, cue 1 and cue 2 gave IDENTICAL after_gng
+    # numbers because the GNG stage was gradient-blind to cue amplitude (§27d — no supervised step
+    # after cue onset). This arm BREAKS that blindness: the no-lick term IS supervised from cue onset
+    # on, so dose now reaches the GNG gradients for the first time. The cue push scales with dose
+    # (nogo +0.25 at dose 1 vs +0.65 at dose 2, naive), so a smaller push should leave the hinge less
+    # to do — the question is whether that costs the RULE anything, or whether dose 1 is simply the
+    # cheaper way to the same place.
+    # Pre-registered vs the cue-2 recipe (0.967/0.670/0.999/0.996 dpa, 0.984/0.966/0.988/0.994 gng):
+    # after_gng/dpa and /gng · the `nolick` residual (cue-2: 0.005–0.019; smaller push ⇒ smaller?) ·
+    # well tilt and n₀ᵀm₁ at naive · and the epoch each stage actually stopped at.
+    # --run_filter pin_cue1
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_pin_cue1_nolick", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_lif_sub_k1zero_cue_nolick_nogo/s{seed}_k1zcnl/dpa_s{seed}_k1zcnl.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False, "cue_scale": 1.0,
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1,
                                     "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
                                     "nolick_full_delay": False, "nolick_late_delay": False,
                                     "nolick_thresh": 0.0}))

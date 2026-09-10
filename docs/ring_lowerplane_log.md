@@ -2013,3 +2013,67 @@ crosses 0.1 between epoch 10 and 50, and `after_gng/dpa` would be measured on a 
   contributes part of it); (iii) the `sq*` relu rerun at `stop_loss` 0.005.
 - Tools: `scratchpad/w5_table.py`, `scratchpad/sc_field_profiles.py`, `scratchpad/scl_field_profiles.py`,
   `scratchpad/tilt_vs_cue.py`, `scratchpad/nolick_nogo_effect.py`, `scratchpad/publish_gallery.sh`.
+
+**29e. ★★ The κ₁ PIN: cutting the coupling at the DPA stage, where it is born (2026-09-10).**
+§29d located the cause upstream, so the lever had to act there. `dpa_prelick_free=False` — the
+LEGACY two-sided 0-pin, already in the tree, `targets[:, :n_on[1], -1] = 0.0` in
+`generate_dpa_trials` — holds the readout κ₁ at 0 from trial start through the whole delay and
+releases it only at test onset. Arm `k1zero` = scl16 + that one field, DPA RETRAINED (its loss
+changes), then the full sequence (GNG 100 + Dual 300, `stop_loss` 0.005). Verified: κ₁ pinned over
+t = 0…7.99 s, released at test onset 8.0 s (the foundation's pin ends at 1.98 s).
+
+| DPA ckpt | scl16 (free κ₁) | k1zero (pinned) | `after_gng/dpa` sclf16 → k1zero |
+|---|---|---|---|
+| s0 | tilt 0.34 · n₀ᵀm₁ −2.18 | 0.11 · **−0.51** | 0.886 → **0.988** |
+| s1 | 0.49 · −3.76 | 0.19 · **−2.56** | 0.939 → **0.534** |
+| s2 | 0.12 · +0.28 | 0.02 · +0.28 | 1.000 → 0.994 |
+| s3 | 0.29 · −0.61 | 0.06 · **−0.08** | 0.929 → **0.998** |
+
+- **The leak is eliminated in 4/4** (0.91/1.43/0.20/0.41 → 0.21/0.08/0.29/0.05) — the exact failure
+  mode of §29d. Three seeds reach foundation retention (0.988–0.998); the DPA stage is unharmed
+  (`after_dpa` 0.996–1.000), so the pin does NOT fight the pairing readout, a risk that did not
+  materialise.
+- **★ The two coupling directions are not the same quantity.** The pin cuts **n₀ᵀm₁** (rank-1
+  activity fed BACK INTO the memory) −2.18→−0.51, −0.61→−0.08, and barely touches **n₁ᵀm₀** (memory
+  read by the decision mode) 0.87→0.85, 0.75→0.65, 1.08→0.82. The visible well TILT is the n₁ᵀm₀
+  symptom; what actually costs retention is n₀ᵀm₁.
+- **s1 is the control that proves it.** Its tilt fell to 0.19 like the others but n₀ᵀm₁ survived at
+  −2.56 — the only seed above 1 — and it is the only one that LOST the memory (`traj_verdict`: hold
+  +0.61→−0.00, sep 1.00→0.45, choice 0.54 = chance). Worse than with free κ₁, and mechanistically
+  why: previously the memory carried a κ₁ component and sat in a tilted but stable geometry; pinned,
+  it never builds that, so when GNG drives κ₁ for the rule the surviving pathway empties κ₀.
+- ⚠ The flag's own docstring is right that a two-sided pin "clamps wells ON the line": it forbids the
+  tilt but equally removes the freedom to sit BELOW κ₁=0, which is the project's actual goal. This
+  is a DIAGNOSTIC that identifies the culprit, not the target geometry. The one-sided variant
+  (`dpa_nolick_weight` with `dpa_prelick_free=True`) applies the same pressure while leaving κ₁<0
+  free — NOT RUN, and the obvious next arm.
+
+**29f. ★★ The 2×2: what the no-lick rule COSTS depends on how the memory was built.** Four cells,
+all at cue 2, all loading a DPA ckpt so the RNG streams match (this matters — see the trap below).
+Means over the three clean seeds (s0,s2,s3); s1 excluded, its n₀ᵀm₁ survived the pin.
+
+| | `after_gng/dpa` | `after_gng/gng` |
+|---|---|---|
+| tilted wells, no hinge (`sclc2`) | 0.938 | 0.916 |
+| tilted wells, + no-lick nogo (`sclnl`) | **0.916** (−0.022) | 0.985 (+0.069) |
+| κ₁ pinned, no hinge (`k1zcue`) | 0.987 | 0.983 |
+| **κ₁ pinned, + no-lick nogo** (`k1zcnl`) | **0.987** (−0.000) | **0.989** (+0.006) |
+
+- On TILTED wells the hinge is a trade: +0.069 rule, −0.022 memory (and per §29d it neither moves
+  the wells nor cuts the coupling — it treats the symptom). On the PINNED substrate **it costs
+  nothing** and still adds a little. The §27h/`sclnl` cost was a property of the ENTANGLED substrate,
+  not of the hinge. Once the memory is built right, the task's own no-lick contingency is free.
+- The full recipe (subcritical init + terminal memory window + κ₁ pinned in DPA + cue + no-lick on
+  nogo) reaches **0.987 retention / 0.989 rule**, vs the foundation with the same cue at
+  0.987–1.000 / 0.943–0.984 — it MATCHES the foundation's memory and BEATS its rule, from a
+  subcritical init. `nolick` residual 0.005–0.019 pinned vs 0.020–0.024 tilted: less to fix.
+- **`k1zcue` also shows the pin makes the substrate CUE-ROBUST** (vs `sclc2`, RNG-matched): the cue
+  that cost the tilted substrate up to 30 points of rule accuracy is absorbed — gng 0.802→0.979,
+  0.958→0.986, and the gain scales with the tilt removed (s2 0.12: +0.00, s3 0.29: +0.03,
+  s0 0.34: +0.18). Retention 0.886→0.964, 0.929→0.998.
+- ⚠ **RNG TRAP, found by checking rather than assuming.** `sclf16` vs `sclc2` are BIT-IDENTICAL
+  (max|Δweight| = 0), which is what licenses calling their equal retention "structurally forced"
+  (§29d). But `k1zero` vs `k1zcue` differ by up to 2.45 in weights — NOT from the cue: `k1zero`
+  TRAINED its DPA stage and consumed RNG while `k1zcue` LOADED it, so their GNG stages see different
+  batches and noise. Never compare a trained-DPA arm with a loaded-DPA arm and attribute the
+  difference to the field you changed; match the ckpt-loading status first.

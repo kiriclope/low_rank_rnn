@@ -149,7 +149,7 @@ Saved to `summary/`:
 | `fp_scatter_by_stage.pdf` | Autonomous FPs across all seeds, coloured by stage |
 | `fp_scatter_by_input_<cond>.pdf` | FPs under each input condition |
 | `traj_{dpa,naive,expert}_{dpa,go,nogo,gng_task}.pdf` | Mean κ trajectories |
-| `traj_grid.pdf` (individual only, 2026-09-10) | **ONE figure per seed**: 8 cols × 3 rows — cols = (DPA-only, Go, NoGo, GNG-task) × (κ₀, κ₁), rows = DPA stage / After GNG / After Dual. Replaces the 12 per-condition `traj_*` files for individual runs. Pair/unpair (and Go/NoGo in the GNG columns) are overlaid as SOLID/DASHED since rows are now stages; y-limits shared down each column so stages compare directly; a missing ckpt renders "no ckpt". `summary_avg_trajectories` still uses the old per-condition layout. |
+| `traj_grid.pdf` (individual only, 2026-09-10) | **ONE figure per seed**: 8 cols × 3 rows — cols = (DPA-only, Go, NoGo, GNG-task) × (κ₀, κ₁), rows = DPA stage / After GNG / After Dual. Replaces the 12 per-condition `traj_*` files for individual runs. Pair/unpair (and Go/NoGo in the GNG columns) are overlaid as SOLID/DASHED since rows are now stages; y-limits shared down each column so stages compare directly; a missing ckpt renders "no ckpt". As of 2026-09-10 the SUMMARY uses it too (one seed-averaged grid per sweep), so `_plot_traj_figure`/`_plot_gng_traj_figure` are deprecated and unreferenced. |
 
 ---
 

@@ -723,6 +723,9 @@ def _traj_axis_setup(ax, timing: TaskTiming, ylim: float):
     ax.axhline(0, color="k", lw=0.8, ls="--", alpha=0.35, zorder=1)
 
 
+# DEPRECATED 2026-09-10 — superseded by _plot_traj_grid_figure for BOTH individual and summary
+# trajectories (Leon: one grid figure per seed / per sweep, not 12 per-condition files). Kept for
+# reference; nothing calls it.
 def _plot_traj_figure(kappa_dict: dict[str, np.ndarray],
                       targets_np: np.ndarray,
                       cnames: np.ndarray,
@@ -801,6 +804,7 @@ def _plot_traj_figure(kappa_dict: dict[str, np.ndarray],
     return fig
 
 
+# DEPRECATED 2026-09-10 — see _plot_traj_figure above; the GNG task is now columns 7-8 of the grid.
 def _plot_gng_traj_figure(kappa_dict: dict[str, np.ndarray],
                           targets_np: np.ndarray,
                           is_go: np.ndarray,
@@ -1406,9 +1410,12 @@ def summary_avg_trajectories(all_metas: list[RunMeta], ckpt_dir: str,
     stages       = ["dpa", "naive", "expert"]
     stage_labels = {"dpa": "DPA stage", "naive": "After GNG", "expert": "After Dual"}
 
+    # ONE grid per group, seed-averaged (Leon 2026-09-10): the old 12 per-condition summary files
+    # are gone — same 8 cols x 3 rows layout as the per-seed traj_grid, so summary and individual
+    # figures read identically. Collect every stage first, then draw once.
+    per_group_dual: dict[str, dict] = {g: {} for g in groups}
+    per_group_gng:  dict[str, dict] = {g: {} for g in groups}
     for stage in stages:
-        group_kappas_dual: dict[str, np.ndarray | None] = {}
-        group_kappas_gng:  dict[str, np.ndarray | None] = {}
         for group_name, metas in groups.items():
             X_dual, _, _ = _make_dual_batch(metas[0], n_batch=n_batch, seed=0)  # per-group input_size
             X_gng,  _, _ = _make_gng_batch(metas[0],  n_batch=n_batch, seed=0)
@@ -1424,28 +1431,20 @@ def summary_avg_trajectories(all_metas: list[RunMeta], ckpt_dir: str,
                 sum_dual = k_dual if sum_dual is None else sum_dual + k_dual
                 sum_gng  = k_gng  if sum_gng  is None else sum_gng  + k_gng
                 count += 1
-            if count:
-                group_kappas_dual[group_name] = sum_dual / count
-                group_kappas_gng[group_name]  = sum_gng  / count
-        if not group_kappas_dual:
+            per_group_dual[group_name][stage] = (sum_dual / count) if count else None
+            per_group_gng[group_name][stage]  = (sum_gng  / count) if count else None
+
+    for group_name in groups:
+        if not any(v is not None for v in per_group_dual[group_name].values()):
             continue
-
-        for gng_key, (gng_title, gng_status) in GNG_SPECS.items():
-            fig = _plot_traj_figure(
-                group_kappas_dual, y_dual.numpy(), cnames, TIMINGS["dual"],
-                gng_status,
-                f"{stage_labels[stage]} — {gng_title} (mean across runs)",
-            )
-            out_path = os.path.join(out_dir, f"traj_{stage}_{gng_key}.pdf")
-            save_fig(fig, out_path)
-            print(f"Saved {out_path}")
-            plt.close(fig)
-
-        fig = _plot_gng_traj_figure(
-            group_kappas_gng, y_gng.numpy(), is_go, TIMINGS["gng"],
-            f"{stage_labels[stage]} — GNG task (mean across runs)",
+        fig = _plot_traj_grid_figure(
+            per_group_dual[group_name], y_dual.numpy(), cnames,
+            per_group_gng[group_name], y_gng.numpy(), is_go,
+            TIMINGS["dual"], TIMINGS["gng"],
+            f"{group_name} — \u03ba trajectories by stage (mean across {len(groups[group_name])} runs)",
         )
-        out_path = os.path.join(out_dir, f"traj_{stage}_gng_task.pdf")
+        suffix = "" if len(groups) == 1 else f"_{group_name.replace('+', '_')}"
+        out_path = os.path.join(out_dir, f"traj_grid{suffix}.pdf")
         save_fig(fig, out_path)
         print(f"Saved {out_path}")
         plt.close(fig)

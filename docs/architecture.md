@@ -193,6 +193,14 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
 - `max_val_loss` (2026-09-09, default 100) — the trainer's abort threshold on the val loss, now a
   RunConfig field. Relu + activity L2 needs ~1e6: at the unstable init ⟨r²⟩≈1e4, so the penalty
   alone exceeds 100 before the first step.
+- `dpa_prelick_free` (default True in the foundation) — when **False**, the legacy two-sided 0-pin
+  holds the readout κ₁ at 0 from trial start through the whole DPA delay, releasing it only at test
+  onset (`targets[:, :n_on[1], -1] = 0.0`). Measured 2026-09-10 (§29e): this is the lever that cuts
+  the rank-1→memory coupling **n₀ᵀm₁** at the stage where it is created (−2.18→−0.51, −0.61→−0.08),
+  eliminating the κ₁ leak in 4/4 seeds and restoring foundation retention in 3/4. It does NOT change
+  n₁ᵀm₀ (memory read by the decision mode) — the visible well tilt is that direction, and is only a
+  symptom. ⚠ Being two-sided it clamps wells ON the line, foreclosing the lower-plane geometry; the
+  one-sided `dpa_nolick_weight` (needs `dpa_prelick_free=True`) is the variant that leaves κ₁<0 free.
 - `dpa_hold_window` (seconds, default 0.0 = legacy) — restrict the **DPA-stage A/B memory
   supervision** to the last N s ENDING at test onset, instead of the legacy span sample ONSET →
   test onset (6 s, the sample included). Mirrors the GNG identity hold, which is a 0.25 s window

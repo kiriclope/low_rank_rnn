@@ -1042,3 +1042,39 @@ dpa_hold_window); the `w5lif` full sequence that would split them is coded-adjac
 The tilt↔damage correlation is ρ = −1.000 within the subcritical arm (n=4) but ρ = −0.563 /
 p = 0.077 pooled with the foundation seeds. NOT RUN: `sq*` (relu subcritical at stop_loss 0.005),
 `w5lif` full sequence, `scl12`/`scl18` full sequence, extra seeds.
+
+## 2026-09-10 — the κ₁ pin and the no-lick 2×2 (5 sweeps, 20 runs)
+
+Narrative + mechanism: `ring_lowerplane_log.md` §29e/§29f. All build on the subcritical-lif memory
+(λ₀ init 1.6, terminal 0.5 s A/B hold window); GNG 100 + Dual 300; `stop_loss` 0.005 unless noted.
+
+| sweep (= gallery title) | arm | config delta | result |
+|---|---|---|---|
+| `sweep_r2sclnl` (`lif_sub_cue_nolick_nogo`) | sclnl | sclc2 + nolick_weight 1 + nolick_nogo_in_cue | gng 0.981/0.972/0.991/0.982; dpa 0.802/0.761/1.000/0.946 — rescue with a bill |
+| `sweep_lif_sub_k1zero` (`lif_sub_k1zero`) | k1zero | scl16 + `dpa_prelick_free=False`, DPA retrained | n₀ᵀm₁ −2.18→−0.51 etc; dpa 0.988/0.534/0.994/0.998 |
+| `sweep_lif_sub_k1zero_cue` (`lif_sub_k1zero_cue`) | k1zcue | k1zero + cue 2 (k1zero DPA ckpt) | gng 0.979/0.770/0.985/0.986; dpa 0.964/0.591/0.999/0.998 |
+| `sweep_lif_sub_k1zero_cue_nolick_nogo` (…`_nolick_nogo`) | k1zcnl | k1zcue + nolick nogo | gng 0.984/0.966/0.988/0.994; dpa 0.967/0.670/0.999/0.996 |
+| `sweep_lif_sub_k1zero_cue1_nolick_nogo` (…`cue1`…) | pin_cue1_nolick | k1zcnl + cue 1 + `stop_loss` 0.1 | RUNNING at time of writing — not analysed |
+
+**Headline.** Pinning κ₁ = 0 through the DPA delay cuts `n₀ᵀm₁` (rank-1 fed back into the memory)
+and retention follows it; the well tilt is the *other* direction (`n₁ᵀm₀`) and is only the symptom.
+The full recipe reaches 0.987 retention / 0.989 rule on the clean seeds — matching the foundation's
+memory and beating its rule, from a subcritical init. The no-lick hinge costs −0.022 retention on a
+tilted substrate and **exactly nothing** on a pinned one.
+
+**Caveats.** n = 4 with one seed (s1) whose n₀ᵀm₁ survived the pin at −2.56 and which loses the
+memory outright — excluded from all means and reported separately. A two-sided pin clamps wells ON
+the line, so this buys retention but forecloses the lower-plane geometry; the one-sided
+`dpa_nolick_weight` variant is NOT RUN. The cue-1 arm uses `stop_loss` 0.1, which truncates its GNG
+stage to ~epoch 32 (measured: the cue-2 arm's GNG val crosses 0.1 between epoch 30 and 35), so its
+dose comparison is confounded by training length. **RNG trap:** only compare arms with the same
+DPA-ckpt-loading status — a trained-DPA arm and a loaded-DPA arm differ in the RNG stream feeding
+GNG/Dual (weights differed by up to 2.45 between `k1zero` and `k1zcue`), while two loaded-DPA arms
+are bit-identical where the gradients agree.
+
+**Plotting/infra changes this day.** `traj_grid` replaces the 12 per-condition trajectory figures for
+BOTH individual and summary (`_plot_traj_figure`/`_plot_gng_traj_figure` deprecated, unreferenced);
+all 10 published sweeps regenerated, 1032 old-style files removed from today's sweeps (historical
+sweeps untouched). `scratchpad/publish_gallery.sh` publishes under the title in
+`results/dual/<sweep>/TITLE`. Naming convention (Leon): short lowercase, e.g. `lif_sub_cue_nolick_nogo`,
+and the ARM TAG must be readable too — `s0_pin_cue1_nolick`, not `k1zcnl`.
