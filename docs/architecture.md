@@ -193,6 +193,13 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
 - `max_val_loss` (2026-09-09, default 100) — the trainer's abort threshold on the val loss, now a
   RunConfig field. Relu + activity L2 needs ~1e6: at the unstable init ⟨r²⟩≈1e4, so the penalty
   alone exceeds 100 before the first step.
+- `cue_duration` (seconds, default 0.5) — DURATION of the go/nogo response cue; widens the cue
+  window in the GNG and Dual timings (onset fixed, offset moves: dual 6.0→7.0 s at 1.0 s, gng
+  4.0→5.0 s). Loss windows keyed to cue-ON are unaffected (`nolick_nogo_in_cue`, the pre-cue rule
+  hold); only the gng response window and `nolick_late_delay` key off cue-OFF. Measured 2026-09-10
+  (§29g): duration is a MUCH weaker dose than amplitude — doubling it buys +0.08 of nogo κ₁ push vs
+  +0.43 for doubling `cue_scale`, and the second half-second adds less than the first. The push
+  saturates in time (τ = 0.3 s), so the §27g gain limit is not bypassed by driving for longer.
 - `dpa_prelick_free` (default True in the foundation) — when **False**, the legacy two-sided 0-pin
   holds the readout κ₁ at 0 from trial start through the whole DPA delay, releasing it only at test
   onset (`targets[:, :n_on[1], -1] = 0.0`). Measured 2026-09-10 (§29e): this is the lever that cuts

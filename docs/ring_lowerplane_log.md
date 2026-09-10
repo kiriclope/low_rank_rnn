@@ -2077,3 +2077,39 @@ Means over the three clean seeds (s0,s2,s3); s1 excluded, its n₀ᵀm₁ surviv
   TRAINED its DPA stage and consumed RNG while `k1zcue` LOADED it, so their GNG stages see different
   batches and noise. Never compare a trained-DPA arm with a loaded-DPA arm and attribute the
   difference to the field you changed; match the ckpt-loading status first.
+
+**29g. Cue DOSE 1 and cue DURATION: the recipe is robust, and duration ≠ amplitude (2026-09-10).**
+Two arms on the full recipe (κ₁ pinned in DPA + cue + no-lick on nogo), both reusing the cue-2
+recipe's DPA checkpoints. New field `cue_duration` (seconds, default 0.5) widens the cue window in
+the GNG and Dual timings; the cue ONSET is unchanged, so every loss window keyed to cue-on is
+identical (`nolick_nogo_in_cue` still spans cue-on → test-on, the pre-cue rule hold still ends at
+cue-on) and only cue-off moves — which matters solely for the gng response window and
+`nolick_late_delay`, both off in this line. (First launch crashed: the bound assumed the cue always
+has a following stimulus, false in GNG where the cue is last; now bounded by trial end.)
+
+| arm | `after_gng/dpa` | `after_gng/gng` | GNG epochs |
+|---|---|---|---|
+| cue 2, 0.5 s (`k1zcnl`) | 0.967 / 0.670 / 0.999 / 0.996 | 0.984 / 0.966 / 0.988 / 0.994 | 100 |
+| cue 1, 0.5 s (`pin_cue1_nolick`) | 0.998 / 0.706 / 1.000 / 0.986 | 0.995 / 0.999 / 0.995 / 0.999 | ~21–41 |
+| cue 1, 1.0 s (`pin_cue1_long_nolick`) | 0.999 / 0.729 / 1.000 / 0.986 | 0.989 / 0.970 / 0.986 / 0.989 | ~21–41 |
+
+- **★ Duration is a much weaker dose than amplitude.** nogo κ₁ push during the cue, naive ckpt, mean
+  over seeds: cue 1 / 0.5 s **+0.11** · cue 1 / **1.0 s** **+0.19** · cue 2 / 0.5 s **+0.54**.
+  Doubling the amplitude buys +0.43; doubling the duration buys +0.08, and the SECOND half-second
+  adds less than the first (+0.11 then +0.08). The push SATURATES IN TIME: with τ = 0.3 s the state
+  reaches its cue-driven equilibrium within a few hundred ms, so holding the cue longer keeps it
+  where it already is rather than driving it further. Amplitude sets WHERE that equilibrium sits;
+  duration only sets how long you sit there. The §27g gain-limit (drive +0.65 at rest vs +0.21 at
+  the nogo hold) is therefore NOT bypassed by integrating for longer — a hypothesis this kills.
+- Behaviour follows: the two cue-1 arms are matched on training length (same truncation, 6/8/5/4
+  logged GNG epochs) and retention is identical to within noise (clean-seed mean 0.995 both), while
+  the rule is marginally WORSE with the longer cue (0.996 → 0.988) — more of the trial spent above
+  the lick line for the hinge to fight, with no compensating gain. **The recipe is insensitive to
+  cue duration**, which is a robustness result even though the mechanistic hypothesis was refuted.
+- ⚠ **The cue-1 vs cue-2 comparison is CONFOUNDED and must not be read as a dose effect.** The cue-1
+  arms use `stop_loss` 0.1 (Leon's request), which fired in every seed and truncated their GNG stage
+  to ~21–41 of 100 epochs (final GNG val 0.087–0.098); the cue-2 recipe ran the full 100 at 0.005.
+  Less GNG training means less opportunity to disturb the memory — the very interference
+  `after_gng/dpa` measures — so the apparent +0.008 retention gain at dose 1 cannot be attributed to
+  dose. Dual was unaffected (its val floor is 0.10–0.18, so it ran 300/300). The clean control —
+  cue 1 at `stop_loss` 0.005 — is NOT RUN.

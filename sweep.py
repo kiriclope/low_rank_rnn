@@ -208,6 +208,7 @@ class RunConfig:
     nolick_late_delay: bool = False # DON'T-LICK imposition (NeuroFlame train_dual.org port): restrict the nolick term to the LATE DELAY (cue-off → test-onset) of the Dual stage. Free-(NaN)-steps only, so the finite go/nogo response targets inside the span keep their own rwd terms; covers nogo + 'none' (pure-DPA) trials' late delay and the go post-response tail. 'none' trials sit ON the sample wells there → the term grades the wells' κ₁ directly (delay-time supervision, the §24f factorization route). Needs nolick_weight > 0.
     nolick_full_delay: bool = False # extend the Dual don't-lick to the WHOLE delay (sample-off → test-onset) on the DPA TRIALS ONLY — the Dual-task trials with no go/nogo stimulus and no cue (sample→delay→test; the generator labels them gng="none", condition names "A_C"/"B_D", src/tasks.py:278). They sit ON the sample wells for that entire span, so the hinge grades the wells' κ₁ over ~3x more steps than nolick_late_delay. go/nogo trials keep the late window (a full-delay hinge would fight their +1 rule hold on the SAME κ₁ axis in rank-2). DPA trials are identified by having no finite decision target in the go/nogo span, so this REQUIRES dual_gng_memory=True (else go/nogo trials look like DPA trials); guarded below. Needs nolick_weight > 0.
     nolick_nogo_in_cue: bool = False # NOGO rows: the don't-lick span starts at CUE ONSET (cue-on → test-on in Dual, cue-on → end in GNG) instead of cue-off — the cue IS the lick window and a nogo trial must not be in κ₁>0 during it. The rule Leon stated 2026-09-07: forbid κ₁>0 wherever a lick would be wrong (nogo from the cue on, DPA trials the whole delay, go after the cue) and let the network relocate the wells; the task's pushes (go stimulus, cue on both types) are never traded against. Rows are classified from their own hold target in the gng span, so it needs dual_gng_memory=True (guarded) and nolick_weight>0; combine with nolick_late_delay (go tail) + nolick_full_delay (DPA trials).
+    cue_duration:    float = 0.5   # DURATION of the go/nogo response cue in SECONDS (default 0.5 = the canonical make_timings value). Lengthens the cue window in the GNG and Dual timings only (cue ONSET is unchanged, so every loss window keyed to cue-on — nolick_nogo_in_cue, the pre-cue hold — is untouched; the offset moves, which matters only for windows keyed to cue-off: the gng response window and nolick_late_delay, both OFF in this line). Dual cue on 6.0 s, so 1.0 s ends at 7.0 s, still 1 s clear of test onset at 8.0 s; GNG cue on 4.0 s ends at 5.0 s inside the 6 s trial. The cue PUSH on kappa1 is an input property (§27d), so duration and amplitude are two separate doses of it.
     dpa_hold_window: float = 0.0   # DPA-STAGE A/B memory supervision restricted to the last `dpa_hold_window` SECONDS ending at test onset (0.0 = legacy: sample ONSET → test onset, the whole delay + the sample itself). Mirrors the GNG identity hold, which is a 0.25 s window ending at cue onset (generate_gng_trials, hold_full_delay=False) — a short hold just before the readout instead of a clamp across the delay. The legacy span demands |κ₀| ≥ θ already DURING the sample, so it prices the RISE TIME as well as the amplitude and self-amplification (λ⁺>1) is the cheapest way to meet it; a terminal window prices only "be there when read", which is what makes a subcritical λ⁺<1 solution affordable (§28c: λ⁺<1 is the necessary condition for a relu well). The Dual stage has NO κ₀ target at all (mem_* ≡ 0 there), so this flag touches the DPA stage only.
     dpa_nolick_weight: float = 0.0  # apply the same one-sided don't-lick over the DPA-STAGE delay (sample-off → test-onset). NOT the legacy two-sided pin (dpa_prelick_free=False), which clamps wells ON the line: one-sided leaves κ₁<0 free, so wells may seat at/below 0 but are never pulled back up. Intent: enter GNG with no up-structure to inherit.
     nolick_thresh:   float = 0.0   # DISPLACE the no-lick hinge to κ₁ ≤ −thresh (all stages that use nolick). relu/relu² have zero gradient once satisfied, so a hinge at 0 seats wells AT the line no matter how wide the window — this is the only lever that buys DEPTH (§25e).
@@ -455,6 +456,19 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     dpa_timing  = _timings["dpa"]
     gng_timing  = _timings["gng"]
     dual_timing = _timings["dual"]
+    if config.cue_duration != 0.5:      # widen the cue window (onset fixed, offset moves)
+        def _recue(t: TaskTiming, idx: int) -> TaskTiming:
+            off = list(t.stim_off); off[idx] = t.stim_on[idx] + config.cue_duration
+            # in the GNG task the cue IS the last stimulus, so bound by trial end there
+            nxt = t.stim_on[idx + 1] if idx + 1 < len(t.stim_on) else t.t_steps
+            assert off[idx] <= nxt + 1e-9, (
+                f"cue_duration={config.cue_duration} runs the cue (on {t.stim_on[idx]}s) past "
+                f"{nxt}s")
+            return dataclasses.replace(t, stim_off=off)
+        gng_timing  = _recue(gng_timing, 1)    # GNG: cue is stimulus index 1
+        dual_timing = _recue(dual_timing, 2)   # Dual: cue is stimulus index 2
+        print(f"[{config.run_id}]  cue_duration={config.cue_duration}s -> gng cue {gng_timing.stim_on[1]}-{gng_timing.stim_off[1]}s, "
+              f"dual cue {dual_timing.stim_on[2]}-{dual_timing.stim_off[2]}s", flush=True)
 
 
     if models_dir is None:
@@ -2355,6 +2369,40 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  **{**emergent, **shared_unfrozen, **nocue_common,
                                     "dpa_hold_window": 0.5, "memory_lambda": 1.6,
                                     "dpa_prelick_free": False, "cue_scale": 1.0,
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": False, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ pin_cue1_long_nolick (Leon 2026-09-10): the same recipe with a 1 s CUE. ═══════════════════
+    # = pin_cue1_nolick + cue_duration 0.5 → 1.0 s. One field. Same DPA checkpoints again (the DPA
+    # task has no cue at all, so the pinned memory is untouched by anything about the cue).
+    # DURATION vs AMPLITUDE. The cue's push on κ₁ is an INPUT property (§27d) and we have only ever
+    # dosed it by amplitude (cue_scale 1 → 2: nogo push +0.25 → +0.65 at naive). Duration is the
+    # other axis and has never been varied. They are not interchangeable: amplitude scales the
+    # instantaneous drive and is gain-limited by the held state (drive +0.65 at rest vs +0.21 at the
+    # nogo hold, §27g), while duration scales how LONG the state is driven, integrating past that
+    # saturation. A 1 s cue at dose 1 may therefore push further than a 0.5 s cue at dose 2 despite
+    # the smaller amplitude.
+    # Windows: cue ONSET is unchanged, so every loss window keyed to cue-on is identical —
+    # nolick_nogo_in_cue still spans cue-on → test-on, and the pre-cue rule hold still ends at cue-on.
+    # Only the OFFSET moves (dual 6.5 → 7.0 s, still 1 s clear of test at 8.0; gng 4.5 → 5.0 s inside
+    # the 6 s trial), which matters only for windows keyed to cue-off — the gng response window and
+    # nolick_late_delay, both OFF in this line.
+    # ⚠ Inherits `stop_loss` 0.1 from pin_cue1_nolick, which truncated that arm's GNG stage to ~21–41
+    # of 100 epochs. Keeping it so the two are comparable, but neither is comparable to the cue-2
+    # recipe (100 GNG epochs at stop_loss 0.005) — report the stopping epoch alongside the accuracy.
+    # Pre-registered vs pin_cue1_nolick (dpa 0.998/0.706/1.000/0.986, gng 0.995/0.999/0.995/0.999):
+    # after_gng/dpa and /gng · the nogo κ₁ push at naive (does a longer cue push further than a
+    # bigger one) · the `nolick` residual · GNG stopping epoch.
+    # --run_filter pin_cue1_long
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_pin_cue1_long_nolick", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_lif_sub_k1zero_cue_nolick_nogo/s{seed}_k1zcnl/dpa_s{seed}_k1zcnl.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False, "cue_scale": 1.0,
+                                    "cue_duration": 1.0,
                                     "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1,
                                     "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
                                     "nolick_full_delay": False, "nolick_late_delay": False,

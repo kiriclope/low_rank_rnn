@@ -1078,3 +1078,23 @@ all 10 published sweeps regenerated, 1032 old-style files removed from today's s
 sweeps untouched). `scratchpad/publish_gallery.sh` publishes under the title in
 `results/dual/<sweep>/TITLE`. Naming convention (Leon): short lowercase, e.g. `lif_sub_cue_nolick_nogo`,
 and the ARM TAG must be readable too — `s0_pin_cue1_nolick`, not `k1zcnl`.
+
+## 2026-09-10 (later) — cue dose 1 and cue DURATION on the full recipe (2 sweeps, 8 runs)
+
+Detail: `ring_lowerplane_log.md` §29g. Both arms = the cue-2 full recipe (κ₁ pinned in DPA + cue +
+no-lick nogo) reusing its DPA checkpoints; `stop_loss` 0.1 per Leon's request.
+
+| sweep (= gallery title) | arm | delta | result |
+|---|---|---|---|
+| `sweep_lif_sub_k1zero_cue1_nolick_nogo` (`lif_sub_k1zero_cue1_nolick_nogo`) | `pin_cue1_nolick` | cue_scale 2→1, stop_loss 0.005→0.1 | dpa 0.998/0.706/1.000/0.986 · gng 0.995/0.999/0.995/0.999 |
+| `sweep_lif_sub_k1zero_cue1long_nolick_nogo` (`lif_sub_k1zero_cue1_long_nolick_nogo`) | `pin_cue1_long_nolick` | + cue_duration 0.5→1.0 s | dpa 0.999/0.729/1.000/0.986 · gng 0.989/0.970/0.986/0.989 |
+
+**New field** `cue_duration` (seconds, default 0.5) — widens the cue window in the GNG/Dual timings,
+onset fixed. **Result:** doubling the cue's DURATION buys +0.08 of nogo κ₁ push vs +0.43 for doubling
+its AMPLITUDE (+0.11 → +0.19 vs +0.54), and the second half-second adds less than the first — the
+push saturates in time at τ = 0.3 s, so the §27g gain limit is not bypassed by driving for longer.
+Retention identical, rule marginally worse: the recipe is robust to cue duration.
+
+**⚠ Confound.** `stop_loss` 0.1 truncated the GNG stage of BOTH cue-1 arms to ~21–41 of 100 epochs,
+so their apparent retention advantage over the cue-2 recipe (100 epochs at 0.005) is not attributable
+to dose. The two cue-1 arms ARE matched to each other. Control not run: cue 1 at `stop_loss` 0.005.
