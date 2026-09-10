@@ -1883,3 +1883,133 @@ per epoch); `max_val_loss` is now a RunConfig field (default 100 — at the unst
   bump) needs λ⁺ < 1, and no term asks for zero growth AT the target amplitude — the one-sided hinge
   still pays for margin. Open (not run): a two-sided memory pin |κ₀| ≈ θ, a weight-side constraint
   on the half-population overlap, or EI inhibition — each engineers the bound Φ provides for free.
+
+**28d. The terminal A/B hold window (`dpa_hold_window`, 2026-09-09) — absorbed by Φ, inert for
+relu.** Leon: "run relu but where the hinge target for dpa is ±1 only during the last 0.5 s of late
+delay — that would be consistent with the gng targets." He is right that the A/B memory was the odd
+one out: the GNG identity hold is a 0.25 s window ENDING at cue onset (`generate_gng_trials`,
+`hold_full_delay=False`), while the memory was supervised from SAMPLE ONSET to test onset (6 s, the
+sample included). New field `dpa_hold_window` (seconds; 0 = legacy) → `generate_dpa_trials(hold_window=)`;
+DPA stage only — the Dual generator sets no κ₀ target at all (`mem_*` ≡ 0 there).
+The argument for it: the legacy span demands |κ₀| ≥ θ *already during the sample*, so it prices the
+RISE TIME as well as the amplitude, and self-amplification (λ⁺>1) is the cheapest way to cross 0→θ
+inside a 1 s sample; a terminal window prices only "be there when it is read", which should make a
+subcritical λ⁺<1 solution affordable. **Half right.** Arms (DPA stage only, 4 seeds, `stop_loss` 0.1):
+`w5relu` = fdrelu + window · `w5rl2` = + activity L2 0.01 · `w5lif` = nocue + window.
+
+| DPA ckpt, DPA task | fdrelu | w5relu | rr01 | w5rl2 | nocue | w5lif |
+|---|---|---|---|---|---|---|
+| λ⁺ | 1.25–1.37 | 1.31–1.39 | 1.09–1.30 | 1.11–1.30 | 3.19–3.54 | 3.02–3.76 |
+| F₀/κ₀ zero crossing | none | none | none | none | κ₀ 1.19–1.23 | κ₀ 1.06–1.14 |
+| κ₀ 3 s → test (ratio) | ×11–15 | ×15–20 | ×1.9–2.2 | ×1.9–2.3 | ×0.98–1.01 | ×1.25–1.51 |
+| dpa acc | 1.00 | 1.00 | 1.00 (s3 .92) | 1.00 (s3 .94) | 1.00 | 0.99–1.00 |
+
+- **The epoch-matched test is `w5rl2` vs `rr01`** (both ran the full 250; the relu-only arms
+  early-stopped at 100–195 under `stop_loss` 0.1 — a confound introduced by that change, since
+  fdrelu's DPA val was ~0.08 and would also have stopped early). The window changes NOTHING there,
+  seed by seed. For relu it is inert: λ⁺ > 1, no crossing, escape at every amplitude.
+- **Why the prediction failed, precisely.** A supervision window controls what is CONSTRAINED, not
+  what is INCENTIVISED. Under a one-sided hinge, growth satisfies every window equally, and the
+  pairing readout at test actively rewards a larger κ₀ (free d′). Removing supervision from the delay
+  removed the last term that looked at the delay at all, so λ⁺ floated — λ⁺<1 got no cheaper, its
+  competitor got cheaper too.
+- **Φ absorbs it and demonstrates the intended dynamical effect:** wells intact, rates unchanged
+  (⟨r²⟩ 0.4 / max 1.0), dpa 0.99–1.00 — but κ₀ is no longer clamped from the sample on, it now RISES
+  INTO the well across the delay (0.67–0.83 at 3 s → 0.93–1.09 at test; nocue is flat at ×0.98–1.01).
+  Strictly less painted supervision at no cost. Whether it should become the foundation default is
+  open — it changes the baseline every arm builds on.
+- Tools: `scratchpad/w5_table.py` (the §28c table + F₀/κ₀ at κ₀=1,3 so a near-origin crossing cannot
+  be misread as a memory well), `scratchpad/w5_field_profiles.py`.
+
+## §29 — The INITIAL CONDITION: λ⁺=1 attracts training from both sides; Φ doesn't care; the subcritical memory is born ENTANGLED (2026-09-09/10)
+
+**29a. Leon's challenge: "is that not an initial condition problem?"** — and it was. Every relu arm
+through §28d used the foundation's `memory_lambda`=3.0. The structured init splits units symmetrically,
+so **λ⁺ = g·λ₀/2 exactly at init** (measured, 4 seeds): memory_lambda 0.8/1.2/1.6/1.8/2.0/2.5/3.0 →
+λ⁺ 0.40/0.60/0.80/0.90/1.00/1.25/1.50. So all 20 relu seed-runs STARTED at λ⁺ = 1.50, deep in the
+escape regime; training walked λ⁺ down (→1.25–1.39 bare, →1.09–1.30 with L2) and stalled just above 1.
+That is a barrier signature, and nothing had ever been run on the other side of it.
+The homogeneity argument (F₀ = (λ⁺−1)κ₀, origin the only fixed point) holds only for a STRICTLY
+homogeneous net; `attention_gated=True` puts a tonic input on for exactly the delay, and a subcritical
+net with a constant drive has a stable FP at κ* = c/(1−λ⁺) ≠ 0 — with different λ±, c± on the two
+half-lines, two input-sustained fixed points are possible. So "a loss cannot make relu a well" (§28c)
+was overstated; the untested question was reachability.
+
+**29b. `sc12`/`sc16`/`sc18` (relu, λ⁺ init 0.60/0.80/0.90, terminal window, DPA only).** Training
+climbs from BELOW to λ⁺ 0.99–1.02 / 1.06–1.08 / 1.09–1.12. **λ⁺ = 1 is an attractor of the TRAINING
+dynamics from both directions**, not a barrier. The subcritical start is a large practical win — max
+unit rate 35–103 (w5relu 2000–3900), κ₀ growth ×2.8–4.0 (×15–20), ⟨r²⟩ 18–49 (3100–7700), dpa 1.000 —
+and the field profile is no longer flat: it DECAYS with amplitude toward a small positive asymptote
+(sc12 → +0.02, essentially marginal). But no zero crossing: still no well, and the input-sustained
+FP did not appear (a settled state would give ratio ≈ 1). ⚠ ALL TWELVE stopped at epoch 10–15
+(`stop_loss` 0.1 fired; subcritical + terminal window makes the loss trivially easy) — a snapshot,
+not an equilibrium. The `sq*` rerun at `stop_loss` 0.005 is coded and NOT launched.
+
+**29c. `scl12`/`scl16`/`scl18` (Φ, λ₀ init 1.2/1.6/1.8, DPA only): the foundation is init-INDEPENDENT.**
+Measured at init, the pitchforks differ: **relu's is at memory_lambda 2.0** (λ⁺=1), **Φ's at ≈2.9**
+(its slope at rest is 0.40 and the tonic input sits the operating point further onto the flat part) —
+so the foundation's 3.0 is only BARELY supercritical (F₀/κ₀ = +0.042, wells at init κ₀* ≈ 0.03) and
+1.2/1.6/1.8 are subcritical for both φ. Result: training climbs λ₀ 1.2 → 4.5–6.9, through the
+pitchfork, and rebuilds the foundation's well pair in **12/12 seeds** (κ₀* ±1.04–1.15 vs nocue
+±1.19–1.32), same rates, dpa 0.99–1.00. For Φ the crossing is an ordinary supercritical pitchfork —
+wells grow continuously past it and saturation bounds them, a smooth uphill the whole way. relu has
+no such thing, which is why it parks ON λ⁺=1 instead of passing through.
+⚠ Two measurement traps found here, both of which cost a wrong first reading: (i) the 1-D profile
+along κ₁=0 misses wells that sit OFF that axis — `s1_scl12` reads "no well" but has both, at
+(+1.06,−0.58)/(−1.09,+0.48); use the 2-D `find_wells`. (ii) With a tonic input F(0) = c ≠ 0, so the
+origin is not a fixed point and F₀/κ₀ ≈ c/κ₀ diverges near 0 — the near-origin sign is an offset
+artifact, NOT a rest-state stability readout. No seed in 20 has a near-origin attractor.
+
+**29d. ★ The subcritical memory is born ENTANGLED — and that, not subcriticality, is what costs.**
+Full sequence on the λ₀=1.6 solution (`sclf16` = GNG 100 + Dual 300 from `scl16`'s DPA ckpts,
+`stop_loss` back to 0.005 — at 0.1 the GNG stage would stop at ~epoch 25, since nocue's GNG val
+crosses 0.1 between epoch 10 and 50, and `after_gng/dpa` would be measured on a half-trained net).
+
+| | `after_gng/dpa` | `after_gng/gng` |
+|---|---|---|
+| nocue (λ₀ 3.0, no cue) | 0.996–1.000 | 1.000 |
+| cue1 / cue2 (λ₀ 3.0) | 0.987–1.000 | 0.943–0.984 |
+| **sclf16** (λ₀ 1.6, no cue) | **0.886 / 0.939 / 1.000 / 0.929** | 1.000 |
+| **sclc2** (λ₀ 1.6, cue 2) | 0.886 / 0.939 / 1.000 / 0.929 | **0.802 / 0.700 / 0.988 / 0.958** |
+| **sclnl** (+ no-lick on nogo) | **0.802 / 0.761 / 1.000 / 0.946** | **0.981 / 0.972 / 0.991 / 0.982** |
+
+- **`sclf16`: retention degrades, and it is NOT memory loss.** `traj_verdict` GNG stage: memory
+  HELD ×2 / GROW ×2, separation 1.00 → 0.94–1.00, no FLIP, no DECAY. What fails is `leak`
+  (0.91/1.43/0.20/0.41), with κ₁ pushed in OPPOSITE directions by A and B (s1: A −0.80, B +0.64);
+  the pairing readout lives on κ₁, so `choice@0` (0.90/0.93/1.00/0.93) tracks the accuracy exactly.
+- **The cause is visible in the DPA solution, before GNG runs.** Memory-well tilt off the no-lick
+  axis, mean |κ₁|: nocue 0.11 · w5lif 0.17 · scl16 0.31 (s0 0.34, s1 0.49, s2 0.12, s3 0.29), the
+  wells ANTI-SYMMETRIC (+κ₀ below the line, −κ₀ above). Equivalently, and this is the project's
+  standard diagnostic: **g·n₀ᵀm₁ at the DPA ckpt = −2.18 / −3.76 / +0.28 / −0.61** (s0/s1/s2/s3) —
+  s0 and s1 are already at the magnitudes flagged as pathological (foundation ≤0.4; the broken
+  `sgd2g` arm −2.5…−3.6) BEFORE GNG starts. Tilt and coupling are one thing, two views: a well
+  displaced off κ₁=0 IS a rank-0 mode carrying a rank-1 component.
+- **`sclc2` (cue 2): the cue exposes the tilt.** `after_gng/dpa` is bit-identical to sclf16 — forced,
+  since the GNG stage is gradient-blind to cue amplitude (§27d) and the DPA probe has no cue window;
+  it CANNOT move. The damage lands on `after_gng/gng`, in exact tilt order (tilt 0.12→0.988,
+  0.29→0.958, 0.34→0.802, 0.49→0.700), while the same cue costs the foundation only 2–5 points.
+  Mechanism: the cue pushes κ₁ up on BOTH trial types (+1.3 at dose 2); on an untilted pair that is
+  symmetric and absorbed, on a tilted pair it drives the −κ₀ side deep into κ₁>0.
+  ⚠ Statistics: ρ = −1.000 within the subcritical arm (n=4, p=1/24=0.042) but **ρ = −0.563 pooled
+  with the foundation seeds, permutation p = 0.077** — suggestive, not established. The strongest
+  single point is s2: tilt 0.12, and it scores 0.988, the highest of all eight.
+- **`sclnl` (+ no-lick hinge on NOGO rows only, `nolick_nogo_in_cue`, weight 1, threshold 0; go rows
+  free per §27i; DPA rows excluded — not `nolick_full_delay`): the causal test succeeds, one way.**
+  GNG recovers to 0.97–0.99 across the board, in exact tilt order (Δ +0.00/+0.02/+0.18/+0.27), and
+  `after_dual/gng` improves (0.48–0.82 → 0.58–0.94). **But the memory pays, in the same order:**
+  `after_gng/dpa` Δ +0.00/+0.02/−0.08/−0.18. On one κ₁ axis, forcing nogo below the line drags the
+  memory with it — the §27h cost, sharper.
+- **★ The hinge does NOT relocate the wells, and does not disentangle.** Memory-well tilt at naive:
+  0.38→0.41, 0.43→0.45, 0.13→0.13, 0.26→0.27 (marginally WORSE); coupling −0.99→−0.97, −1.54→−1.64.
+  Leon's framing for the safeguard rule is that the network should relocate the wells to satisfy the
+  constraint; measured here, it does not — it satisfies the constraint another way and bills the
+  memory. Note this arm also breaks the GNG stage's gradient-blindness to cue amplitude (the nolick
+  term IS supervised after cue onset), so `after_gng/dpa` is a real readout here, unlike in sclc2.
+- **Where this points:** the coupling is born at the DPA stage, so the lever must act there, not in
+  GNG. Open: (i) more seeds — how often does a subcritical init land clean (s2-like, +0.28) vs
+  entangled? currently 1 in 4, the single most useful unknown; (ii) `w5lif` full sequence — still
+  unrun, and the confound that `sclf16` differs from nocue in TWO things (`memory_lambda` 1.6 AND
+  `dpa_hold_window` 0.5; the tilt ladder nocue 0.11 < w5lif 0.17 < scl16 0.31 suggests the window
+  contributes part of it); (iii) the `sq*` relu rerun at `stop_loss` 0.005.
+- Tools: `scratchpad/w5_table.py`, `scratchpad/sc_field_profiles.py`, `scratchpad/scl_field_profiles.py`,
+  `scratchpad/tilt_vs_cue.py`, `scratchpad/nolick_nogo_effect.py`, `scratchpad/publish_gallery.sh`.

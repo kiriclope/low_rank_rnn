@@ -81,6 +81,7 @@ def generate_dpa_trials(
     decay_onesided: bool = False,
     response_in_cue: bool = False,
     prelick_free: bool = False,
+    hold_window: float = 0.0,
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -114,8 +115,15 @@ def generate_dpa_trials(
     targets[:, :_pl, -1] = 0.0 # pre-test no-lick on the readout [-1] (κ₁ rank-2, κ₂ rank-3)
 
     # memory
-    targets[idx_A, n_on[0]:n_on[1], 0] = 1.0
-    targets[idx_B, n_on[0]:n_on[1], 0] = -1.0    
+    # hold_window > 0 (seconds): supervise the A/B memory ONLY over the last `hold_window` s ENDING
+    # at test onset — the same shape as the GNG identity hold (0.25 s ending at cue onset, the
+    # `quarter` window in generate_gng_trials), i.e. a short hold just before the readout instead of
+    # a clamp over the whole delay. 0.0 = the legacy span (sample ONSET → test onset), which demands
+    # |κ₀| ≥ θ already DURING the sample and so prices the rise time as well as the amplitude.
+    _m0 = int(n_on[1]) - int(round(hold_window / timing.dt)) if hold_window else int(n_on[0])
+    _m0 = max(_m0, int(n_on[0]))
+    targets[idx_A, _m0:n_on[1], 0] = 1.0
+    targets[idx_B, _m0:n_on[1], 0] = -1.0    
 
     # pairing
     if windowed_targets:

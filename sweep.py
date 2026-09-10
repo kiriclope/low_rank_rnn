@@ -208,6 +208,7 @@ class RunConfig:
     nolick_late_delay: bool = False # DON'T-LICK imposition (NeuroFlame train_dual.org port): restrict the nolick term to the LATE DELAY (cue-off → test-onset) of the Dual stage. Free-(NaN)-steps only, so the finite go/nogo response targets inside the span keep their own rwd terms; covers nogo + 'none' (pure-DPA) trials' late delay and the go post-response tail. 'none' trials sit ON the sample wells there → the term grades the wells' κ₁ directly (delay-time supervision, the §24f factorization route). Needs nolick_weight > 0.
     nolick_full_delay: bool = False # extend the Dual don't-lick to the WHOLE delay (sample-off → test-onset) on the DPA TRIALS ONLY — the Dual-task trials with no go/nogo stimulus and no cue (sample→delay→test; the generator labels them gng="none", condition names "A_C"/"B_D", src/tasks.py:278). They sit ON the sample wells for that entire span, so the hinge grades the wells' κ₁ over ~3x more steps than nolick_late_delay. go/nogo trials keep the late window (a full-delay hinge would fight their +1 rule hold on the SAME κ₁ axis in rank-2). DPA trials are identified by having no finite decision target in the go/nogo span, so this REQUIRES dual_gng_memory=True (else go/nogo trials look like DPA trials); guarded below. Needs nolick_weight > 0.
     nolick_nogo_in_cue: bool = False # NOGO rows: the don't-lick span starts at CUE ONSET (cue-on → test-on in Dual, cue-on → end in GNG) instead of cue-off — the cue IS the lick window and a nogo trial must not be in κ₁>0 during it. The rule Leon stated 2026-09-07: forbid κ₁>0 wherever a lick would be wrong (nogo from the cue on, DPA trials the whole delay, go after the cue) and let the network relocate the wells; the task's pushes (go stimulus, cue on both types) are never traded against. Rows are classified from their own hold target in the gng span, so it needs dual_gng_memory=True (guarded) and nolick_weight>0; combine with nolick_late_delay (go tail) + nolick_full_delay (DPA trials).
+    dpa_hold_window: float = 0.0   # DPA-STAGE A/B memory supervision restricted to the last `dpa_hold_window` SECONDS ending at test onset (0.0 = legacy: sample ONSET → test onset, the whole delay + the sample itself). Mirrors the GNG identity hold, which is a 0.25 s window ending at cue onset (generate_gng_trials, hold_full_delay=False) — a short hold just before the readout instead of a clamp across the delay. The legacy span demands |κ₀| ≥ θ already DURING the sample, so it prices the RISE TIME as well as the amplitude and self-amplification (λ⁺>1) is the cheapest way to meet it; a terminal window prices only "be there when read", which is what makes a subcritical λ⁺<1 solution affordable (§28c: λ⁺<1 is the necessary condition for a relu well). The Dual stage has NO κ₀ target at all (mem_* ≡ 0 there), so this flag touches the DPA stage only.
     dpa_nolick_weight: float = 0.0  # apply the same one-sided don't-lick over the DPA-STAGE delay (sample-off → test-onset). NOT the legacy two-sided pin (dpa_prelick_free=False), which clamps wells ON the line: one-sided leaves κ₁<0 free, so wells may seat at/below 0 but are never pulled back up. Intent: enter GNG with no up-structure to inherit.
     nolick_thresh:   float = 0.0   # DISPLACE the no-lick hinge to κ₁ ≤ −thresh (all stages that use nolick). relu/relu² have zero gradient once satisfied, so a hinge at 0 seats wells AT the line no matter how wide the window — this is the only lever that buys DEPTH (§25e).
     gng_decouple_decision: bool = False # GNG stage: after each step project n[:,dec] ⟂ m[:,0], keeping the decision readout blind to the sample-memory direction. Targets the leakage that INVERTS the DPA memory during GNG (§26/§27): |κ₁(A)−κ₁(B)| ≥ 0.85 → flip in 6/6, ≤ 0.27 → intact in 5/5. m[:,0] is frozen in GNG so n[:,dec] is the only party that can build the overlap.
@@ -795,7 +796,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         dpa_freeze_cols = [1] if config.rank >= 3 else None
         _stage_header("DPA", config.epochs_dpa, dpa_freeze_input, dpa_freeze_cols or [])
         t0 = time.time()
-        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, prelick_free=config.dpa_prelick_free)
+        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, prelick_free=config.dpa_prelick_free, hold_window=config.dpa_hold_window)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -1993,6 +1994,236 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  **{**emergent, **shared_unfrozen, **nocue_common, "cue_scale": 2.0,
                                     "nolick_weight": 1.0, "nolick_late_delay": False,
                                     "nolick_full_delay": True, "nolick_nogo_in_cue": True,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ sgd2w3 (2026-09-09): the same rule at DOSE 3 — does the hinge buy DEPTH under noise? ═══
+    # = sgd2 with nolick_weight 1.0 → 3.0 and NOTHING else changed (same shape, same windows, same
+    # threshold 0, same nocue DPA ckpts; GNG retrained so the arm is self-consistent). This is a dose
+    # of the task's own rule, not a new rule — the safeguard framing (§27h) is untouched.
+    # WHY IT IS NOT FUTILE (the §25e caveat is a DETERMINISTIC statement): training runs at noise 1.0,
+    # σ_eff ≈ 0.37 in κ units, so the term the network actually descends is the noise-SMOOTHED hinge
+    #     E[relu(κ₁)²] = (μ²+σ²)Φ(μ/σ) + μσφ(μ/σ),   dE/dμ = 2[μΦ(μ/σ) + σφ(μ/σ)],
+    # which is strictly positive for every μ — there IS a restoring force below the line, decaying
+    # like the Gaussian tail (100 % of its μ=0 value at 0, 21 % at −1σ, 8 % at −2σ). So the seat is a
+    # force BALANCE, not a zero-gradient dead zone, and weight is the legitimate lever on it.
+    # PRE-REGISTERED PREDICTION (calibrate the opposing force from sgd2: DPA rows sat at μ ≈ −0.045 at
+    # w=1 ⇒ F_opp ≈ 0.25, assumed weight-independent):
+    #     w=3 → DPA-row mean κ₁ ≈ −0.30 (0.8 σ below the line, ≈21 % of steps > 0)
+    #     w=5 → ≈ −0.41 (1.1 σ, ≈13 %)      [w=5 arm held back pending this result]
+    # If the measured μ falls well SHORT of −0.30, F_opp is not constant — the go hold / pairing push
+    # back harder as the wells descend, which is the rank-2 entanglement itself and the real finding.
+    # Pre-registered costs: go hold pre-cue (sgd2 +0.81…+0.95, already below θ=1) and gng_pos
+    # (0.017–0.085); pairing by-gng (1/1/1) and after_gng/dpa (1.00) — does the cost finally appear.
+    # --run_filter sgd2w3
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_sgd2w3", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_r2nocue/s{seed}_nocue/dpa_s{seed}_nocue.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common, "cue_scale": 2.0,
+                                    "nolick_weight": 3.0, "nolick_late_delay": False,
+                                    "nolick_full_delay": True, "nolick_nogo_in_cue": True,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ w5 (Leon 2026-09-09): the A/B memory hinge only in the LAST 0.5 s before the test. ═══════
+    # Leon: "run relu but where the hinge target for dpa is ±1 only during the last 0.5 s of late
+    # delay — that would be consistent with the gng targets." Indeed: the GNG identity hold is a
+    # 0.25 s window ENDING at cue onset (generate_gng_trials, hold_full_delay=False), i.e. a short
+    # hold just before the readout. The A/B memory has always been the odd one out — supervised from
+    # SAMPLE ONSET to test onset (6 s, the sample included). New field `dpa_hold_window` (seconds,
+    # 0 = legacy); DPA stage only (the Dual generator sets no κ₀ target at all — mem_* ≡ 0 there).
+    #
+    # WHY THIS IS THE RIGHT KNOB FOR RELU (§28b/§28c). With relu the memory field is linear on each
+    # half-line, F₀ = (λ⁺ − 1)κ₀, so a bounded memory REQUIRES λ⁺ < 1 (then a well can only come from
+    # the active set shrinking with amplitude, λ_full > 1 > λ⁺). Nothing so far bought λ⁺ < 1: the
+    # activity L2 only tuned the growth RATE (λ⁺ stayed 1.09–1.34 in every arm). The legacy window is
+    # a reason why. It demands |κ₀| ≥ θ **already during the sample**, so it prices the RISE TIME as
+    # well as the amplitude — and recurrent self-amplification (λ⁺ > 1) is the cheapest way to get
+    # from 0 to θ inside a 1 s sample. A terminal window prices only "be there when it is read": a
+    # subcritical λ⁺ < 1 network that integrates the sample and settles at κ* = drive/(1 − λ⁺) ≥ θ
+    # now satisfies the loss exactly, and the decay it would suffer over the delay is no longer
+    # scored anywhere. So this is the first change that makes λ⁺ < 1 AFFORDABLE — and it does it by
+    # REMOVING supervision, not by adding a term (no engineered constraint; cf. the safeguard rule).
+    #
+    # Three arms, DPA stage only (epochs_gng=0, epochs_dual=0), 4 seeds each:
+    #   w5relu = fdrelu + dpa_hold_window 0.5                    — the window ALONE (one-field delta)
+    #   w5rl2  = w5relu + rate_reg_weight 0.01                   — window × activity L2 (rr01's dose):
+    #            the window makes λ⁺ < 1 affordable, the L2 removes what is left of the growth
+    #            incentive. If either alone fails and this works, the mechanism is the conjunction.
+    #   w5lif  = nocue + dpa_hold_window 0.5                     — SUBSTRATE CONTROL: what does the
+    #            same windowing do to the foundation? The foundation's wells (±1.2–1.3) come from Φ
+    #            saturating, not from the window, so they should be unchanged. If they are NOT, the
+    #            relu result is not attributable to φ and the whole comparison moves.
+    # Pre-registered readouts (the §28c table): dpa acc · κ₀ at sample-off → test-on · λ⁺ (weights)
+    # vs the measured asymptotic slope · whether F₀/κ₀ CROSSES ZERO at finite κ₀ (the well test) ·
+    # ⟨r²⟩ and max unit rate · and, new here, the DECAY over the unsupervised delay (κ₀ at 3 s vs at
+    # test-on) — with the window the trajectory between them is free for the first time.
+    # Launch: --run_filter w5r (w5relu + w5rl2, relu, xlim -5 5) and --run_filter w5lif (separately;
+    # lif plots at ±1.5). Substring check: "w5r" does NOT match "w5lif".
+    # stop_loss 0.1 (Leon 2026-09-09) instead of the foundation's 0.005 — the practical threshold
+    # (CLAUDE.md): at noise 1.0 the val loss floor is well above 0.005, so that guard never fires.
+    _w5 = dict(epochs_gng=0, epochs_dual=0, dpa_hold_window=0.5, stop_loss=0.1)
+    _w5relu = {**_w5, "nonlinearity": "relu", "max_val_loss": 1e6}
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_w5relu", seed=seed,
+                                 **{**emergent, **shared_unfrozen, **nocue_common, **_w5relu}))
+        configs.append(RunConfig(run_id=f"s{seed}_w5rl2", seed=seed,
+                                 **{**emergent, **shared_unfrozen, **nocue_common, **_w5relu,
+                                    "rate_reg_weight": 0.01}))
+        configs.append(RunConfig(run_id=f"s{seed}_w5lif", seed=seed,
+                                 **{**emergent, **shared_unfrozen, **nocue_common, **_w5}))
+
+    # ═══ sc (Leon 2026-09-09): "is that not an initial condition problem?" — start SUBCRITICAL. ════
+    # Every relu arm so far (fdrelu, rr01/rr1/rrb01, w5relu, w5rl2) used the foundation's
+    # memory_lambda=3.0. The structured init splits the units symmetrically, so λ⁺ = g·λ₀/2 EXACTLY
+    # at init (measured, 4 seeds: memory_lambda 0.8/1.2/1.5/1.8/2.0/2.5/3.0 → λ⁺ 0.40/0.60/0.75/
+    # 0.90/1.00/1.25/1.50). memory_lambda 3.0 ⇒ λ⁺ = 1.50: every one of those 20 seed-runs STARTED
+    # in the escape regime. Training then walked λ⁺ DOWN (→1.25–1.39 bare, →1.09–1.30 with the
+    # activity L2) and stalled just above 1 in all of them — the signature of a BARRIER at λ⁺ = 1,
+    # not of a missing solution. Crossing it from above means passing through marginal memory, where
+    # the loss gets worse before it gets better; gradient descent will not pay that.
+    # λ⁺ = 1 is memory_lambda = 2.0 — nothing has ever been run on the other side of it.
+    #
+    # WHAT COULD LIVE THERE. The homogeneity argument (F₀ = (λ⁺−1)κ₀, origin the only fixed point)
+    # holds only for a STRICTLY homogeneous net. These are not: `attention_gated=True` puts a tonic
+    # input on for exactly the delay (sample-off → test-on). With a constant drive a subcritical net
+    # has a stable fixed point κ* = c/(1−λ⁺) ≠ 0, and the +κ₀ / −κ₀ half-lines activate different
+    # unit sets, hence carry their own λ± and c± — so TWO input-sustained fixed points, one per
+    # half-line, are possible: a genuine bistable relu memory at λ⁺ < 1. The terminal hold window is
+    # the right partner for it (a settled state need only be there when read), so these are built on
+    # w5relu, not fdrelu — one-field delta = memory_lambda.
+    #
+    # Three arms, DPA stage only, 4 seeds each:  sc12 (λ⁺ 0.60) · sc16 (λ⁺ 0.80) · sc18 (λ⁺ 0.90)
+    # THE QUESTION: from below, does training (a) STAY subcritical and build the input-sustained
+    # bistable memory, or (b) climb back through λ⁺ = 1 into escape? Note (b) is the honest null:
+    # from below, raising λ⁺ monotonically slows the decay, so there IS a smooth gradient pushing it
+    # up — unlike the descent from above, nothing here is blocked by a barrier.
+    # Pre-registered readouts (the §28c table): λ⁺ trained vs at init (did it cross 1) · F₀/κ₀ sign
+    # at κ₀ = 1 and 3 and any zero crossing · κ₀ at sample-off / 3 s / test-on and the ratio (a
+    # settled state gives ≈1, an escape ≫1, a decay ≪1) · dpa acc · ⟨r²⟩ and max unit rate.
+    # ⚠ risk to read for: attention is RELEASED at test onset, so an input-sustained memory decays
+    # from t=8 s — the hold window (7.49–7.99 s) is scored before that, and the pairing readout is
+    # driven by the test input, but a seed that fails pairing while holding κ₀ is showing exactly this.
+    # --run_filter sc12 / sc16 / sc18  (or "sc1" for all three; none collide with older arms)
+    for seed in range(4):
+        for tag, ml in [("sc12", 1.2), ("sc16", 1.6), ("sc18", 1.8)]:
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     **{**emergent, **shared_unfrozen, **nocue_common, **_w5relu,
+                                        "memory_lambda": ml}))
+
+    # ═══ scl (Leon 2026-09-09): "what happens with the foundation lif when using subcritical init?" ══
+    # The φ-swap partner of sc12/sc16/sc18 — identical memory_lambda ladder on Φ instead of relu.
+    # MEASURED AT INIT (gain 1, attention on, 4 seeds; F₀/κ₀ near the origin):
+    #   memory_lambda   0.8    1.2    1.6    1.8    2.0    2.5    3.0    4.0
+    #   lif           −0.67  −0.53  −0.40  −0.34  −0.27  −0.12  +0.04  +0.35   → pitchfork ≈ 2.9
+    #   relu          −0.58  −0.38  −0.19  −0.09  +0.01  +0.26  +0.51  +1.00   → pitchfork  = 2.0
+    # relu's is at λ⁺ = 1 exactly; Φ's is later because its slope at rest is 0.40 and the tonic input
+    # sits the operating point further onto the flat part. NOTE the foundation's memory_lambda = 3.0
+    # is only BARELY past Φ's pitchfork (F₀/κ₀ = +0.042, wells at init κ₀* ≈ 0.03) — it starts at the
+    # bifurcation and training grows it from there (λ₀ 3.0 → 6.1–7.4, wells → ±1.2). So 1.2/1.6/1.8
+    # are subcritical for BOTH nonlinearities and the ladder is a clean φ-swap.
+    # PREDICTION: lif RECOVERS the foundation. For Φ the crossing is an ordinary supercritical
+    # pitchfork — past it the wells grow continuously and saturation bounds them, so raising λ₀
+    # monotonically improves the memory and there is no marginal regime to traverse (contrast relu,
+    # where λ⁺ = 1 has no bounded solution on either side, which is why sc12/16/18 parked on it).
+    # If lif recovers → today's init-dependence is specific to relu. If lif STAYS subcritical and the
+    # memory decays → the foundation itself is init-dependent, which reframes the whole baseline.
+    # Readouts: F₀/κ₀ zero crossing + well κ₀* (foundation 1.19–1.23) · trained g·λ₀ (foundation
+    # 6.1–7.4, w5lif 6.1–7.4) · κ₀ 3 s → test ratio (w5lif 1.25–1.51, rises into the well) · dpa.
+    # stop_loss stays 0.1 as in w5lif — a single-field delta, and safe: w5lif's val floor was 0.22–0.99,
+    # and a subcritical start only makes the loss harder, so the guard will not fire early here (it
+    # DID fire at epoch 10–15 on the relu sc arms, which is why those are only a snapshot).
+    # --run_filter scl
+    for seed in range(4):
+        for tag, ml in [("scl12", 1.2), ("scl16", 1.6), ("scl18", 1.8)]:
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     **{**emergent, **shared_unfrozen, **nocue_common, **_w5,
+                                        "memory_lambda": ml}))
+
+    # ═══ sclf16 (Leon 2026-09-09): GNG + Dual on the subcritical-lif DPA solution. ════════════════
+    # "run sweep_r2scl gng and dual stages, we just run 4 seeds." Continues scl16's trained DPA
+    # memory (memory_lambda 1.6, λ₀ init 1.6 → trained 5.3–6.4, wells ±1.06–1.11 in 4/4 seeds) into
+    # the full sequence via dpa_ckpt, so the GNG/Dual stages start from the EXACT subcritical-born
+    # memory and any delta vs nocue is attributable to how that memory was built.
+    # scl16 chosen over scl12/scl18: the middle rung, wells in 4/4 seeds, and its trained λ₀ is the
+    # closest to the foundation's (6.4–6.9) — the cleanest retention comparison. One line to switch.
+    # ⚠ stop_loss BACK TO 0.005 (the foundation's), NOT the 0.1 used for the DPA-only probes. From
+    # nocue's log the GNG stage passes val 0.1 between epoch 10 and 50 (0.2521@10 → 0.0461@50 →
+    # 0.0270@100), so at 0.1 the GNG stage would stop at ~epoch 25 and `after_gng/dpa` — THE primary
+    # metric — would be measured on a half-trained GNG net (exactly what truncated sc12/16/18 at
+    # epoch 10). Dual is unaffected either way (val 0.0920 @300, crossing 0.1 near epoch 290).
+    # PRIMARY READOUT: after_gng/dpa vs nocue 0.996–1.000 and w5lif (untested). Then: memory
+    # HELD/FLIP/DECAY through GNG (traj_verdict), leak, coupling g·n₀ᵀm₁ (foundation ≤0.4 in
+    # magnitude; the entanglement signature is −2.5…−3.6), pairing by-gng (1/1/1), and the expert
+    # wells. QUESTION: does a memory built from BELOW the pitchfork retain as well as one built from
+    # above? Its wells sit slightly closer in (±1.06–1.11 vs ±1.19–1.23) and some sit off the κ₁=0
+    # axis (s1_scl12 at κ₁ ≈ ±0.5), so the answer is not obviously yes.
+    # --run_filter sclf   ("sclf" does not match scl12/scl16/scl18)
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_sclf16", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_r2scl/s{seed}_scl16/dpa_s{seed}_scl16.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005}))
+
+    # ═══ sclc2 (Leon 2026-09-09): the subcritical-lif substrate WITH THE CUE ON. ═══════════════════
+    # = sclf16 + cue_scale 0 → 2.0, one scalar, nothing else. Same scl16 DPA checkpoints (the DPA task
+    # has no cue at all, so the memory solution is bit-identical and the delta is GNG+Dual only) —
+    # exactly how cue1/cue2 were built on top of nocue.
+    # THE 2x2 this completes (after_gng/dpa):
+    #                       cue 0            cue 2
+    #   λ₀ 3.0 (foundation) 0.996–1.000      0.987–1.000   ← the cue costs the foundation NOTHING
+    #   λ₀ 1.6 (subcritical) 0.886–1.000     ← this arm
+    # WHY IT SHOULD BITE HERE AND NOT THERE. The subcritical wells are tilted ANTI-SYMMETRICALLY in
+    # κ₁ (measured on the DPA ckpt: +κ₀ well at κ₁ −0.34…−0.48, −κ₀ well at +0.23…+0.49; mean|κ₁| 0.31
+    # vs the foundation's 0.11). The cue pushes κ₁ UP on both trial types (+1.3 at dose 2, §27d). On
+    # an untilted pair that push is symmetric and absorbed; on a tilted pair it lands on two states
+    # that already sit on opposite sides of the lick line, so it should drive the −κ₀ side further
+    # into κ₁>0 while merely recentring the +κ₀ side. Prediction: retention degrades MORE than the
+    # 0.886–0.939 of sclf16, and the damage is ASYMMETRIC between the A and B memory sides — which
+    # the foundation could never show because its wells sit on the axis.
+    # Pre-registered readouts: after_gng/dpa (vs sclf16 0.886/0.939/1.000/0.929 and cue2 0.987–1.000)
+    # · traj_verdict leak, SPLIT BY A vs B (sclf16: A −0.32…−0.80, B +0.59…+0.64 — already asymmetric
+    # WITHOUT a cue) · mem HELD/GROW/FLIP · sep · choice@0 · pairing by-gng · expert well κ₁.
+    # Seed s2 is the control within the arm: its DPA wells are near-axis (mean|κ₁| 0.12) and it was
+    # the one seed with perfect retention at cue 0 — if the mechanism is the tilt, s2 should again be
+    # the least damaged.
+    # --run_filter sclc   (distinct from sclf / scl12 / scl16 / scl18)
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_sclc2", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_r2scl/s{seed}_scl16/dpa_s{seed}_scl16.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6, "cue_scale": 2.0,
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005}))
+
+    # ═══ sclnl (Leon 2026-09-10): the no-lick rule on NOGO trials, on the subcritical substrate. ═══
+    # = sclc2 + nolick_weight 1.0 + nolick_nogo_in_cue. NOGO ROWS ONLY (Leon: "a no lick constraint
+    # on nogo trials"): the don't-lick span κ₁ ≤ 0 runs from CUE ONSET → test-on in Dual and
+    # cue-on → end in GNG. Deliberately NOT nolick_full_delay (that would add the DPA rows, as sgd2
+    # did) and NOT nolick_late_delay (go rows stay free after the cue — the measured negative, §27i).
+    # Same scl16 DPA checkpoints; GNG+Dual retrained.
+    # WHY THIS IS THE CAUSAL TEST of today's correlation. The subcritical wells are tilted
+    # ANTI-SYMMETRICALLY (+κ₀ well at κ₁ −0.34…−0.48, −κ₀ well at +0.23…+0.49) and the cue pushes κ₁
+    # UP on both trial types, so on a nogo trial the −κ₀ memory state is carried well into κ₁>0 —
+    # which is exactly where sclc2's GNG accuracy died in tilt order (tilt 0.12→0.988, 0.29→0.958,
+    # 0.34→0.802, 0.49→0.700). If the tilt is the cause, a hinge that forbids κ₁>0 on precisely
+    # those trials should pull the wells back toward the axis and RECOVER the accuracy.
+    # ⚠ NOTE the term is NOT inert here, unlike the foundation. In sgd2 (λ₀ 3.0) the GNG-stage hinge
+    # did nothing at dose 2 because nogo lands at −0.4 by cue-off; here the tilted −κ₀ well sits at
+    # +0.23…+0.49 BEFORE the cue's +1.3 push. A consequence worth stating: this arm breaks the
+    # gradient-blindness of the GNG stage to cue amplitude (§27d) — the nolick term IS supervised
+    # after cue onset — so unlike sclc2, after_gng/dpa is now free to move and is a real readout.
+    # Pre-registered: after_gng/gng (sclc2 0.802/0.700/0.988/0.958 — recovery expected, largest in
+    # the most tilted seeds s1/s0) · after_gng/dpa (sclf16/sclc2 both 0.886/0.939/1.000/0.929) ·
+    # the DPA-ckpt→expert well tilt (does the hinge pull them onto the axis) · traj_verdict leak,
+    # A vs B · and the cost §27h found: go hold below θ, gng_pos residual.
+    # --run_filter sclnl
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_sclnl", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_r2scl/s{seed}_scl16/dpa_s{seed}_scl16.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6, "cue_scale": 2.0,
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": False, "nolick_late_delay": False,
                                     "nolick_thresh": 0.0}))
 
     return configs

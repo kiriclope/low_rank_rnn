@@ -149,6 +149,7 @@ Saved to `summary/`:
 | `fp_scatter_by_stage.pdf` | Autonomous FPs across all seeds, coloured by stage |
 | `fp_scatter_by_input_<cond>.pdf` | FPs under each input condition |
 | `traj_{dpa,naive,expert}_{dpa,go,nogo,gng_task}.pdf` | Mean κ trajectories |
+| `traj_grid.pdf` (individual only, 2026-09-10) | **ONE figure per seed**: 8 cols × 3 rows — cols = (DPA-only, Go, NoGo, GNG-task) × (κ₀, κ₁), rows = DPA stage / After GNG / After Dual. Replaces the 12 per-condition `traj_*` files for individual runs. Pair/unpair (and Go/NoGo in the GNG columns) are overlaid as SOLID/DASHED since rows are now stages; y-limits shared down each column so stages compare directly; a missing ckpt renders "no ckpt". `summary_avg_trajectories` still uses the old per-condition layout. |
 
 ---
 
@@ -302,3 +303,27 @@ from the legend. Auto-falls back to the scatter per panel when a condition has <
 
 Both use `_reduce_marginals` on the Autonomous panel, so slow-manifold memory states appear as slow
 attractors, not marginal clutter.
+
+## Publishing to the gallery — `scratchpad/publish_gallery.sh` (2026-09-10)
+
+```bash
+./scratchpad/publish_gallery.sh sweep_r2sclnl      # -> ~/dual/rnn/<TITLE>/{traj,flow,accuracy,misc}
+```
+
+Two things it encodes, both of which were got wrong by hand first:
+
+- **The gallery folder name comes from `results/dual/<sweep>/TITLE`** (falling back to the raw dir
+  name). Leon's convention is short and lowercase — `<phi>_<init>_<what the arm adds>_<dpa if
+  DPA-only>`, e.g. `lif_sub_cue_nolick_nogo`, `relu_sub_dpa`, `lif_termwin_dpa`. Write the TITLE
+  file when launching the sweep. Raw `results/dual/sweep_*` dirs are NOT renamed — `dpa_ckpt`/
+  `gng_ckpt` paths in `make_configs` point at them.
+- **Classification uses the SOURCE SUBDIRECTORY, not the filename.** Flow-field panels live in
+  `individual/<seed>/flow/` but are named `traj_naive_dpa.png`; a filename-only classifier files
+  every one of them under `traj/` and the sweep appears to have a single flow figure.
+
+Cost of the figures themselves (measured 2026-09-09, 4-run 3-stage sweep ≈ 71 PNGs, ≈ 28 min): no
+single step is slow — flow field 151² = 1.31 s, `find_all_fixed_points` 0.88 s @21 seeds / 3.34 s
+@41, trajectory sim 3.08 s (CPU), streamplot 0.33 s, savefig 0.07 s. It is the PRODUCT of panels
+(conditions × stages), each needing its own field evaluation and fixed-point search — ≈ 23 s per
+output PNG. DPA-only sweeps are ~3× cheaper. Levers: `--plots`, `--no_summary`, `--n_grid 101`,
+`--n_fp_seeds 21`, `--device cuda:0` (defaults to CPU; only the sims move, the field is numpy).

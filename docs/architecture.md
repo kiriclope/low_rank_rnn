@@ -193,6 +193,16 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
 - `max_val_loss` (2026-09-09, default 100) — the trainer's abort threshold on the val loss, now a
   RunConfig field. Relu + activity L2 needs ~1e6: at the unstable init ⟨r²⟩≈1e4, so the penalty
   alone exceeds 100 before the first step.
+- `dpa_hold_window` (seconds, default 0.0 = legacy) — restrict the **DPA-stage A/B memory
+  supervision** to the last N s ENDING at test onset, instead of the legacy span sample ONSET →
+  test onset (6 s, the sample included). Mirrors the GNG identity hold, which is a 0.25 s window
+  ending at cue onset (`generate_gng_trials`, `hold_full_delay=False`). DPA stage ONLY — the Dual
+  generator sets no κ₀ target at all, so `mem_pos`/`mem_neg`/`mem_decay` are identically 0 there.
+  Rationale: the legacy span demands |κ₀| ≥ θ *during the sample*, pricing the RISE TIME as well as
+  the amplitude; a terminal window prices only "be there when it is read". Measured (§28d): Φ
+  absorbs it (wells intact, dpa 0.99–1.00) and κ₀ then rises into the well across the delay instead
+  of being clamped from the sample on; relu is unaffected (λ⁺ stays > 1). Set 0.5 in the `w5*`,
+  `sc*`, `scl*` arms.
 - `nolick_full_delay` — extend the Dual don't-lick to the WHOLE delay on the DPA trials only
   (rows identified by no finite decision target in the go/nogo span; guarded: needs
   `dual_gng_memory=True` and `target_rank=2`). go/nogo trials keep the late window.

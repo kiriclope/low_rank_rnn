@@ -618,6 +618,111 @@ def _concrete_conds(pair_status: str, gng_status: str) -> list[str]:
     return [f"{s}_{gng_status}_{t}" for s, t in base]
 
 
+def _plot_traj_grid_figure(kappa_by_stage: dict, targets_dual: np.ndarray, cnames: np.ndarray,
+                           kappa_gng_by_stage: dict, targets_gng: np.ndarray, is_go: np.ndarray,
+                           timing_dual: TaskTiming, timing_gng: TaskTiming,
+                           title: str) -> plt.Figure:
+    """ONE figure per seed (Leon 2026-09-10): 8 cols x 3 rows.
+
+    cols  = (DPA-only, Go, NoGo, GNG-task) x (kappa_0, kappa_1)
+    rows  = DPA stage / After GNG / After Dual   (ckpts dpa_ / naive_ / expert_)
+
+    Replaces the previous 12 separate traj_<stage>_<cond> files, which split pair/unpair (dual
+    conditions) and go/nogo (gng task) across ROWS. Rows are now stages, so those splits are
+    overlaid inside each panel: SOLID = paired, DASHED = unpaired (dual columns); in the GNG
+    column solid = Go, dashed = NoGo. Colour still keys the trial type (red DPA / blue go /
+    green nogo), with light/dark = A-sample / B-sample. Black = target.
+    """
+    stages = ["dpa", "naive", "expert"]
+    row_labels = {"dpa": "DPA stage", "naive": "After GNG", "expert": "After Dual"}
+    col_specs = [("dpa", "DPA-only"), ("go", "Go"), ("nogo", "NoGo")]
+
+    fig, axes = plt.subplots(3, 8, figsize=(30.0, 9.6), constrained_layout=True)
+    fig.suptitle(title, fontsize=15, y=1.075)
+    t_d = np.arange(targets_dual.shape[1]) * timing_dual.dt
+    t_g = np.arange(targets_gng.shape[1])  * timing_gng.dt
+
+    # y-limits shared down each column so the three stages are directly comparable
+    ylim = np.zeros(8)
+    for ci, (gng_status, _) in enumerate(col_specs):
+        for dim in range(2):
+            v = [np.nanpercentile(np.abs(k[:, :, dim]), 99) for k in kappa_by_stage.values() if k is not None]
+            ylim[ci * 2 + dim] = 1.1 * max(max(v) if v else 1.5, 1.5)
+    for dim in range(2):
+        v = [np.nanpercentile(np.abs(k[:, :, dim]), 99) for k in kappa_gng_by_stage.values() if k is not None]
+        ylim[6 + dim] = 1.1 * max(max(v) if v else 1.5, 1.5)
+
+    for row, stage in enumerate(stages):
+        kd, kg = kappa_by_stage.get(stage), kappa_gng_by_stage.get(stage)
+        for ci, (gng_status, col_lbl) in enumerate(col_specs):
+            palette = TRAJ_PALETTE.get("none" if gng_status == "dpa" else gng_status)
+            status  = "none" if gng_status == "dpa" else gng_status
+            for dim in range(2):
+                ax = axes[row, ci * 2 + dim]
+                _traj_axis_setup(ax, timing_dual, ylim[ci * 2 + dim])
+                if kd is None:
+                    ax.text(0.5, 0.5, "no ckpt", ha="center", va="center",
+                            transform=ax.transAxes, color="0.6", fontsize=9)
+                else:
+                    for ls, pair_st in (("-", "pair"), ("--", "unpair")):
+                        for si, cond in enumerate(_concrete_conds(pair_st, status)):
+                            idxs = np.where(cnames == cond)[0]
+                            if not len(idxs):
+                                continue
+                            col = palette[si % len(palette)]
+                            km  = kd[idxs, :, dim].mean(0)
+                            tgt = np.nanmean(targets_dual[idxs, :, dim], axis=0)
+                            if np.any(np.isfinite(tgt[int(timing_dual.n_stim_on[0]):])):
+                                ax.plot(t_d, tgt, color="k", lw=1.8, alpha=0.75, ls=ls, zorder=9)
+                            ax.plot(t_d, km, color=col, lw=2.2, alpha=0.95, ls=ls, zorder=10)
+                if row == 0:
+                    ax.set_title(f"{col_lbl} — \u03ba{dim}", fontsize=11)
+                if row == 2:
+                    ax.set_xlabel("Time (s)")
+                if ci == 0 and dim == 0:
+                    ax.set_ylabel(f"{row_labels[stage]}\n\u03ba{dim}", fontsize=10)
+
+        for dim in range(2):                                  # GNG-task columns (own timing)
+            ax = axes[row, 6 + dim]
+            _traj_axis_setup(ax, timing_gng, ylim[6 + dim])
+            if kg is None:
+                ax.text(0.5, 0.5, "no ckpt", ha="center", va="center",
+                        transform=ax.transAxes, color="0.6", fontsize=9)
+            else:
+                for ls, lbl, mask, col in (("-", "Go", is_go, TRIAL_COLORS["go"][0]),
+                                           ("--", "NoGo", ~is_go, TRIAL_COLORS["nogo"][0])):
+                    if not mask.any():
+                        continue
+                    km  = kg[mask, :, dim].mean(0)
+                    tgt = np.nanmean(targets_gng[mask, :, dim], axis=0)
+                    if np.any(np.isfinite(tgt[int(timing_gng.n_stim_on[0]):])):
+                        ax.plot(t_g, tgt, color="k", lw=1.8, alpha=0.75, ls=ls, zorder=9)
+                    ax.plot(t_g, km, color=col, lw=2.2, alpha=0.95, ls=ls, zorder=10)
+            if row == 0:
+                ax.set_title(f"GNG task — \u03ba{dim}", fontsize=11)
+            if row == 2:
+                ax.set_xlabel("Time (s)")
+
+    handles = [mlines.Line2D([], [], color="k", lw=1.8, label="target"),
+               mlines.Line2D([], [], color="0.35", lw=2.2, ls="-",  label="paired / Go"),
+               mlines.Line2D([], [], color="0.35", lw=2.2, ls="--", label="unpaired / NoGo"),
+               mlines.Line2D([], [], color=TRIAL_COLORS["dpa"][0],  lw=2.2, label="DPA-only trials"),
+               mlines.Line2D([], [], color=TRIAL_COLORS["go"][0],   lw=2.2, label="Go trials"),
+               mlines.Line2D([], [], color=TRIAL_COLORS["nogo"][0], lw=2.2, label="NoGo trials")]
+    fig.legend(handles=handles, loc="upper center", ncol=6, frameon=False, fontsize=11,
+               bbox_to_anchor=(0.5, 1.035))
+    fig.get_layout_engine().set(rect=(0, 0, 1, 0.99))
+    return fig
+
+
+def _traj_axis_setup(ax, timing: TaskTiming, ylim: float):
+    """Shared panel furniture for the trajectory grid: stimulus shading, zero line, limits."""
+    ax.set_ylim(-ylim, ylim)
+    for on, off in zip(timing.stim_on, timing.stim_off):
+        ax.axvspan(on, off, alpha=0.10, color="tab:blue", lw=0, zorder=0)
+    ax.axhline(0, color="k", lw=0.8, ls="--", alpha=0.35, zorder=1)
+
+
 def _plot_traj_figure(kappa_dict: dict[str, np.ndarray],
                       targets_np: np.ndarray,
                       cnames: np.ndarray,
@@ -1405,30 +1510,27 @@ def individual_trajectories(meta: RunMeta, ckpt_dir: str, out_dir: str, device: 
     stages       = ["dpa", "naive", "expert"]
     stage_labels = {"dpa": "DPA stage", "naive": "After GNG", "expert": "After Dual"}
 
+    # ONE grid figure per seed (Leon 2026-09-10): 8 cols x 3 rows, replacing the 12 separate
+    # traj_<stage>_<cond> files. Collect every stage's kappa first, then draw once so the
+    # y-limits can be shared down each column and the three stages compared directly.
+    kappa_by_stage, kappa_gng_by_stage = {}, {}
     for stage in stages:
         model = _build_model(meta, device)
         if not _load_ckpt(model, ckpt_dir, stage, meta.run_id, device):
-            del model; continue
-        kappa_dual = _compute_kappa(model, X_dual, y_dual, device, meta.model_noise_sigma())
-        kappa_gng  = _compute_kappa(model, X_gng,  y_gng,  device, meta.model_noise_sigma())
+            del model
+            kappa_by_stage[stage] = kappa_gng_by_stage[stage] = None
+            continue
+        kappa_by_stage[stage]     = _compute_kappa(model, X_dual, y_dual, device, meta.model_noise_sigma())
+        kappa_gng_by_stage[stage] = _compute_kappa(model, X_gng,  y_gng,  device, meta.model_noise_sigma())
         del model
 
-        for gng_key, (gng_title, gng_status) in GNG_SPECS.items():
-            fig = _plot_traj_figure(
-                {meta.run_id: kappa_dual}, y_dual.numpy(), cnames, TIMINGS["dual"],
-                gng_status, f"{stage_labels[stage]} — {gng_title}",
-            )
-            out_path = os.path.join(out_dir, f"traj_{stage}_{gng_key}.pdf")
-            save_fig(fig, out_path)
-            plt.close(fig)
-
-        fig = _plot_gng_traj_figure(
-            {meta.run_id: kappa_gng}, y_gng.numpy(), is_go, TIMINGS["gng"],
-            f"{stage_labels[stage]} — GNG task",
-        )
-        out_path = os.path.join(out_dir, f"traj_{stage}_gng_task.pdf")
-        save_fig(fig, out_path)
-        plt.close(fig)
+    fig = _plot_traj_grid_figure(
+        kappa_by_stage, y_dual.numpy(), cnames,
+        kappa_gng_by_stage, y_gng.numpy(), is_go,
+        TIMINGS["dual"], TIMINGS["gng"], f"{meta.run_id} — \u03ba trajectories by stage",
+    )
+    save_fig(fig, os.path.join(out_dir, "traj_grid.pdf"))
+    plt.close(fig)
 
     print(f"  trajectories saved: {out_dir}")
 

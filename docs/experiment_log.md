@@ -1000,3 +1000,45 @@ nothing (λ⁺ never taken below 1 — no term asks for zero growth at the targe
 `field_profiles_relu_vs_lif.png` (`scratchpad/relu_field_profiles.py`; gallery `rnn/sweep_r2rr01/flow`).
 Galleries `rnn/sweep_r2rr01`, `rnn/sweep_r2rr1`, `rnn/sweep_r2rrb01`. Narrative: §28c. Open:
 two-sided memory pin, half-population gain constraint, or EI inhibition — none run.
+
+## 2026-09-09/10 — the terminal A/B hold window, and the INITIAL CONDITION thread (7 sweeps, 48 runs)
+
+Full narrative + mechanism: `ring_lowerplane_log.md` §28d and §29. All rank 2, N=1024, gain 1.0,
+noise 1.0, lr 0.01 fixed, structured init, no regularisation (note `weight_decay=0.01` appears in
+every config and in the `optim:` log line but is **INERT** — the `optimizer="adam"` branch at
+`sweep.py:749` does not pass it; only the AdamW branch would).
+
+**New machinery.** `dpa_hold_window` (RunConfig, seconds; 0 = legacy) → `generate_dpa_trials(hold_window=)`:
+supervises the A/B memory only over the last N s ending at test onset, instead of sample-onset →
+test-onset. Mirrors the GNG identity hold (0.25 s ending at cue onset). DPA stage only — the Dual
+generator sets no κ₀ target (`mem_*` ≡ 0). Verified at the run dt (0.0225): 22 steps, t ≈ 7.49–7.99 s.
+
+| sweep (gallery title) | arm(s) | config delta | stages | result |
+|---|---|---|---|---|
+| `sweep_r2w5r` (`relu_termwin_dpa`) | w5relu, w5rl2 | fdrelu + window (+ L2 0.01) | DPA only | λ⁺ 1.31–1.39 / 1.11–1.30, no well; identical to rr01 epoch-matched |
+| `sweep_r2w5lif` (`lif_termwin_dpa`) | w5lif | nocue + window | DPA only | wells intact ±1.06–1.14, dpa 0.99–1.00; κ₀ now RISES into the well (×1.25–1.51) |
+| `sweep_r2sc1` (`relu_sub_dpa`) | sc12/16/18 | w5relu + memory_lambda 1.2/1.6/1.8 | DPA only | λ⁺ climbs from below to 0.99–1.12; rates ×40 lower; still no well; ⚠ stopped ep 10–15 |
+| `sweep_r2scl` (`lif_sub_dpa`) | scl12/16/18 | w5lif + memory_lambda 1.2/1.6/1.8 | DPA only | 12/12 rebuild the foundation wells (λ₀ → 4.5–6.9), dpa 0.99–1.00 |
+| `sweep_r2sclf` (`lif_sub`) | sclf16 | scl16 ckpt + GNG 100 + Dual 300 | full | `after_gng/dpa` 0.886/0.939/1.000/0.929 (nocue 0.996–1.000) |
+| `sweep_r2sclc` (`lif_sub_cue`) | sclc2 | sclf16 + cue_scale 2.0 | full | gng/dpa identical (forced); `after_gng/gng` 0.802/0.700/0.988/0.958 in tilt order |
+| `sweep_r2sclnl` (`lif_sub_cue_nolick_nogo`) | sclnl | sclc2 + nolick_weight 1 + nolick_nogo_in_cue | full | GNG → 0.97–0.99; DPA retention → 0.802/0.761/1.000/0.946 |
+
+**Headlines.**
+1. The window is absorbed by Φ at no cost and is INERT for relu — a window controls what is
+   constrained, not what is incentivised (§28d).
+2. λ⁺ = 1 attracts the relu training dynamics **from both directions** (down from 1.50, up from
+   0.60/0.80/0.90). Φ's pitchfork (λ₀ ≈ 2.9) is an ordinary supercritical one and the foundation
+   is init-independent — 12/12 recovery from λ₀ = 1.2. relu's is at λ₀ = 2.0 exactly (λ⁺ = 1).
+3. ★ The subcritical Φ memory is **born entangled**: `g·n₀ᵀm₁` at the DPA ckpt = −2.18/−3.76/+0.28/−0.61,
+   equivalently memory wells tilted anti-symmetrically off κ₁ = 0 (mean|κ₁| 0.34/0.49/0.12/0.29 vs
+   nocue's 0.11). That predicts the retention loss, the cue's damage, and the repair — all in the
+   same order. The no-lick hinge on nogo repairs the rule but neither moves the wells nor reduces
+   the coupling, and charges the memory 8 and 18 points in the two entangled seeds.
+
+**Caveats to carry forward.** `stop_loss` 0.1 (used for the DPA-only probes) fires at epoch 10–15 on
+the subcritical relu arms and would truncate a GNG stage at ~epoch 25 — the full-sequence arms use
+0.005. `sclf16`/`sclc2`/`sclnl` differ from nocue in TWO variables (memory_lambda AND
+dpa_hold_window); the `w5lif` full sequence that would split them is coded-adjacent but NOT run.
+The tilt↔damage correlation is ρ = −1.000 within the subcritical arm (n=4) but ρ = −0.563 /
+p = 0.077 pooled with the foundation seeds. NOT RUN: `sq*` (relu subcritical at stop_loss 0.005),
+`w5lif` full sequence, `scl12`/`scl18` full sequence, extra seeds.
