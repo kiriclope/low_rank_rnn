@@ -327,3 +327,17 @@ single step is slow — flow field 151² = 1.31 s, `find_all_fixed_points` 0.88 
 (conditions × stages), each needing its own field evaluation and fixed-point search — ≈ 23 s per
 output PNG. DPA-only sweeps are ~3× cheaper. Levers: `--plots`, `--no_summary`, `--n_grid 101`,
 `--n_fp_seeds 21`, `--device cuda:0` (defaults to CPU; only the sims move, the field is numpy).
+
+
+## Per-run task timings in plotting — `_timings_for(meta)` (2026-09-10)
+
+`plot_sweep.py` regenerates its own trials, so any RunConfig field that changes TASK TIMING must be
+threaded into it or the figures probe a different task than the one trained. `cue_duration` was not,
+and every figure for the 1 s-cue arm was rendered with a 0.5 s cue (caught by eye, not by the
+numbers: the plotted cue-driven activity lasted 0.5 s).
+
+**Rule: never use the module-level `TIMINGS[...]` where a `meta` is in scope — call
+`_timings_for(meta)`.** It returns `TIMINGS` unchanged when `cue_duration == 0.5` (so nothing else is
+perturbed) and a per-task widened copy otherwise. `RunMeta.cue_duration` is read from `config.json`.
+Accuracies are unaffected by this class of bug — `run_single` passes its own timings to the evals —
+so a mismatch shows up ONLY in figures, which is what makes it easy to miss.

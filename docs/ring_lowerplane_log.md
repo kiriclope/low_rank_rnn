@@ -2106,6 +2106,21 @@ has a following stimulus, false in GNG where the cue is last; now bounded by tri
   the rule is marginally WORSE with the longer cue (0.996 → 0.988) — more of the trial spent above
   the lick line for the hinge to fight, with no compensating gain. **The recipe is insensitive to
   cue duration**, which is a robustness result even though the mechanistic hypothesis was refuted.
+- ⚠⚠ **TRAP found by Leon reading the figure (2026-09-10): a config field that changes TASK TIMING
+  must be threaded into `plot_sweep.py`, or the figures silently probe a different task than the one
+  trained.** `plot_sweep` built `TIMINGS = make_timings(DT)` at module level and never read
+  `cue_duration`, so every figure for this arm regenerated its own trials with a 0.5 s cue while the
+  model had been trained with a 1 s one — the plotted cue-driven activity lasted 0.5 s, which is
+  exactly what Leon spotted. Verified directly afterwards: the training input carries the cue over
+  t = 5.98–7.00 s (1.01 s) and the plotting input over t = 5.98–6.48 s (0.49 s). The ACCURACIES were
+  never affected (`run_single` passes its widened `dual_timing`/`gng_timing` to the evals) and neither
+  was the push measurement (that script widened the timing itself) — only the figures, and ALL of
+  them for that arm, since the fixed-point and accuracy-by-trialtype panels also generate their own
+  trials. Fixed: `plot_sweep._timings_for(meta)` widens `TIMINGS` by the run's `cue_duration`,
+  `RunMeta` reads the field from the config, and all seven call sites go through it — no bare
+  `TIMINGS[...]` lookup survives outside the helper. Figures re-rendered and republished.
+  **The general lesson:** checking that the training LOG reports the right timing is not sufficient;
+  check that the INPUT in the figure matches the input in training.
 - ⚠ **The cue-1 vs cue-2 comparison is CONFOUNDED and must not be read as a dose effect.** The cue-1
   arms use `stop_loss` 0.1 (Leon's request), which fired in every seed and truncated their GNG stage
   to ~21–41 of 100 epochs (final GNG val 0.087–0.098); the cue-2 recipe ran the full 100 at 0.005.

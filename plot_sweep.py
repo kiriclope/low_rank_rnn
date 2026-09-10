@@ -28,6 +28,7 @@ Output
 
 from __future__ import annotations
 
+import dataclasses
 import argparse
 import json
 import os
@@ -128,6 +129,7 @@ class RunMeta:
     tau:            float = 0.3
     dt_base:        float = 0.03
     tau_rec_frac:   float = 0.75
+    cue_duration:   float = 0.5  # cue window LENGTH in seconds; widens TIMINGS per-run (sweep.py `cue_duration`)
     nonlinearity:   str   = "tanh"
     nl_gamma:       float = 0.0
     use_unit_bias:  bool  = False
@@ -205,6 +207,7 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             rwd             = bool(cfg.get("rwd", True)),
             rwd_scale       = float(cfg.get("rwd_scale", 1.0)),
             cue_scale       = float(cfg.get("cue_scale", 1.0)),
+            cue_duration    = float(cfg.get("cue_duration", 0.5)),
             nogo_target     = (None if cfg.get("nogo_target", 0.0) is None
                                else float(cfg.get("nogo_target", 0.0))),
             attention_input = bool(cfg.get("attention_input", False)),
@@ -337,6 +340,23 @@ def _noise_sigma(prefactor: float) -> float:
 TIMINGS = make_timings(DT)
 
 
+def _timings_for(meta: "RunMeta") -> dict:
+    """Per-run task timings — TIMINGS widened by this run's `cue_duration`.
+
+    sweep.py applies `cue_duration` when it trains (cue ONSET fixed, offset moves), so a plot that
+    used the module-level TIMINGS would drive a 1 s-cue model with a 0.5 s cue and shade the wrong
+    window. Always go through this, never TIMINGS directly, wherever a meta is in scope.
+    """
+    if getattr(meta, "cue_duration", 0.5) == 0.5:
+        return TIMINGS
+    out = dict(TIMINGS)
+    for key, idx in (("gng", 1), ("dual", 2)):          # cue index per task
+        t = TIMINGS[key]
+        off = list(t.stim_off); off[idx] = t.stim_on[idx] + meta.cue_duration
+        out[key] = dataclasses.replace(t, stim_off=off)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Input conditions for FP scatter (per task)
 # ---------------------------------------------------------------------------
@@ -376,7 +396,7 @@ def _eval_dual_by_trialtype(model, meta: RunMeta, device: str,
                     for computing SEM = std/sqrt(n) across individual trials.
     """
     model.eval()
-    timing = TIMINGS["dual"]
+    timing = _timings_for(meta)["dual"]
     X, y, _, cnames = generate_dual_trials(
         n_trials, timing=timing, input_size=meta.input_size,
         noise=meta.noise_sigma(), target_rank=meta.rank,
@@ -427,7 +447,7 @@ def _eval_gng_by_trialtype(model, meta: RunMeta, device: str,
                             n_trials: int = 1024) -> dict:
     """GNG accuracy split by Go / NoGo trial type."""
     model.eval()
-    timing = TIMINGS["gng"]
+    timing = _timings_for(meta)["gng"]
     X, y = generate_gng_trials(
         n_trials, timing=timing, input_size=meta.input_size,
         noise=meta.noise_sigma(), target_rank=meta.rank,
@@ -471,7 +491,7 @@ def _make_gng_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None =
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    timing  = TIMINGS["gng"]
+    timing  = _timings_for(ref_meta)["gng"]
     n_sigma = _noise_sigma(ref_meta.noise) if noise is None else noise
     X, y = generate_gng_trials(
         n_batch, timing=timing, input_size=ref_meta.input_size,
@@ -501,7 +521,7 @@ def _make_dual_batch(ref_meta: RunMeta, n_batch: int = 512, noise: float | None 
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    timing = TIMINGS["dual"]
+    timing = _timings_for(ref_meta)["dual"]
     n_sigma = _noise_sigma(ref_meta.noise) if noise is None else noise
     X, y, _, cnames = generate_dual_trials(
         n_batch, timing=timing, input_size=ref_meta.input_size,
@@ -1440,7 +1460,7 @@ def summary_avg_trajectories(all_metas: list[RunMeta], ckpt_dir: str,
         fig = _plot_traj_grid_figure(
             per_group_dual[group_name], y_dual.numpy(), cnames,
             per_group_gng[group_name], y_gng.numpy(), is_go,
-            TIMINGS["dual"], TIMINGS["gng"],
+            _timings_for(metas[0])["dual"], _timings_for(metas[0])["gng"],
             f"{group_name} — \u03ba trajectories by stage (mean across {len(groups[group_name])} runs)",
         )
         suffix = "" if len(groups) == 1 else f"_{group_name.replace('+', '_')}"
@@ -1526,7 +1546,7 @@ def individual_trajectories(meta: RunMeta, ckpt_dir: str, out_dir: str, device: 
     fig = _plot_traj_grid_figure(
         kappa_by_stage, y_dual.numpy(), cnames,
         kappa_gng_by_stage, y_gng.numpy(), is_go,
-        TIMINGS["dual"], TIMINGS["gng"], f"{meta.run_id} — \u03ba trajectories by stage",
+        _timings_for(meta)["dual"], _timings_for(meta)["gng"], f"{meta.run_id} — \u03ba trajectories by stage",
     )
     save_fig(fig, os.path.join(out_dir, "traj_grid.pdf"))
     plt.close(fig)
@@ -1640,7 +1660,7 @@ def individual_flow(meta: RunMeta, ckpt_dir: str, out_dir: str, device: str,
         model = _build_model(meta, device)
         model.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True))
         model.eval()
-        timing = TIMINGS[task]
+        timing = _timings_for(meta)[task]
 
         cnames = None
         if task == "dpa":
