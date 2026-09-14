@@ -193,6 +193,18 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
 - `max_val_loss` (2026-09-09, default 100) — the trainer's abort threshold on the val loss, now a
   RunConfig field. Relu + activity L2 needs ~1e6: at the unstable init ⟨r²⟩≈1e4, so the penalty
   alone exceeds 100 before the first step.
+- `integrate` (`"both"` | `"rates"` | `"rec"`, default `"both"`) — which variables carry a time
+  constant. `"both"` (legacy): `rec_inputs` filtered at τ_rec THEN `rates` at τ — a two-filter
+  cascade, so recurrent drive passes two filters and external drive one (the input is added inside φ
+  at full strength on arrival, never filtered). `"rates"`: recurrent current instantaneous,
+  τ ṙ = −r + φ(g(I+W·r)). `"rec"`: rates instantaneous, τ_rec ẋ = −x + W·φ(g(I+x)) — the standard
+  current-based rate RNN of the cognitive-task literature. **Fixed points are identical across all
+  three** (steady state rates* = φ(g(I + W·rates*))); only the dynamics, and hence what BPTT can
+  learn, differ. Measured 2026-09-14 (§30c): `"rec"` fails to learn the 5 s delay memory in 2–3 of 4
+  seeds while learning the rule perfectly; `"rates"` learns the memory but costs the rule. The
+  cascade is load-bearing here. `"both"` is verified bit-identical to the pre-flag model.
+  ⚠ `tau_rec_frac` cannot remove the synaptic filter — α_rec = dt_base/τ independent of it; use `tau`
+  to change τ_rec at fixed dt.
 - `cue_duration` (seconds, default 0.5) — DURATION of the go/nogo response cue; widens the cue
   window in the GNG and Dual timings (onset fixed, offset moves: dual 6.0→7.0 s at 1.0 s, gng
   4.0→5.0 s). Loss windows keyed to cue-ON are unaffected (`nolick_nogo_in_cue`, the pre-cue rule

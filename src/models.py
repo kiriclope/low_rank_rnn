@@ -39,6 +39,7 @@ class LowRankModel(nn.Module):
         unit_bias_trainable=True,
         unit_bias_scale=0.2,
         use_rec_scale=False,
+        integrate="both",   # "both" | "rates" | "rec" — which variables carry a time constant (see update_dynamics)
         device="cpu",
     ):
         super().__init__()
@@ -46,6 +47,8 @@ class LowRankModel(nn.Module):
 
         self.input_size  = input_size
         self.hidden_size = hidden_size
+        assert integrate in ("both", "rates", "rec"), f"integrate={integrate!r}"
+        self.integrate   = integrate
         self.rank        = rank
         self.register_buffer('gain', torch.tensor(float(gain), device=self.device))
 
@@ -164,14 +167,41 @@ class LowRankModel(nn.Module):
             return torch.cat((rec, ext), dim=-1)
         return rec
 
-    def update_dynamics(self, ff_inputs, rec_inputs, rates):
+    def update_dynamics(self, ff_inputs, rec_inputs, rates, noise=None):
+        """One step. `integrate` selects which variables carry a time constant:
+
+          "both"  (default, legacy)  rec_inputs filtered at tau_rec THEN rates filtered at tau —
+                  a two-filter cascade. Unusual for the cognitive-task RNN literature; it comes
+                  from the NeuroFlame lineage (and Wang 2002 / Wong & Wang 2006 biophysical models).
+          "rates" single filter on the RATES, recurrent current instantaneous:
+                  tau*r' = -r + phi(g*(I + W*r))   — the rate-based standard form.
+          "rec"   single filter on the CURRENT, rates instantaneous:
+                  tau_rec*x' = -x + W*phi(g*(I + x)) — the current-based standard form used by
+                  Mante 2013, Song/Yang/Wang (PyCog), Yang 2019, Mastrogiuseppe & Ostojic 2018,
+                  Dubreuil 2022. This is what most of the literature means by "a rate RNN".
+
+        NOTE alpha_rec = dt_base/tau independent of tau_rec_frac (the fracs cancel), so the
+        synaptic filter CANNOT be removed by tuning tau_rec_frac — hence this flag.
+
+        `noise` is injected into the recurrent current. Passing it here (rather than pre-added by
+        the caller) keeps "rates" mode correct, where rec_inputs is overwritten each step and a
+        pre-added noise term would be silently discarded. Legacy callers that pre-add it and leave
+        noise=None still get the identical "both" update.
+        """
         input_drive = self.Ai * self.wi(ff_inputs) if self.wi is not None else 0.0
         hidden      = (rates @ self.n) @ (self.rec_scale * self.m).T / self.hidden_size
         if self.w_fixed is not None:
             hidden = hidden + rates @ self.w_fixed.T
-        rec_inputs  = self.exp_alpha_rec * rec_inputs + (1.0 - self.exp_alpha_rec) * hidden
-        phi         = self.nonlinearity(self.gain * (input_drive + rec_inputs) + self.unit_bias)
-        rates       = self.exp_alpha * rates + (1.0 - self.exp_alpha) * phi
+        nz = 0.0 if noise is None else noise
+        if self.integrate in ("both", "rec"):
+            rec_inputs = self.exp_alpha_rec * (rec_inputs + nz) + (1.0 - self.exp_alpha_rec) * hidden
+        else:                                   # "rates": recurrent current is instantaneous
+            rec_inputs = hidden + nz
+        phi = self.nonlinearity(self.gain * (input_drive + rec_inputs) + self.unit_bias)
+        if self.integrate in ("both", "rates"):
+            rates = self.exp_alpha * rates + (1.0 - self.exp_alpha) * phi
+        else:                                   # "rec": rates follow phi instantaneously
+            rates = phi
         return rates, rec_inputs
 
     def forward(self, ff_inputs, targets=None, ret_rates=False):
@@ -195,7 +225,7 @@ class LowRankModel(nn.Module):
                 x_t[:, self.rwd_channel] = x_t[:, self.rwd_channel] + self.rwd_scale * rwd_next
 
             noise  = self.noise * torch.randn(B, N, device=self.device)
-            rates, rec_inputs = self.update_dynamics(x_t, rec_inputs + noise, rates)
+            rates, rec_inputs = self.update_dynamics(x_t, rec_inputs, rates, noise=noise)
 
             readout = self.get_readout(rates, rec_inputs)
             readout_list.append(readout)

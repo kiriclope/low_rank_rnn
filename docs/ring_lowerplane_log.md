@@ -2128,3 +2128,136 @@ has a following stimulus, false in GNG where the cue is last; now bounded by tri
   `after_gng/dpa` measures — so the apparent +0.008 retention gain at dose 1 cannot be attributed to
   dose. Dual was unaffected (its val floor is 0.10–0.18, so it ran 300/300). The clean control —
   cue 1 at `stop_loss` 0.005 — is NOT RUN.
+
+**29h. Two measurement corrections, and what the network actually does at test (2026-09-10/11).**
+Leon, reading the trajectories: *"instead of pushing the autonomous wells down, the networks adjust
+the effect of the test odors (vertical flows) to compensate for the go/nogo perturbation."* He was
+right, and getting to that took two wrong turns worth recording so they are not repeated.
+
+- **★ THE COMPENSATION IS REAL, and it is φ′ gating.** Split by go/nogo condition at the expert ckpt,
+  Dual task: the go/nogo state shifts κ₁ at TEST ONSET by up to 0.83 across conditions, the
+  test-driven displacement moves the OPPOSITE way by nearly as much, and the landing point in the
+  pairing window is held constant to within 0.02–0.28 — **66–87 % of the perturbation is cancelled**.
+  s0 unpair is clearest: offsets +0.29/+0.54/−0.30 (none/go/nogo) → displacements −1.50/−1.67/−0.99
+  → landings −1.20/−1.14/−1.28. `Wi` is FROZEN during Dual, so the test-odour weights cannot change:
+  the condition-dependence must come from φ′ gating — the state sits at a different operating point
+  on go vs nogo trials, so the SAME input produces a different κ₁ excursion. That is the §25d/§27g
+  gain-steal, here working for the network. Exception: s1 unpair, 7 % cancelled (the seed whose
+  n₀ᵀm₁ survived the pin).
+- **⚠ WRONG TURN 1 — a circular measurement.** My first "confirmation" measured κ₁(test-off) −
+  κ₁(test-on) on pure-DPA rows and reported it growing ×2 from naive to expert. That quantity IS the
+  trained pairing readout, and the Dual stage is the stage that trains it (±0.7 untrained → ±1.2 at
+  target ±1). It grows by construction and tests nothing. The condition-split above is the
+  measurement that actually distinguishes the hypotheses.
+- **⚠ WRONG TURN 2 — a bogus gauge "correction".** I then divided κ₁ by ‖n₁‖, arguing that
+  n₁ → c·n₁, m₁ → m₁/c leaves W_rec = m₁n₁ᵀ/N and the dynamics invariant while scaling κ₁. The
+  transformation is real BUT THE GAUGE IS ANCHORED BY THE LOSS: targets are at κ₁ = ±1, and the
+  supervised pairing window measures ±0.72 (naive, untrained) → ±1.22 (expert), i.e. it sits at the
+  target. Dividing by ‖n₁‖ therefore removes a real effect. **Do not normalise κ by ‖n‖; the task
+  pins the scale.** (‖n₁‖ doubles 87→192 across Dual, so the temptation is strong.)
+- **★ WELL SELECTION: always take the attractor NEAREST THE OCCUPIED STATE, never the largest κ₀.**
+  Selecting by max κ₀ picked, in s2, an upper attractor at (+1.02,+0.73) that the network does not
+  use — it sits on a lower one at (+1.01,+0.23), split from it by a saddle at +0.54 — and produced a
+  spurious "the state never reaches its well, 46 s approach" reading. The local Jacobian at the
+  OCCUPIED attractor is fast (τ_slow 0.5–1.0 s against a 5 s delay), and the state sits on it to
+  within d ≈ 0.00–0.03. Report d alongside, and exclude/flag anything with d > 0.2.
+
+**29i. Pricing the memory wells: the hinge asymptotes AT the line, at any weight (2026-09-11/14).**
+Nothing in this line had ever priced the memory wells' κ₁ during the delay — `nolick_nogo_in_cue`
+covers nogo rows from cue onset, `nolick_full_delay` (DPA rows, whole delay) was False in EVERY arm,
+and the DPA-stage κ₁ pin is two-sided at 0, which clamps them ON the line by construction. Adding the
+DPA-row hinge (`nolick_full_delay=True`) and dosing it:
+
+| `nolick_weight` | occupied-attractor κ₁ | below the line | after_gng/dpa |
+|---|---|---|---|
+| nogo rows only | +0.338 | 2/8 | 0.967/0.670/0.999/0.996 |
+| 1 | **+0.074** | 2/7 | 0.967/0.670/0.999/0.996 |
+| 3 | **+0.032** | 3/8 | 0.966/0.688/0.999/0.996 |
+| 5 | **+0.001** | 2/6 | 0.980/0.705/1.000/0.996 |
+
+- The hinge moves the attractors monotonically and TIGHTENS the spread (w=1 spans −0.11…+0.82,
+  w=3 spans −0.16…+0.20 with all eight located), and it is FREE — retention and rule flat or better
+  at w=5. But μ ∝ 1/w decaying to ZERO: extrapolated, even w=20 sits at ≈+0.004. **Weight buys
+  tightening, not depth.** §25e confirmed on a new substrate and in a stronger form.
+- My force-balance prediction (−0.15 at w=3, −0.27 at w=5, from the noise-smoothed hinge gradient
+  2[μΦ(μ/σ)+σφ(μ/σ)] with a CONSTANT opposing force) is falsified. The opposition instead grows
+  steeply as μ → 0⁻ and scales with the push — and it costs nothing behaviourally, so it is
+  structural rather than a trade-off. What supplies it is NOT identified; candidates are the go
+  rule's +1 hold sharing the κ₁ axis in rank 2, and the pairing swing being cheaper from nearer 0.
+- Also settled: delaying the pairing readout would NOT fix this (Leon's instinct, confirmed by
+  argument). The wells are a DELAY-period property; the pairing decision is a CONJUNCTION (A_C pair
+  vs A_D unpair share a memory well) so the well's κ₁ cannot carry it. Making the decision persist
+  prices the decision states, not the wells.
+- Depth therefore needs a displaced threshold (`nolick_thresh`>0) — which engineers the answer and
+  is ruled out by [[feedback-safeguard-rules]] — or removal of whatever supplies the upward force.
+
+## §30 — The integration scheme: dt is not negotiable, and the two-filter cascade is load-bearing (2026-09-14)
+
+**30a. New flag `integrate` ("both" | "rates" | "rec").** The model integrates TWO variables and the
+external input is NOT one of them (`src/models.py`):
+`rec_inputs ← e^(−α_rec)·rec_inputs + (1−e^(−α_rec))·W_rec·rates` (τ_rec = 0.225 s), then
+`rates ← e^(−α)·rates + (1−e^(−α))·φ(g·(input + rec_inputs))` (τ = 0.3 s), with `input_drive` added
+inside φ at full strength on the step it arrives. So recurrent drive passes TWO cascaded filters,
+external drive ONE — stimuli act faster than recurrence by construction.
+The literature standard is a SINGLE filter: current-based `τ ẋ = −x + W·φ(x) + I` (Mante 2013,
+Song/Yang/Wang PyCog, Yang 2019, Mastrogiuseppe & Ostojic 2018, Dubreuil 2022) or rate-based
+`τ ṙ = −r + φ(W·r + I)`. Two-filter cascades belong to the biophysical line (Wang 2002, Wong & Wang
+2006) and to NeuroFlame, which is where ours came from. `integrate` selects among all three;
+**"both" is verified BIT-IDENTICAL to the pre-flag model** (max|Δ| = 0 on readout/rates/currents
+against a reference captured beforehand), so nothing already measured moves.
+⚠ `tau_rec_frac` CANNOT remove the synaptic filter: α_rec = dt/τ_rec = (dt_base·frac)/(τ·frac) =
+**dt_base/τ**, independent of the frac — which only scales dt (and hence α). To change τ_rec at fixed
+dt, change `tau`. ⚠ Noise is injected into the recurrent current; it is now passed explicitly to
+`update_dynamics` because in "rates" mode `rec_inputs` is overwritten each step and a caller-preadded
+noise term would be silently discarded.
+
+**30b. ★ dt IS NOT NEGOTIABLE — and the reason is not numerical accuracy.** Two independent tests:
+- **Out-of-distribution** (same trained weights, re-simulated at 2dt): the pairing amplitude drops
+  30–40 % (1.23→0.73, 1.28→0.89, 1.30→0.75) and the delay κ₁ moves by up to 0.27 — larger than the
+  entire weight-ladder effect of §29i.
+- **Retrained from scratch at dt 0.045 (α_rec 0.20, the literature-standard value)**: the DPA stage
+  still learns (0.957–0.997) and the GNG rule still learns (0.93–0.99), but **retention collapses**,
+  `after_gng/dpa` 0.504/0.735/0.645/0.708 vs 0.967/0.670/0.999/0.996 at fine dt (clean-seed mean
+  0.987 → 0.619). Wall clock 24 min vs ~65 — the 2.7× is real and not worth having.
+
+**★★ THE MECHANISM, and the best evidence in this thread for §29d's coupling story.** The coarse step
+does not merely integrate the same solution less accurately — it produces a DIFFERENT DPA solution,
+**born far more entangled**: `g·n₀ᵀm₁` at the DPA ckpt −12.04 / +0.17 / −7.42 / −2.00 versus
+−0.51 / −2.56 / +0.28 / −0.08 at fine dt, against a foundation that stays within ±0.4. Retention
+tracks it seed by seed **including the reversal**: s1 is the only seed whose coupling improved
+(−2.56 → +0.17) and the only one whose retention improved (0.670 → 0.735). Every earlier test of the
+coupling→retention link was a within-arm correlation on n=4; this is an INDEPENDENT manipulation,
+with nothing to do with κ₁ or the no-lick rule, moving the coupling in both directions and retention
+following. Much harder to explain away.
+
+**30c. The three modes compared (4 seeds each, full sequence retrained, tau_rec raised via `tau`).**
+
+| mode | filtered | after_DPA/dpa | after_gng/dpa | after_gng/gng |
+|---|---|---|---|---|
+| "both" cascade | both | 0.994–0.999 | 0.967/0.670/0.999/0.996 | 0.984–0.994 |
+| "rec" τ_rec 0.225 | current | **1.000/0.511/0.496/0.744** | 0.261–0.736 | 0.996–1.000 |
+| "rec" τ_rec 0.300 | current | **1.000/0.511/0.997/0.752** | 0.486–0.990 | 0.997–1.000 |
+| "rates" τ 0.300 | rates | 0.799/1.000/1.000/1.000 | 0.474/0.900/1.000/0.896 | 0.811–0.963 |
+
+- **"rec" fails to LEARN the delay memory** in 2–3 of 4 seeds (chance after DPA) while learning the
+  rule perfectly every time. Raising τ_rec 0.225 → 0.300 helps (Leon's prediction) but does not
+  rescue it. ⚠ Note the FIXED POINTS ARE IDENTICAL ACROSS MODES — steady state is
+  rates* = φ(g(I + W·rates*)) either way — so the landscape available is the same and this is purely
+  a LEARNABILITY result about what BPTT can find.
+- **Hypothesis for why (not yet tested):** noise is injected into the recurrent current, and "rec" is
+  the only mode where it reaches the readout UNFILTERED (rates follow φ instantaneously). A
+  first-order filter at α = 0.075 cuts readout noise ≈5×. Prediction: "rec" recovers at ~1/5 the
+  input noise. One field, 4 seeds, NOT RUN.
+- **"rates" restores memory learnability** (3/4 perfect) but the rule degrades to 0.81–0.96 and
+  retention is mixed. ⚠ Partly confounded: its GNG stage stopped at ~70/100 epochs under stop_loss
+  0.1 while the "both" baseline ran 100 at 0.005.
+- **"rates" does NOT unlock a bigger dt** either: at dt 0.045 all four seeds learn DPA (0.974–0.997,
+  more consistent than fine dt) but retention falls 0.818 → 0.676 and the coupling blows up the same
+  way (−0.97→−7.43, +0.30→−5.38). **So my hypothesis that the cascade was responsible for the dt
+  fragility is WRONG — a single filter does it too.** Coarse integration produces a more entangled
+  DPA solution regardless of filter count. ⚠ And s1 breaks the coupling↔retention correspondence here
+  (coupling improved, retention fell), so the link is strong but not deterministic.
+- **Verdict:** the cascade is load-bearing for the science (best on both axes), dt stays 0.0225 in
+  every mode, and the remaining speed levers are the measured ones — concurrency (8 processes =
+  5.52× aggregate) and batch size (launch-bound: s/step flat from batch 64 to 1024, so more trials
+  per step is free compute but fewer optimiser steps per epoch).

@@ -130,6 +130,7 @@ class RunMeta:
     dt_base:        float = 0.03
     tau_rec_frac:   float = 0.75
     cue_duration:   float = 0.5  # cue window LENGTH in seconds; widens TIMINGS per-run (sweep.py `cue_duration`)
+    integrate:      str = "both"  # which variables are integrated (sweep.py `integrate`); analysis must match the run
     nonlinearity:   str   = "tanh"
     nl_gamma:       float = 0.0
     use_unit_bias:  bool  = False
@@ -208,6 +209,7 @@ def _load_sweep_meta(sweep_dir: str) -> list[RunMeta]:
             rwd_scale       = float(cfg.get("rwd_scale", 1.0)),
             cue_scale       = float(cfg.get("cue_scale", 1.0)),
             cue_duration    = float(cfg.get("cue_duration", 0.5)),
+            integrate       = cfg.get("integrate", "both"),
             nogo_target     = (None if cfg.get("nogo_target", 0.0) is None
                                else float(cfg.get("nogo_target", 0.0))),
             attention_input = bool(cfg.get("attention_input", False)),
@@ -555,7 +557,8 @@ def _fps_for_task(model, input_size: int, task: str, device: str,
     result = []
     for label, dims, color, marker in conds:
         ff       = make_input(input_size, active_dims=dims, value=1.0,
-                              device=device, dtype=dtype)
+                              integrate=getattr(meta, "integrate", "both"),
+        device=device, dtype=dtype)
         if attention_input:   # tonic attention ON in every condition incl. autonomous (matches the flow)
             ff[-1] = attention_scale
         fps, _   = find_all_fixed_points(model, xlim=XLIM, ylim=YLIM, ff_input=ff,

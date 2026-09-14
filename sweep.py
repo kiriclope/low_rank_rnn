@@ -120,7 +120,8 @@ class RunConfig:
     batch_size:     int   = 64
     grad_clip_norm: float | None = None   # None = disabled
     n_batch:        int   = 516   # trials per generated dataset
-    stop_loss:      float = 0.005 # early-stop threshold (all stages)
+    integrate:      str   = "both"  # which variables carry a time constant: "both" (legacy two-filter cascade: rec_inputs at tau_rec THEN rates at tau — the NeuroFlame / Wang-2002 lineage), "rates" (single filter on the rates, recurrent current instantaneous: tau r' = -r + phi(g(I+Wr))), or "rec" (single filter on the current, rates instantaneous: tau_rec x' = -x + W phi(g(I+x)) — the standard current-based rate RNN of Mante 2013, Song/Yang/Wang, Yang 2019, Mastrogiuseppe & Ostojic 2018, Dubreuil 2022). NOTE alpha_rec = dt_base/tau independent of tau_rec_frac, so the synaptic filter cannot be removed by tuning tau_rec_frac — hence this flag.
+    stop_loss:      float = 0.1   # early-stop threshold, ALL stages (Leon 2026-09-14: "just use 0.1 as a stop loss at each stage"). Fires when train AND val are both below it (src/train.py:358). Measured effect at the current epoch counts: DPA and Dual are unaffected (Dual ends at val 0.14-0.18 at 300 epochs, still falling), GNG stops at ~epoch 35 of 100 (train 0.092 / val 0.094 there, vs 0.037 at 100). ⚠ `after_gng/dpa` is measured right after GNG, so it now reflects a THIRD of the GNG training and is NOT comparable with pre-2026-09-14 retention numbers (foundation 0.996-1.000, this thread 0.670-0.999) which all used 100 GNG epochs.
 
     # Per-stage epoch budgets
     epochs_dpa:    int = 100
@@ -575,6 +576,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             unit_bias_scale=config.unit_bias_scale,
             use_rec_scale=config.use_rec_scale,
             device=device,
+            integrate=config.integrate,
         )
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -1594,7 +1596,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 0.25, "nogo_hinge_thresh": -0.25, "nogo_target": 0.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # ★ SYNTHESIS ARM (Leon 2026-08-11): sign2 substrate + the FIXED rwd_window (nogo response
         # truly one-sided, free below — first time for the ε=0.25 base) + rwd_nogo_weight=5 (the
         # down-force that pushed th1w's nogo to −0.2…−0.3). From sign2's per-seed DPA ckpts (DPA
@@ -1607,7 +1609,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 0.25, "nogo_hinge_thresh": -0.25, "nogo_target": 0.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # ★ SOFTPLUS + AFTER-CUE NOGO (Leon 2026-08-11): every hinge becomes softplus (BCE-with-
         # logits form — gradient σ(x) never dies on the correct side, so DEPTH is finally rewarded
         # by the loss shape itself, §21's missing incentive) AND the gng response window moves back
@@ -1624,14 +1626,14 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         ("spw5",     {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
                       "gng_rwd_onesided": True, "rwd_nogo_weight": 5.0,
                       "hinge_shape": "softplus", "gng_rwd_after_cue": True,
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # THRESHOLD CONTROL (= sign2 with ALL hinge thresholds at 1): isolates the threshold
         # variable causally — same free DPA delay, same one-sided nogo response (≤0), same
         # response_in_cue, but amplitude-1 demands on holds/go (±1) and pairing (already 1).
@@ -1643,7 +1645,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # NOGO-WEIGHT dose on the th1 base (Leon 2026-08-10): both arms found nogo in-cue means
         # slightly ABOVE 0 at the honest boundary (sign2 ≈+0.05, th1 ≈+0.3, nogo(<=0) 0.37–0.52)
         # — the one-sided relu(κ₁)² gradient at +0.05 is ~0.1, no match for the go-side cue
@@ -1656,14 +1658,14 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         ("th1w10",   {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
                       "gng_rwd_onesided": True, "rwd_nogo_weight": 10.0,
                       "dpa_ckpt": "results/dual/sweep_r2th1/s{seed}_th1/dpa_s{seed}_th1.pth",
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0, "nogo_target": 0.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # ★ SOFTPLUS + LATE-DELAY DON'T-LICK (Leon 2026-08-12, the NeuroFlame train_dual.org
         # port): its Dual loss hinges the CHOICE axis DOWN during the DELAY on every no-lick
         # trial — class 0 = NoGo AND the cue-less DPA trials, which sit ON the sample wells
@@ -1686,7 +1688,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         ("spnl5",    {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
                       "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
                       "hinge_shape": "softplus", "gng_rwd_after_cue": True,
@@ -1695,7 +1697,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # ★ IN-CUE GO variant (Leon 2026-08-12): = spnl minus gng_rwd_after_cue. The go +1 hinge
         # moves back IN-cue (6.0-6.5, input-driven) — the only Dual-stage demand for autonomous
         # κ₁>0 disappears; the nolick window (6.5-8.0, unchanged, no overlap) then actively erodes
@@ -1711,7 +1713,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         ("spnlc5",   {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
                       "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
                       "hinge_shape": "softplus",
@@ -1720,7 +1722,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # ★ GNG-DECAY variant (Leon 2026-08-12): = spnlc1 + gng_decay_to_zero. The GNG stage pins
         # BOTH trial types back to 0 from the response end to TRIAL END (4.5-6.0 s) — the
         # trajectories showed the rule/lick overlaps softplus-inflated through the delay; full
@@ -1736,7 +1738,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # ★ RELU² control of spnld1 (Leon 2026-08-12): identical design, hinge_shape back to
         # relu2 — the causal test of the softplus depth-reward. relu² nolick has ZERO gradient at
         # κ₁≤0 (no depth reward, no basement risk): if the wells still seat below the line, the
@@ -1752,7 +1754,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # ★ NOLICK DOSE LADDER on the relu² substrate (Leon 2026-08-12): = renld1 with
         # nolick_weight 0 and 5. renldw0 is the CONTROL that isolates the delay term — note it
         # leaves the Dual nogo trials with NO κ₁ supervision at all (no hold: dual_gng_memory
@@ -1770,7 +1772,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         ("renldw5",  {"rank": 2, "target_rank": 2, "rwd_nogo_onesided": True, "rwd_keep_go_hinge": True,
                       "gng_rwd_onesided": True, "rwd_nogo_weight": 1.0,
                       "gng_decay_to_zero": True,
@@ -1779,7 +1781,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # ★ LINEAR-HINGE (L1) version of renld1 (Leon 2026-08-13): hinge_shape="relu" — every
         # hinge becomes relu(x) AND every 0-target pin becomes |p| (the norm follows the hinge).
         # Rationale: relu²'s force 2x vanishes near the target, so the states we care about
@@ -1797,7 +1799,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
         # ★ + HINGED NOGO RESPONSE (Leon 2026-08-13): = linld1 with nogo_target=0.0 instead of
         # None. With rwd_nogo_onesided the 0-target becomes a ONE-SIDED hinge h(κ₁) in the cue
         # response window (≤0, free below) — NOT a two-sided pin. Closes the hole measured on
@@ -1816,7 +1818,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                       "decision_readout_mean": 0.0, "response_in_cue": True, "decay_to_zero": False,
                       "go_hinge_thresh": 1.0, "nogo_hinge_thresh": -1.0,
                       "dpa_prelick_free": True,
-                      "epochs_dpa": 250, "stop_loss": 0.005, "noise": 1.0}),
+                      "epochs_dpa": 250, "stop_loss": 0.1, "noise": 1.0}),
     ]
     # (rwd_gng needs the last channel → would require attention OFF, which we DON'T want — attention
     # stays on in every arm. So no rwd_gng arm here.) Run these ≤8 at a time (4/GPU) via --run_filter.
@@ -1846,7 +1848,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                         dual_gng_memory=True, gng_response=False, nogo_target=None,
                         response_in_cue=False, decay_to_zero=False,
                         attention_gated=True, dpa_prelick_free=True,
-                        epochs_dpa=250, epochs_gng=100, epochs_dual=300, stop_loss=0.005)
+                        epochs_dpa=250, epochs_gng=100, epochs_dual=300, stop_loss=0.1)
     for seed in range(4):
         configs.append(RunConfig(run_id=f"s{seed}_nocue", seed=seed,
                                  **{**emergent, **shared_unfrozen, **nocue_common}))
@@ -2181,7 +2183,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  dpa_ckpt=f"results/dual/sweep_r2scl/s{seed}_scl16/dpa_s{seed}_scl16.pth",
                                  **{**emergent, **shared_unfrozen, **nocue_common,
                                     "dpa_hold_window": 0.5, "memory_lambda": 1.6,
-                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005}))
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1}))
 
     # ═══ sclc2 (Leon 2026-09-09): the subcritical-lif substrate WITH THE CUE ON. ═══════════════════
     # = sclf16 + cue_scale 0 → 2.0, one scalar, nothing else. Same scl16 DPA checkpoints (the DPA task
@@ -2211,7 +2213,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  dpa_ckpt=f"results/dual/sweep_r2scl/s{seed}_scl16/dpa_s{seed}_scl16.pth",
                                  **{**emergent, **shared_unfrozen, **nocue_common,
                                     "dpa_hold_window": 0.5, "memory_lambda": 1.6, "cue_scale": 2.0,
-                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005}))
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1}))
 
     # ═══ sclnl (Leon 2026-09-10): the no-lick rule on NOGO trials, on the subcritical substrate. ═══
     # = sclc2 + nolick_weight 1.0 + nolick_nogo_in_cue. NOGO ROWS ONLY (Leon: "a no lick constraint
@@ -2240,7 +2242,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  dpa_ckpt=f"results/dual/sweep_r2scl/s{seed}_scl16/dpa_s{seed}_scl16.pth",
                                  **{**emergent, **shared_unfrozen, **nocue_common,
                                     "dpa_hold_window": 0.5, "memory_lambda": 1.6, "cue_scale": 2.0,
-                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005,
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1,
                                     "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
                                     "nolick_full_delay": False, "nolick_late_delay": False,
                                     "nolick_thresh": 0.0}))
@@ -2275,7 +2277,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                     "dpa_hold_window": 0.5, "memory_lambda": 1.6,
                                     "dpa_prelick_free": False,
                                     "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
-                                    "stop_loss": 0.005}))
+                                    "stop_loss": 0.1}))
 
     # ═══ k1zcue (Leon 2026-09-10): the κ₁-pinned substrate WITH THE CUE ON. ═══════════════════════
     # = k1zero + cue_scale 2.0, one scalar. Reuses k1zero's OWN DPA checkpoints (the DPA task has no
@@ -2301,7 +2303,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  **{**emergent, **shared_unfrozen, **nocue_common,
                                     "dpa_hold_window": 0.5, "memory_lambda": 1.6,
                                     "dpa_prelick_free": False, "cue_scale": 2.0,
-                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005}))
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1}))
 
     # ═══ k1zcnl (Leon 2026-09-10): the FULL recipe — κ₁ pinned in DPA + cue + no-lick on nogo. ═════
     # = k1zcue + nolick_weight 1.0 + nolick_nogo_in_cue (nogo rows only, cue-on → test-on in Dual and
@@ -2336,7 +2338,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  **{**emergent, **shared_unfrozen, **nocue_common,
                                     "dpa_hold_window": 0.5, "memory_lambda": 1.6,
                                     "dpa_prelick_free": False, "cue_scale": 2.0,
-                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.005,
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1,
                                     "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
                                     "nolick_full_delay": False, "nolick_late_delay": False,
                                     "nolick_thresh": 0.0}))
@@ -2406,6 +2408,229 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                     "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1,
                                     "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
                                     "nolick_full_delay": False, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ pin_cue_nolick_full (Leon 2026-09-11): price the MEMORY WELLS' κ₁ at last. ════════════════
+    # = the cue-2 full recipe (`k1zcnl`) + nolick_full_delay=True. One field, weight left at 1.0.
+    # Same k1zero DPA checkpoints, so it is RNG-matched with k1zcnl and the delta is attributable.
+    # WHY. Leon, 2026-09-11: the networks are not pushing the memory wells into κ₁<0; instead they
+    # absorb the go/nogo perturbation by retuning the TEST-ODOUR effect (measured: the go/nogo offset
+    # at test onset spans up to 0.83 across conditions, the test-driven displacement moves the
+    # opposite way by nearly as much, and the landing point is held constant to within 0.02–0.28 —
+    # 66–87 % of the perturbation cancelled; Wi is frozen in Dual, so this is φ′ gating, the §25d/§27g
+    # gain-steal working for the network). And he is right that a delayed pairing readout would NOT
+    # fix it: the wells are a DELAY-period property while the pairing decision is a CONJUNCTION
+    # (A_C pair vs A_D unpair share a memory well), so the well's κ₁ cannot carry that decision and
+    # making it persist prices the decision states, not the wells.
+    # THE ACTUAL GAP: nothing in this line has ever priced the memory wells' κ₁ during the delay.
+    # `nolick_nogo_in_cue` covers nogo rows from cue onset; `nolick_full_delay` (DPA rows, whole
+    # delay) has been False in EVERY arm; and the DPA-stage κ₁ pin is two-sided at 0, which clamps
+    # the wells ON the line by construction. The wells are probed on pure-DPA trials, so with no
+    # hinge there they simply drift — measured at the expert ckpt of k1zcnl: +0.34 / −0.13 / +0.72 /
+    # −0.87, scattered, two of four ABOVE the line, while behaviour is ~1.000.
+    # A lick is wrong on a DPA trial throughout the delay, so this hinge is the task's own rule, not
+    # engineered geometry ([[feedback-safeguard-rules]]).
+    # PREDICTION (weight 1): the wells stop drifting and seat AT the line (≈0⁻), scatter collapsing —
+    # a relu² hinge at 0 has no deterministic force below 0 (§25e), and the noise-smoothed force
+    # 2[μΦ(μ/σ)+σφ(μ/σ)] at weight 1 balances the ≈0.25 opposing force at μ ≈ −0.045 (σ_eff ≈ 0.37).
+    # So weight 1 is the CONTROL for the ladder, not the answer: depth needs weight 3 (μ ≈ −0.30) or
+    # 5 (μ ≈ −0.41). If the wells do NOT even reach the line here, the opposing force is not constant
+    # and something actively holds them up — a more interesting result than the descent.
+    # Pre-registered: expert + naive well κ₁ (k1zcnl: +0.34/−0.13/+0.72/−0.87) AND ‖n₁‖ alongside, since
+    # κ₁ is task-anchored but not gauge-free · after_gng/dpa (k1zcnl 0.967/0.670/0.999/0.996) and
+    # /gng (0.984/0.966/0.988/0.994) — the 2×2 says the hinge is free on this substrate, so a cost
+    # here is attributable to the DPA-row term · the `nolick` residual · the compensation spread
+    # (does pricing the wells reduce the φ′-gated correction, or do they coexist).
+    # --run_filter pin_cue_nolick_full
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_pin_cue_nolick_full", seed=seed,
+                                 dpa_ckpt=f"results/dual/sweep_lif_sub_k1zero/s{seed}_k1zero/dpa_s{seed}_k1zero.pth",
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False, "cue_scale": 2.0,
+                                    "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ pin_cue_nolick_full w3 / w5 (Leon 2026-09-14): push the memory attractors BELOW the line. ══
+    # = pin_cue_nolick_full with nolick_weight 1 → 3 and → 5. One field. Same k1zero DPA checkpoints,
+    # so the whole ladder (w=1 already run) is RNG-matched and the delta is attributable.
+    # WHERE THIS COMES FROM. Leon's goal is a LANDSCAPE claim: the memory attractors in κ₁<0, not
+    # merely a state that avoids the lick region. Measured on the attractor the network ACTUALLY
+    # OCCUPIES (nearest to the delay-end state, d ≈ 0.00–0.03 in 6/8 — the state really sits on it):
+    #   nogo rows only            κ₁ mean +0.338   (+0.34 +0.43 −0.13 +0.44 +0.72 −0.04 +0.90 +0.04)
+    #   + DPA rows hinged, w=1    κ₁ mean +0.167   (+0.20 +0.24 −0.11 +0.04 +0.23 −0.11 +0.82 +0.03)
+    # so hinging the DPA rows HALVED it. ⚠ Select the occupied attractor, NOT the one with the
+    # largest κ₀ — that mis-selection produced a spurious "the state never reaches its well, 46 s
+    # approach" reading; s2 has two +κ₀ attractors (+0.73 and +0.23) split by a saddle at +0.54 and
+    # the network uses the LOWER one. The local Jacobian at the occupied attractor is fast
+    # (τ_slow 0.5–1.0 s vs a 5 s delay), so the state is on its attractor, not creeping toward it.
+    # FORCE BALANCE, recalibrated on THIS substrate. A relu² hinge at 0 has no deterministic force
+    # below the line (§25e), but training runs at noise 1.0 (σ_eff ≈ 0.37 in κ), so the descended
+    # quantity is the noise-smoothed hinge with gradient 2[μΦ(μ/σ)+σφ(μ/σ)] > 0 for every μ. Weight 1
+    # seating at μ = +0.17 ⇒ opposing force ≈ 0.50. Predictions: w=3 → κ₁ ≈ −0.15, w=5 → ≈ −0.27
+    # (w=10 would give ≈ −0.42 if more depth is wanted). w=3 is the first arm expected BELOW the line.
+    # COSTS to watch (§27h): on one κ₁ axis the wells and the go rule move together, so the go hold
+    # may fall below θ (gng_pos residual); and the 2×2 showed the hinge is free on this substrate at
+    # weight 1 for NOGO rows — a bill at weight 3–5 over the much wider DPA-row span is a different
+    # question. Retention is the thing to protect: k1zcnl/w1 give after_gng/dpa 0.967/0.670/0.999/0.996.
+    # Pre-registered: occupied-attractor κ₁ (the primary number, vs +0.167 at w=1) · fraction of the
+    # 8 memory states below 0 · after_gng/dpa and /gng · nolick residual · go hold vs θ · and whether
+    # the φ′-gated test-time compensation (66–87 % of the go/nogo offset cancelled) shrinks when the
+    # attractors are finally priced, or simply coexists.
+    # --run_filter pin_cue_nolick_w
+    for seed in range(4):
+        for tag, w in (("pin_cue_nolick_w3", 3.0), ("pin_cue_nolick_w5", 5.0)):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dpa_ckpt=f"results/dual/sweep_lif_sub_k1zero/s{seed}_k1zero/dpa_s{seed}_k1zero.pth",
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                        "dpa_prelick_free": False, "cue_scale": 2.0,
+                                        "epochs_gng": 100, "epochs_dual": 300, "stop_loss": 0.1,
+                                        "nolick_weight": w, "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ pin_cue_nolick_dt2 (Leon 2026-09-14): retrain the recipe at DOUBLE dt. ════════════════════
+    # = pin_cue_nolick_full (κ₁ pinned in DPA + cue 2 + no-lick on nogo AND DPA rows, weight 1) with
+    # dt_base 0.03 → 0.06, i.e. dt 0.0225 → 0.045 s and alpha_rec 0.10 → 0.20 (10 → 5 steps per τ_rec,
+    # the Song/Yang/Wang & Dubreuil standard). 4 seeds (exploratory — [[seeds-policy]]).
+    # ⚠ The DPA stage is RETRAINED, no dpa_ckpt. That is required, not optional: loading a fine-dt
+    # checkpoint into a coarse-dt run is exactly the out-of-distribution mismatch already measured
+    # (below), so the whole sequence has to be learned at the new step.
+    # WHY IT IS WORTH TESTING DESPITE THAT MEASUREMENT. Re-simulating EXISTING nets at coarse dt
+    # fails badly — pairing amplitude drops 30–40 % (1.23→0.73, 1.28→0.89, 1.30→0.75) and the delay
+    # κ₁ moves by up to 0.27, larger than the entire weight-ladder effect. But those nets were TRAINED
+    # at fine dt, so that is an OOD evaluation, not evidence that training at coarse dt is wrong. A
+    # network trained at dt=0.045 may simply learn the discrete dynamics it is given. This arm settles
+    # that, and the payoff is ~2x on every future run (244 steps per trial instead of 488).
+    # THE RISK to watch: the loss windows halve in resolution — the 0.25 s pairing window is 6 steps
+    # instead of 11, the 0.5 s memory hold 11 instead of 22 — and the cue push and test transient
+    # both live on ~τ. Stimulus onsets stay on grid (shift ≤ 0.02 s).
+    # Pre-registered vs pin_cue_nolick_full (fine dt): after_gng/dpa 0.967/0.670/0.999/0.996 and /gng
+    # 0.984/0.966/0.988/0.994 · occupied-attractor κ₁ (fine: +0.074, and the ladder showed it
+    # asymptotes at the line) · the DPA stage vs k1zero's, which trained its DPA from scratch the same
+    # way · κ₀ amplitude and the pairing κ₁ swing (the two the OOD test distorted most) · wall clock.
+    # A PASS means matching behaviour AND matching attractor positions; matching accuracy alone is not
+    # enough, since accuracy survived every distortion we have thrown at this task.
+    # --run_filter pin_cue_nolick_dt2
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_pin_cue_nolick_dt2", seed=seed,
+                                 dt_base=0.06,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False, "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "stop_loss": 0.1,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ rec-mode arms (Leon 2026-09-14): the LITERATURE-STANDARD single-filter RNN. ══════════════
+    # integrate="rec": rates follow φ instantaneously, only the current is filtered —
+    #   tau_rec · x' = -x + W·φ(g·(I + x))
+    # which is what Mante 2013, Song/Yang/Wang (PyCog), Yang 2019, Mastrogiuseppe & Ostojic 2018 and
+    # Dubreuil 2022 all mean by "a rate RNN". Our default "both" is a two-filter cascade (NeuroFlame /
+    # Wang-2002 lineage) and is the unusual choice. `integrate="both"` is verified BIT-IDENTICAL to
+    # the pre-flag model, so nothing already measured moves.
+    # ⚠ tau_rec is raised via `tau`, NOT via tau_rec_frac (Leon flagged the need; the algebra picks the
+    # knob). alpha_rec = dt_base/tau and dt = dt_base·tau_rec_frac, so raising the frac would raise dt
+    # — the change that proved catastrophic (§29, coarse-dt DPA born 20x more entangled). Raising tau
+    # scales tau_rec = tau·frac and lowers alpha_rec with dt UNCHANGED at 0.0225 s:
+    #     tau 0.3 -> tau_rec 0.225 s, alpha_rec 0.100   (no-change control)
+    #     tau 0.4 -> tau_rec 0.300 s, alpha_rec 0.075   (matches the dominant timescale of the cascade)
+    # Note the fixed points of x = W·φ(g(I+x)) do NOT depend on tau_rec — it sets how fast the state
+    # reaches them, not whether they exist. So this tests the APPROACH, and whether the memory can be
+    # held across a 5 s delay at 22 (or 17) time constants.
+    # ⚠ CONFOUND, recorded not hidden: sweep.py scales input noise by sqrt(1-exp(-2·alpha)) with alpha
+    # = dt/tau, so raising tau to 0.4 drops sigma_eff from 0.373 to 0.326 (-13 %) even though alpha is
+    # unused in "rec" mode (rates are instantaneous). `noise` is left at 1.0 so the config stays a
+    # minimal delta; read the tau-0.4 arm against the tau-0.3 arm, which shares "rec" but not sigma.
+    # Base = pin_cue_nolick_full; the DPA stage is RETRAINED (the dynamics change, so a "both"
+    # checkpoint would be the same out-of-distribution mismatch that dt2 hit). 4 seeds each.
+    # Pre-registered vs pin_cue_nolick_full ("both", tau 0.3): after_gng/dpa 0.967/0.670/0.999/0.996 ·
+    # after_gng/gng 0.984/0.966/0.988/0.994 · g·n₀ᵀm₁ at the DPA ckpt (fine "both": -0.51/-2.56/+0.28/
+    # -0.08; the dt2 failure showed this is the quantity that predicts retention) · occupied-attractor
+    # κ₁ (+0.074 at w=1) · whether the slow-groove / near-marginal κ₁ direction survives with one filter.
+    # --run_filter rec_t3 / rec_t4   (or "rec_t" for both)
+    for seed in range(4):
+        for tag, tau in (("rec_t30", 0.3), ("rec_t40", 0.4)):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     integrate="rec",
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": tau,
+                                        "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                        "dpa_prelick_free": False, "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                        "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ rates-mode arm (Leon 2026-09-14): RATE DYNAMICS ONLY. ════════════════════════════════════
+    # integrate="rates": the recurrent current is instantaneous, only the rates are filtered —
+    #   tau · r' = -r + φ(g·(I + W·r))
+    # the rate-based single-filter standard form. Completes the set: "both" (cascade, our legacy),
+    # "rec" (current-based standard, just run), "rates" (this).
+    # tau is left at 0.3, which in this mode IS the only time constant — already longer than the
+    # 0.225 s tau_rec that the "rec" ladder showed was too short. That makes this arm directly
+    # comparable to rec_t40 (same 0.3 s filter, different variable filtered) while keeping
+    # sigma_eff = 0.373 as in the "both" baseline (rec_t40 ran at 0.326 — the confound flagged there).
+    # In this mode tau_rec_frac only scales dt (unchanged at 0.0225 s); alpha_rec is irrelevant.
+    # WHAT THE "rec" RESULT SETS UP. Single-filter rec largely failed to learn the DPA task at all:
+    # after_DPA 1.000/0.511/0.496/0.744 at tau_rec 0.225 and 1.000/0.511/0.997/0.752 at 0.300, versus
+    # 0.994-0.999 for the cascade, while the GNG rule learned perfectly (0.996-1.000) in every seed.
+    # The fixed points are IDENTICAL across modes (steady state: rates* = φ(g(I + W·rates*)) either
+    # way), so the landscape available is the same and only the dynamics — hence what BPTT can find —
+    # differ. This arm asks whether that learnability failure is specific to filtering the CURRENT,
+    # or is a property of single-filter dynamics as such.
+    # Base = pin_cue_nolick_full, DPA RETRAINED (dynamics change). 4 seeds (exploratory).
+    # Pre-registered: after_DPA/dpa FIRST (that is where "rec" broke) · after_gng/dpa and /gng ·
+    # g·n₀ᵀm₁ at the DPA ckpt · occupied-attractor κ₁ · whether the near-marginal κ₁ direction, a
+    # second-order-system signature, survives with one filter.
+    # --run_filter rates_t30
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_rates_t30", seed=seed,
+                                 integrate="rates",
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False, "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ rates + DOUBLE dt (Leon 2026-09-14): does a single filter tolerate the coarser step? ══════
+    # = rates_t30 (integrate="rates", tau 0.3) with dt_base 0.03 → 0.06, i.e. dt 0.0225 → 0.045 s and
+    # alpha = dt/tau 0.075 → 0.150. ONE field; stop_loss 0.1 inherited from nocue_common in both, so
+    # rates_t30 is the exact fine-dt control (both retrain DPA, both single-filter, same tau).
+    # WHY IT MIGHT WORK HERE WHEN IT FAILED FOR THE CASCADE. Doubling dt on "both" was catastrophic —
+    # the DPA solution came out 20x more entangled (n₀ᵀm₁ -12.0 / -7.4 vs -0.5 / +0.3) and retention
+    # collapsed to 0.50-0.74 (§29). A two-filter cascade is a second-order system, whose discrete
+    # eigenvalues move much faster with alpha than a first-order one; alpha = 0.15 on a SINGLE filter
+    # is squarely inside the literature norm (Song/Yang/Wang and Dubreuil run 0.2). If the fragility
+    # was the cascade, this should hold up — and it is where the ~2x speedup actually lives, since
+    # rates mode by itself costs the same 488 steps as "both".
+    # ⚠ sigma_eff rises 0.373 → 0.509 with alpha (noise is scaled as sqrt(1-exp(-2·alpha)), which
+    # keeps the CONTINUOUS-time noise process dt-invariant — correct, but the per-step kappa noise is
+    # larger, so read the comparison as "same continuous-time task, coarser integration".
+    # ⚠ And note the fine-dt rates control had its GNG stage stop at ~70/100 epochs under stop_loss
+    # 0.1, so rule scores across this pair reflect whatever each run's early-stop did — report the
+    # epochs alongside the accuracy.
+    # Pre-registered vs rates_t30 (after_DPA 0.799/1.000/1.000/1.000 · after_gng/dpa 0.474/0.900/
+    # 1.000/0.896 · after_gng/gng 0.811-0.963): after_DPA FIRST (the memory is what coarse dt broke
+    # for the cascade) · g·n₀ᵀm₁ at the DPA ckpt — the quantity that exposed the dt2 failure · wall
+    # clock (244 steps vs 488). A pass = matching DPA learnability AND coupling, not just accuracy.
+    # --run_filter rates_dt2
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_rates_dt2", seed=seed,
+                                 integrate="rates", dt_base=0.06,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False, "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
                                     "nolick_thresh": 0.0}))
 
     return configs

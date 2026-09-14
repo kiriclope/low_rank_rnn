@@ -1098,3 +1098,43 @@ Retention identical, rule marginally worse: the recipe is robust to cue duration
 **⚠ Confound.** `stop_loss` 0.1 truncated the GNG stage of BOTH cue-1 arms to ~21–41 of 100 epochs,
 so their apparent retention advantage over the cue-2 recipe (100 epochs at 0.005) is not attributable
 to dose. The two cue-1 arms ARE matched to each other. Control not run: cue 1 at `stop_loss` 0.005.
+
+## 2026-09-11/14 — pricing the wells, and the integration scheme (9 sweeps, 40 runs)
+
+Detail: `ring_lowerplane_log.md` §29h/§29i (wells) and §30 (integration). All build on the
+κ₁-pinned subcritical-lif recipe.
+
+| sweep (= gallery title) | arm | delta | result |
+|---|---|---|---|
+| `sweep_lif_sub_k1zero_cue_nolick_full` | `pin_cue_nolick_full` | + `nolick_full_delay` (DPA rows), w=1 | occupied-attractor κ₁ +0.338 → **+0.074**; retention unchanged |
+| `sweep_lif_sub_k1zero_cue_nolick_w35` | `…_w3` / `…_w5` | nolick_weight 3 / 5 | κ₁ **+0.032 / +0.001** — asymptotes AT the line; behaviour free |
+| `sweep_lif_sub_k1zero_cue_nolick_dt2` | `pin_cue_nolick_dt2` | dt_base 0.03 → 0.06, DPA retrained | **retention collapses** 0.504/0.735/0.645/0.708; `n₀ᵀm₁` −12.0/+0.2/−7.4/−2.0 |
+| `sweep_lif_sub_rec` | `rec_t30` / `rec_t40` | `integrate="rec"`, tau 0.3 / 0.4 | **DPA fails to learn** in 2–3 of 4 seeds; rule perfect |
+| `sweep_lif_sub_rates` | `rates_t30` | `integrate="rates"` | DPA learns 3/4; rule degrades 0.81–0.96 |
+| `sweep_lif_sub_rates_dt2` | `rates_dt2` | + dt_base 0.06 | DPA learns 4/4 but retention 0.818 → 0.676; coupling blows up the same way |
+
+**New machinery.** `nolick_full_delay` now used (DPA rows, whole delay). `integrate`
+("both"|"rates"|"rec") — "both" verified BIT-IDENTICAL to the pre-flag model; threaded into
+`bifurcation_probe.load_run` and `plot_sweep` (`RunMeta.integrate`) so analysis matches the run.
+`cue_duration`. `stop_loss` → **0.1 at every stage** (Leon) in `RunConfig`, `nocue_common` and every
+current-line arm — historical arms (0.02/0.05) left as run. ⚠ At 0.1 the GNG stage stops at ~ep 35
+of 100 for the foundation config, so `after_gng/dpa` from here on is NOT comparable with earlier
+retention numbers.
+
+**Headlines.** (1) The no-lick hinge on the DPA rows moves the memory attractors monotonically and
+tightens them but **asymptotes AT the line** (+0.074 → +0.032 → +0.001, μ ∝ 1/w → 0) at no
+behavioural cost — weight buys tightening, not depth; my force-balance prediction of −0.15/−0.27 is
+falsified and the opposing force is structural, unidentified. (2) **dt is not negotiable in any
+integration mode**: doubling it produces a DPA solution born 5–20× more entangled and retention
+collapses — the strongest evidence yet for the coupling→retention mechanism, since it is an
+independent manipulation that moved the coupling both ways with retention following, including one
+reversal. (3) The two-filter cascade is load-bearing: the literature-standard single-filter forms
+either fail to learn the memory ("rec") or cost the rule ("rates").
+
+**Measured infrastructure** (idle GPUs, N=1024, 488 steps): runs are **launch-bound** — s/step flat
+at 0.51–0.55 from batch 64 to 1024 (~6 % of the card used); concurrency scaling 1.00/2.10/3.33/**5.52**/5.57×
+at 1/2/4/8/12 processes, so **8 concurrent is the sweet spot** and 8 seeds cost ~20 % over 4.
+Policy (Leon): 4 seeds exploring, 8 for definitive.
+
+**Not run:** "rec" at ~1/5 noise (the readout-noise hypothesis for why it fails); the one-sided
+`dpa_nolick_weight` variant; more seeds for the `n₀ᵀm₁` distribution; `w5lif` full sequence.
