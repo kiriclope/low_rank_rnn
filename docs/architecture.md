@@ -230,6 +230,15 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
   absorbs it (wells intact, dpa 0.99–1.00) and κ₀ then rises into the well across the delay instead
   of being clamped from the sample on; relu is unaffected (λ⁺ stays > 1). Set 0.5 in the `w5*`,
   `sc*`, `scl*` arms.
+- `dpa_hold_anchor` (`"test"` | `"sample"` | `"none"`, default `"test"`, 2026-09-15) — WHERE the
+  `dpa_hold_window` sits. `"test"`: the last N s ending at test onset (above). `"sample"`: the first
+  N s starting at sample offset — the memory is demanded right after the sample and then left free
+  (`mem_early`; measured: κ₀ does NOT decay, it settles at |κ₀| ≈ 1.2–1.3, larger than with the
+  terminal window, and the expert nets grow a deep sub-line pair in 4/4 seeds — §31c). `"none"`: no
+  κ₀ target at all, the pairing decision at test is the whole memory supervision (`mem_free`;
+  measured: the memory is then NOT an attractor — a tilted transient GNG erases; retention at chance).
+  Only the two-sided DPA κ₁ pin and this hold are ever applied to the delay; the Dual stage sets no
+  κ₀ target.
 - `nolick_full_delay` — extend the Dual don't-lick to the WHOLE delay on the DPA trials only
   (rows identified by no finite decision target in the go/nogo span; guarded: needs
   `dual_gng_memory=True` and `target_rank=2`). go/nogo trials keep the late window.

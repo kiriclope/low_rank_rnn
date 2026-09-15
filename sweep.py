@@ -211,6 +211,7 @@ class RunConfig:
     nolick_nogo_in_cue: bool = False # NOGO rows: the don't-lick span starts at CUE ONSET (cue-on → test-on in Dual, cue-on → end in GNG) instead of cue-off — the cue IS the lick window and a nogo trial must not be in κ₁>0 during it. The rule Leon stated 2026-09-07: forbid κ₁>0 wherever a lick would be wrong (nogo from the cue on, DPA trials the whole delay, go after the cue) and let the network relocate the wells; the task's pushes (go stimulus, cue on both types) are never traded against. Rows are classified from their own hold target in the gng span, so it needs dual_gng_memory=True (guarded) and nolick_weight>0; combine with nolick_late_delay (go tail) + nolick_full_delay (DPA trials).
     cue_duration:    float = 0.5   # DURATION of the go/nogo response cue in SECONDS (default 0.5 = the canonical make_timings value). Lengthens the cue window in the GNG and Dual timings only (cue ONSET is unchanged, so every loss window keyed to cue-on — nolick_nogo_in_cue, the pre-cue hold — is untouched; the offset moves, which matters only for windows keyed to cue-off: the gng response window and nolick_late_delay, both OFF in this line). Dual cue on 6.0 s, so 1.0 s ends at 7.0 s, still 1 s clear of test onset at 8.0 s; GNG cue on 4.0 s ends at 5.0 s inside the 6 s trial. The cue PUSH on kappa1 is an input property (§27d), so duration and amplitude are two separate doses of it.
     dpa_hold_window: float = 0.0   # DPA-STAGE A/B memory supervision restricted to the last `dpa_hold_window` SECONDS ending at test onset (0.0 = legacy: sample ONSET → test onset, the whole delay + the sample itself). Mirrors the GNG identity hold, which is a 0.25 s window ending at cue onset (generate_gng_trials, hold_full_delay=False) — a short hold just before the readout instead of a clamp across the delay. The legacy span demands |κ₀| ≥ θ already DURING the sample, so it prices the RISE TIME as well as the amplitude and self-amplification (λ⁺>1) is the cheapest way to meet it; a terminal window prices only "be there when read", which is what makes a subcritical λ⁺<1 solution affordable (§28c: λ⁺<1 is the necessary condition for a relu well). The Dual stage has NO κ₀ target at all (mem_* ≡ 0 there), so this flag touches the DPA stage only.
+    dpa_hold_anchor: str = "test"  # where dpa_hold_window sits: "test" = last hold_window s ending at test onset (default); "sample" = first hold_window s after sample offset, then FREE to decay across the delay; "none" = no A/B memory target at all (pairing at test is the only memory supervision)
     dpa_nolick_weight: float = 0.0  # apply the same one-sided don't-lick over the DPA-STAGE delay (sample-off → test-onset). NOT the legacy two-sided pin (dpa_prelick_free=False), which clamps wells ON the line: one-sided leaves κ₁<0 free, so wells may seat at/below 0 but are never pulled back up. Intent: enter GNG with no up-structure to inherit.
     nolick_thresh:   float = 0.0   # DISPLACE the no-lick hinge to κ₁ ≤ −thresh (all stages that use nolick). relu/relu² have zero gradient once satisfied, so a hinge at 0 seats wells AT the line no matter how wide the window — this is the only lever that buys DEPTH (§25e).
     gng_decouple_decision: bool = False # GNG stage: after each step project n[:,dec] ⟂ m[:,0], keeping the decision readout blind to the sample-memory direction. Targets the leakage that INVERTS the DPA memory during GNG (§26/§27): |κ₁(A)−κ₁(B)| ≥ 0.85 → flip in 6/6, ≤ 0.27 → intact in 5/5. m[:,0] is frozen in GNG so n[:,dec] is the only party that can build the overlap.
@@ -812,7 +813,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         dpa_freeze_cols = [1] if config.rank >= 3 else None
         _stage_header("DPA", config.epochs_dpa, dpa_freeze_input, dpa_freeze_cols or [])
         t0 = time.time()
-        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, prelick_free=config.dpa_prelick_free, hold_window=config.dpa_hold_window)
+        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, prelick_free=config.dpa_prelick_free, hold_window=config.dpa_hold_window, hold_anchor=config.dpa_hold_anchor)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -2628,6 +2629,245 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                  **{**emergent, **shared_unfrozen, **nocue_common,
                                     "dpa_hold_window": 0.5, "memory_lambda": 1.6,
                                     "dpa_prelick_free": False, "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ noattn (Leon 2026-09-14): remove the tonic attention input entirely. ══════════════════════
+    # = pin_cue_nolick_full with attention_input=False. input_size 7 → 6 (the tonic channel is
+    # appended last when attention is on), so the DPA stage is RETRAINED — no dpa_ckpt.
+    # WHY. §29i found the memory attractors asymptote AT the lick line at any hinge weight, with an
+    # unidentified force opposing descent. Localised at the OCCUPIED attractor (field evaluated there
+    # with and without the input, so no re-finding and no selection): removing attention makes F₁
+    # = −0.107 / −0.178 (w=1, s0/s2) and −0.083 / −0.175 (w=5) — i.e. the tonic input was supplying
+    # upward force of that size — while s1, the ONLY seed whose attractor sits below the line, is the
+    # only one where attention pushes DOWN (+0.036 / +0.055). The direct term ⟨n₁,φ(g·b_attn)⟩/N is
+    # +0.135/+0.095/+0.075/−0.023: positive in 3 of 4 seeds. §19 introduced this input as "the lever
+    # that pushes the memory wells' κ₁ down" — its SIGN is not controlled, and mostly it props them up.
+    # ⚠ WHAT THIS CAN AND CANNOT SHOW. With `decision_readout_mean`=0 the readout has no DC, and with
+    # a non-negative saturating φ resting κ₁ = ½⟨n₁⟩ = 0 — so removing the input removes the PROP but
+    # supplies no downward push. Expect the attractors near 0, NOT below it. This tests the mechanism
+    # (does the above-the-line offset disappear?), not the goal. The designed lever for the goal is
+    # `decision_readout_mean` < 0 (§20), untried in this line.
+    # Pre-registered vs pin_cue_nolick_full: occupied-attractor κ₁ (+0.074 mean, and +0.20/+0.23 on
+    # the two seeds attention was propping) · how many of 8 below the line · after_gng/dpa
+    # 0.967/0.670/0.999/0.996 and /gng 0.984/0.966/0.988/0.994 — attention is a working-memory
+    # maintenance signal (`attention_gated`: on sample-off → test-on), so removing it may cost the
+    # memory · g·n₀ᵀm₁ at the DPA ckpt.
+    # --run_filter noattn
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_noattn", seed=seed,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "attention_input": False,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False, "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ noattn_ric (Leon 2026-09-14): make the pairing decision TEST-DRIVEN. ══════════════════════
+    # = the noattn arm + response_in_cue=True. One flag. Moves the pairing window from 9.00–9.25 s
+    # (AFTER test-off, so the decision must be HELD past the input) to 8.51–9.00 s (the last 0.5 s of
+    # the test, while the odour is still ON — purely input-driven). The DPA stage is retrained: its
+    # generator uses response_in_cue too.
+    # WHY. Leon's reading of the flows: the structure is a U-shaped CONTINUOUS attractor, not two
+    # isolated fixed points — confirmed, the slow set (|F|<0.02) is an extended manifold in 8/8 seeds
+    # of both arms (κ₀ extent ≈2.1–2.4, κ₁ extent 1.8–3.8, area fraction ≈0.01, i.e. a thin curve).
+    # That also explains why the FP finder kept returning "NONE"/d>0.2: a continuous attractor has no
+    # isolated roots. The U's extended κ₁ dimension comes from the decision mode being FAR
+    # supercritical — g·λ₁ = 8.8–10.5 against a critical value of 1 — i.e. an autonomous decision
+    # bistability the task never asked for.
+    # Two ways to remove it: FORCE it down (`kappa1_clamp` / `kappa1_reg_weight`, both in the tree,
+    # never run in this line, and explicitly designed for this: "hold g·λ₁ near critical so there is
+    # NO autonomous decision bistability → the 4-well/270°-U ring collapses to the two memory wells"),
+    # or REMOVE THE REASON for it — this arm. A decision scored while its driving input is present
+    # need not be held by recurrent structure at all, so there is no pressure to build κ₁ attractors.
+    # It is a task-timing choice (when the report is required), not a constraint on the representation
+    # — the same character as `dpa_hold_window`, and safe under [[feedback-safeguard-rules]].
+    # Pre-registered vs noattn: **g·λ₁** (9.0/10.1/9.5/9.7 — the primary number; does it fall toward
+    # critical) · the slow-set κ₁ extent and whether the manifold breaks into isolated wells · κ₁ of
+    # the two memory branches at |κ₀|≈1 (noattn: −0.35/−0.34/−0.28 all-below in s1 only) · after_gng/dpa
+    # 0.996/0.999/0.972/0.998 and /gng 0.899–0.954 · memory amplitude |κ₀| (1.06 — must not collapse).
+    # ⚠ Reading the geometry needs the manifold-aware measure, NOT flow_verdict's isolated-FP test,
+    # which scores 0/4 on this substrate for a structural reason rather than a scientific one.
+    # --run_filter noattn_ric
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_noattn_ric", seed=seed,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "attention_input": False, "response_in_cue": True,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": False, "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ noise ladder on the best substrate (Leon 2026-09-14). ════════════════════════════════════
+    # = noattn_ric (no tonic attention + test-driven pairing — the arm with two ISOLATED memory wells,
+    # retention 0.985–0.992, rule 0.989–0.996) with noise 1.0 → 1.5 and → 2.0. One field.
+    # WHY NOISE SHOULD BE THE LEVER THAT DEPTH NEEDS. A relu² hinge at 0 has no deterministic force
+    # below the line, but training runs under noise, so what is descended is the SMOOTHED hinge, whose
+    # gradient is 2[μΦ(μ/σ) + σφ(μ/σ)]. AT the line that is 2σφ(0) ≈ 0.8σ — it SCALES WITH σ. Every
+    # previous lever (hinge weight 1→3→5) multiplied a force that vanishes as μ→0; this one raises the
+    # force at μ=0 itself. σ_eff = noise·√(1−e^(−2α)) = 0.373·noise, so:
+    #   noise 1.0 → σ_eff 0.37 (current; wells at −0.09…+0.32, i.e. ±0.2σ, state above the line 36–42 %)
+    #   noise 1.5 → σ_eff 0.56
+    #   noise 2.0 → σ_eff 0.75
+    # Second, independent reason: noise penalises SHALLOW attractors. A well of depth ≪σ cannot hold a
+    # memory, so higher training noise should also deepen the wells — the §29i finding was that hinge
+    # weight moved the TRAJECTORY but not the FIXED POINT; noise acts on both.
+    # ⚠ CONFOUND, unavoidable: eval uses the run's own noise, so accuracies at different noise are NOT
+    # comparable across arms (a harder task scores lower for reasons unrelated to geometry). Compare
+    # each arm's GEOMETRY (well κ₁ in units of ITS OWN σ_eff) and read accuracy only for "did it still
+    # learn". The right depth measure is κ₁/σ_eff, not κ₁.
+    # ⚠ And the task may simply become unlearnable — at σ_eff 0.75 the memory targets are ±1 with noise
+    # of order the signal. after_DPA is the canary.
+    # Pre-registered vs noattn_ric: well κ₁ AND κ₁/σ_eff (now −0.19σ…+0.23σ) · fraction of the delay
+    # above the line (now 0.36–0.42; the behavioural number that matters) · #attractors, i.e. whether
+    # the two-well structure survives · memory amplitude |κ₀| (1.1–1.2) · after_DPA as the canary.
+    # --run_filter noise15 / noise20  (or "noise" for both)
+    for seed in range(4):
+        for tag, nz in (("noise15", 1.5), ("noise20", 2.0)):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "noise": nz,
+                                        "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                        "dpa_prelick_free": False, "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                        "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ tau x noise grid (Leon 2026-09-15): can the state be TRANSPORTED into the deep wells? ═════
+    # = noattn_ric (no tonic attention + test-driven pairing) over tau ∈ {0.2, 0.15} x noise ∈ {1.0,
+    # 1.5}, with dt COMPENSATED: dt_base = 0.1·tau holds BOTH alpha = dt/tau = 0.075 and
+    # alpha_rec = dt_base/tau = 0.1 fixed (and therefore sigma_eff = 0.373·noise unchanged), so this
+    # isolates "the network is faster relative to the task" from "the integration is coarser".
+    # That distinction is not cosmetic: decreasing tau at FIXED dt_base is numerically the same change
+    # as doubling dt, which blew g·n₀ᵀm₁ up to −12 and collapsed retention to 0.62 (§30b). Cost of
+    # compensating: 733 steps/trial at tau 0.2 and 977 at tau 0.15, vs 488.
+    # ★ WHY THIS IS THE RIGHT EXPERIMENT NOW. The seed-by-seed survey (no averaging) overturned the
+    # "wells stop at the line" reading: DEEP sub-line memory attractors already EXIST in most seeds —
+    # pin+cue+nolick s0 has a complete pair at (+0.87,−1.53) and (−0.65,−1.25), i.e. −3.4σ, and w5 s0
+    # (+0.86,−1.45), w5 s2 (+0.82,−1.14), noattn s0 (+0.84,−1.30) all have one. They are simply NOT
+    # OCCUPIED: the delay trajectory lands 1.2–1.7 away, in a shallow pair near κ₁≈+0.2. So the
+    # problem is TRANSPORT/BASINS, not the landscape. Faster dynamics (lower tau = more time constants
+    # inside the same 5 s delay, so the state settles further) plus noise (basin exploration) is the
+    # natural lever on exactly that.
+    # ⚠ Lower tau also weakens memory PERSISTENCE — the delay is fixed in seconds, so a faster network
+    # must hold the memory for more time constants. after_DPA is the canary.
+    # Pre-registered, and note the FIRST one is new — it is the question this grid exists to answer:
+    #   · distance from the delay-end landing to the DEEPEST sub-line attractor (currently 1.2–1.7)
+    #   · is the OCCUPIED attractor below the line (currently 1/4 seeds at noattn_ric, s3 only)
+    #   · depth of the occupied well in units of sigma_eff (currently −0.14σ … +0.86σ)
+    #   · after_DPA (canary) · after_gng/dpa (0.985–0.992 at tau 0.3, noise 1.0) · #attractors
+    #   · g·n₀ᵀm₁ at the DPA ckpt (≤0.28 on this substrate; the quantity that has predicted retention
+    #     across five independent manipulations)
+    # --run_filter tau20 / tau15  (or "tau1"/"tau2" — careful, use the full tags)
+    for seed in range(4):
+        for tau, dtb in ((0.20, 0.020), (0.15, 0.015)):
+            for nz in (1.0, 1.5):
+                tag = f"tau{int(tau*100):02d}_n{int(nz*10):02d}"
+                configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                         dt_base=dtb,
+                                         **{**emergent, **shared_unfrozen, **nocue_common,
+                                            "tau": tau, "noise": nz,
+                                            "attention_input": False, "response_in_cue": True,
+                                            "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                            "dpa_prelick_free": False, "cue_scale": 2.0,
+                                            "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                            "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                            "nolick_full_delay": True, "nolick_late_delay": False,
+                                            "nolick_thresh": 0.0}))
+
+    # ═══ onesided (Leon 2026-09-15, PREPARED, not yet launched): one-sided DPA hinge = the transport fix? ═══
+    # = tau20_n10 (no attention + test-driven pairing + tau 0.2 dt-compensated, noise 1.0) with the DPA
+    # stage's κ₁ supervision changed from the TWO-SIDED pin (dpa_prelick_free=False, `_pin(p)` on a
+    # 0-target: κ₁ held AT 0 through the delay) to the ONE-SIDED hinge (dpa_prelick_free=True +
+    # dpa_nolick_weight=1.0: κ₁ ≤ 0 over sample-off → test-on, free below).
+    # WHY (noise-averaged probe of tau20_n15, 2026-09-15): s0 has a COMPLETE pair of memory attractors
+    # at (+0.65,−1.01) = −1.8σ and (−0.85,−0.88) = −1.6σ — the target geometry — and the state lands on
+    # a shallow pair AT the line instead. Same in s1 (one deep well at −1.9σ, unused). The two-sided
+    # pin forbids occupying κ₁ ≈ −1 during the stage that BUILDS the memory, so DPA training commits
+    # the trajectory to the on-line pair; the deep pair forms alongside but can never be entered. The
+    # Dual-stage hinge is already one-sided and would permit descent, but the basin is assigned by
+    # then. A one-sided DPA hinge keeps the pressure that cut the coupling (κ₁ > 0 forbidden) while
+    # removing the ceiling on descent. It is also the reviewer-safe form: κ₁ ≤ 0 during the delay IS
+    # the task's contingency (no lick before test), whereas κ₁ ≡ 0 is not.
+    # RISK: the two-sided pin is what cut n₀ᵀm₁ (§29e); a one-sided hinge leaves κ₁ < 0 free, so the
+    # coupling may partially return. Read n₀ᵀm₁ at the DPA ckpt alongside the geometry.
+    # Pre-registered vs tau20_n10 (protocol: seed-by-seed, noise-aware, ALL attractors):
+    #   · does the OCCUPIED attractor descend (tau20_n10: −0.42σ…+0.54σ) — the transport question
+    #   · deepest sub-line attractor and its landing distance (tau20_n10 s1: −3.8σ at d = 1.44)
+    #   · n₀ᵀm₁ at the DPA ckpt · after_DPA · after_gng/dpa (1.000/0.999/0.773/0.996) · |κ₀|
+    # --run_filter onesided
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_onesided", seed=seed,
+                                 dt_base=0.020,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "tau": 0.2, "noise": 1.0,
+                                    "attention_input": False, "response_in_cue": True,
+                                    "dpa_hold_window": 0.5, "memory_lambda": 1.6,
+                                    "dpa_prelick_free": True, "dpa_nolick_weight": 1.0,
+                                    "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ mem_early / mem_free (Leon 2026-09-15, PREPARED): is the END-OF-DELAY |κ₀| ≥ θ target what holds ═══
+    # the wells on the line? Leon: "we impose the dpa memory to be at κ₀ = 1 at the end of the delay
+    # instead of allowing it to decay across the delay; and the only way to have κ₀ at 1 is ... with
+    # κ₁ at 0." Evidence: in every net that has one, the deep sub-line well has SMALLER |κ₀| than the
+    # on-line well of the same net (s0_tau20_n10 0.54 vs 0.72; s0_tau20_n15 0.65/0.85 vs 0.75/0.95;
+    # s2_tau15_n15 0.75 vs 0.67 is the exception) and the DPA-ckpt wells sit at r = 0.64–0.99 < θ = 1,
+    # i.e. the hinge is UNSATURATED and pulls |κ₀| outward throughout training. Descending costs |κ₀|.
+    # The Dual stage has NO κ₀ target (verified: all NaN outside the pre-sample baseline), so this
+    # can only act in DPA — alongside the pin. onesided removes the pin and keeps this; these two
+    # keep the pin and remove this. Single-field deltas from tau20_n10 (dpa_hold_anchor only):
+    #   mem_early: κ₀ = ±1 for the 0.5 s right AFTER sample offset, then free to decay
+    #   mem_free : no κ₀ target anywhere; the pairing decision at test is the only memory supervision
+    # Pre-registered readouts (protocol): DPA-ckpt wells (κ₀, κ₁, r) — do they leave the line without
+    # the end-of-delay demand; after_DPA (does DPA still learn, esp. mem_free); |κ₀| at delay end
+    # (how much decay the pairing tolerates); after_gng/dpa; n₀ᵀm₁. --run_filter mem_early / mem_free
+    for tag, anchor in (("mem_early", "sample"), ("mem_free", "none")):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": anchor,
+                                        "dpa_prelick_free": False,   # keep the two-sided pin: single-field delta
+                                        "memory_lambda": 1.6,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                        "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ onesided_early (PREPARED 2026-09-15 17:40, not launched): the two DPA changes together ═══
+    # onesided alone (pin → one-sided κ₁ ≤ 0): DPA-ckpt wells stay on the line (7/8 within ±0.2, one
+    # at −0.6σ); expert unchanged. mem_early alone (κ₀ hold moved to the 0.5 s after the sample, pin
+    # kept): DPA-ckpt wells still on the line (|κ₁| ≤ 0.03, |κ₀| 1.02–1.10) BUT at the expert ckpt a
+    # deep sub-line well now exists in 4/4 seeds (−2.2…−3.1σ) and the A-state descends to κ₁ ≈ −0.4
+    # (−1σ) in 3/4 — partial transport; retention 0.995/0.896/0.964/0.989. Each lever alone leaves
+    # the DPA wells on the line; this arm removes BOTH end-of-delay demands (κ₁ = 0 pin and |κ₀| ≥ 1)
+    # from the stage that builds the memory. Same pre-registered readout (DPA ckpt first).
+    # --run_filter onesided_early
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_onesided_early", seed=seed,
+                                 dt_base=0.020,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "tau": 0.2, "noise": 1.0,
+                                    "attention_input": False, "response_in_cue": True,
+                                    "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                    "dpa_prelick_free": True, "dpa_nolick_weight": 1.0,
+                                    "memory_lambda": 1.6,
+                                    "cue_scale": 2.0,
                                     "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
                                     "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
                                     "nolick_full_delay": True, "nolick_late_delay": False,

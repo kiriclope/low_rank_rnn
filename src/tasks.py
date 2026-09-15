@@ -82,6 +82,7 @@ def generate_dpa_trials(
     response_in_cue: bool = False,
     prelick_free: bool = False,
     hold_window: float = 0.0,
+    hold_anchor: str = "test",
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -120,10 +121,26 @@ def generate_dpa_trials(
     # `quarter` window in generate_gng_trials), i.e. a short hold just before the readout instead of
     # a clamp over the whole delay. 0.0 = the legacy span (sample ONSET → test onset), which demands
     # |κ₀| ≥ θ already DURING the sample and so prices the rise time as well as the amplitude.
-    _m0 = int(n_on[1]) - int(round(hold_window / timing.dt)) if hold_window else int(n_on[0])
-    _m0 = max(_m0, int(n_on[0]))
-    targets[idx_A, _m0:n_on[1], 0] = 1.0
-    targets[idx_B, _m0:n_on[1], 0] = -1.0    
+    # hold_anchor (Leon 2026-09-15): WHERE the hold_window sits. "test" = the last hold_window s
+    # ENDING at test onset (above). "sample" = the first hold_window s STARTING at sample offset —
+    # the memory is asked to be there right after the sample and is then FREE to decay across the
+    # delay; the pairing decision at test is the only thing that keeps it alive. "none" = no A/B
+    # memory target at all (test-driven pairing is the whole supervision). Both remove the demand
+    # |κ₀| ≥ θ at delay END, which (hypothesis) can only be met on the κ₁ = 0 axis and so holds the
+    # wells on the lick line.
+    if hold_anchor == "none":
+        pass
+    else:
+        _w = int(round(hold_window / timing.dt))
+        if hold_anchor == "sample" and hold_window:
+            _m0, _m1 = int(n_off[0]), int(n_off[0]) + _w
+        elif hold_window:
+            _m0, _m1 = int(n_on[1]) - _w, int(n_on[1])
+        else:
+            _m0, _m1 = int(n_on[0]), int(n_on[1])
+        _m0 = max(_m0, int(n_on[0])); _m1 = min(_m1, int(n_on[1]))
+        targets[idx_A, _m0:_m1, 0] = 1.0
+        targets[idx_B, _m0:_m1, 0] = -1.0
 
     # pairing
     if windowed_targets:

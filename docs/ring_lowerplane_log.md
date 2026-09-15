@@ -2261,3 +2261,97 @@ following. Much harder to explain away.
   every mode, and the remaining speed levers are the measured ones — concurrency (8 processes =
   5.52× aggregate) and batch size (launch-bound: s/step flat from batch 64 to 1024, so more trials
   per step is free compute but fewer optimiser steps per epoch).
+
+
+## §31 — Attention off, the τ×noise grid, and the two end-of-delay demands (2026-09-14/15)
+
+All arms below are 4-seed exploratory runs on the subcritical-lif recipe, stop_loss 0.1 at every
+stage, Adam, `integrate="both"`, dt = dt_base·0.75 with α = dt/τ = 0.075 held fixed when τ changes.
+Gallery titles = sweep names minus `sweep_`. Protocol readout = `scratchpad/readout_arm.py`
+(per seed, DPA ckpt and expert, ALL memory attractors of the input-noise-averaged field, landings
+simulated under the training noise; see `analysis.md` protocol rules 1–11).
+
+### §31a — Removing the tonic attention input gives the best retention yet; test-driven pairing collapses the U
+
+`sweep_lif_sub_noattn` (`attention_input=False`, τ 0.3, noise 1.0): after_gng/dpa **0.996 / 0.999 /
+0.972 / 0.998** — the attention channel was what fed rank-1 back into the memory (§29e: n₀ᵀm₁ is
+built through the tonic input). But dual_gng 0.59–0.67: the rule cannot be learned on top. With
+`response_in_cue=True` (`sweep_lif_sub_noattn_ric`, the pairing decision scored in the last 0.5 s of
+the TEST): retention 0.992 / 0.991 / 0.985 / 0.991 AND dual_gng 0.91–0.97. Geometry: without ric the
+memory is a U-shaped continuous attractor (flow_verdict/find_all_fixed_points cannot see it — they
+report "no fixed point"; the traj_grid shows the state sliding along a ridge); ric collapses it into
+two isolated wells, both ON the line. **`noattn_ric` at τ 0.3 is the reference substrate.**
+
+### §31b — Noise and τ: noise carves deep wells, τ buys nothing, and the state never gets there
+
+Noise ladder on the reference (`sweep_lif_sub_noise`, τ 0.3): noise 1.5 → retention 0.78 / 0.47 /
+0.55 / 0.54; noise 2.0 → 0.55 / 0.53 / 0.49 / 0.47. Then the τ×noise grid (`sweep_lif_sub_tau_noise`,
+16 runs, τ ∈ {0.2, 0.15} × noise ∈ {1.0, 1.5}, dt compensated, staged 8 + 8):
+
+| cell | after_gng/dpa (s0–s3) | memory attractors (input-noise field, expert) |
+|---|---|---|
+| τ 0.2 · n 1.0 (`tau20_n10`) | **1.000 / 0.999 / 0.773 / 0.996** | on-line pair at −0.2σ, occupied; deep well (+0.54, −1.15) = −3.1σ in s0, EMPTY |
+| τ 0.2 · n 1.5 (`tau20_n15`) | 0.966 / 0.995 / 0.594 / 0.986 | s0 a full sub-line PAIR (−1.8σ / −1.6σ), s1 one (−1.9σ): all EMPTY; states on the on-line pair |
+| τ 0.15 · n 1.0 (`tau15_n10`) | 0.992 / 0.924 / 0.393 / 0.502 | on-line pair; s3 no memory attractor |
+| τ 0.15 · n 1.5 (`tau15_n15`) | 0.929 / 0.492 / 0.690 / 0.331 | s0 pair (−1.9σ / −1.5σ), s2 one (−1.6σ), s1 one at −0.9σ (occupied by B, d 0.23) |
+
+σ_eff = noise·√(1−e^(−2α)) = 0.37 (noise 1.0) / 0.56 (1.5). Readings: (1) shorter τ is worse on
+retention (1–2/4 vs 3/4) and does not change where the occupied wells sit; (2) noise 1.5 is what
+creates deep sub-line wells, at both τ, exactly as the noise-smoothed hinge predicts (its residual
+force at the line ∝ σ) — but the wells form NEXT TO the occupied one, not under it; (3) in
+`tau15_n15` s0/s2 the A side has NO on-line well and drifts down the whole delay (κ₁ +0.11 → −0.33
+over 5 s) toward a well at −0.8…−0.9 it never reaches — a slow-manifold/speed limit rather than a
+basin boundary. **The landscape has the target geometry in most seeds; the state is not
+transported into it.** `tau20_n10` is the working substrate (best retention, τ 0.2 = 1.5× faster
+than 0.3).
+
+### §31c — Which DPA-stage demand holds the wells on the line? Two hypotheses, three arms
+
+At the DPA checkpoint every arm to date has its wells at |κ₁| ≤ 0.05 and the states exactly on them.
+Two things in the DPA loss can do that (verified by dumping the targets per window):
+- the **two-sided κ₁ pin** (`dpa_prelick_free=False` → `_pin(p)` on every `tgt == 0` step of the
+  delay), which forbids κ₁ < 0 during the stage that builds the memory;
+- the **end-of-delay |κ₀| ≥ θ = 1 hinge** (`dpa_hold_window` 0.5, ending at test onset). Leon's
+  argument (2026-09-15): "the only way to have κ₀ at 1 is … with κ₁ at 0" — descending costs |κ₀|
+  (in every net with a deep well, the deep well has smaller |κ₀| than the on-line one of the same
+  net: 0.54 vs 0.72, 0.65/0.85 vs 0.75/0.95), and the DPA-ckpt wells sit at r = 0.64–0.99 < θ, so
+  the hinge is unsaturated and pulls |κ₀| outward all through DPA training.
+The Dual stage has NO κ₀ target at all (every window after the pre-sample baseline is NaN) and its
+only delay term is the one-sided no-lick, satisfied at 0 — so nothing in Dual can move a well that
+DPA built on the line. The test is therefore at the DPA checkpoint.
+
+| arm (single-field delta from `tau20_n10`) | DPA-ckpt wells | expert | retention |
+|---|---|---|---|
+| `onesided`: pin → one-sided κ₁ ≤ 0 (`dpa_prelick_free=True`, `dpa_nolick_weight=1`) | 7/8 within ±0.2 of the line, one at −0.6σ (s0-B) | on-line wells −0.2σ; one empty deep well (s0, −1.7σ) | 0.999 / 0.999 / 0.796 / 1.000 |
+| `mem_early`: κ₀ hold moved to the 0.5 s AFTER sample offset (`dpa_hold_anchor="sample"`), pin kept | on the line, \|κ₁\| ≤ 0.03, and \|κ₀\| UP to 1.02–1.10 | **deep pair in 4/4** (−2.2…−3.1σ); s3-A OCCUPIES (+0.93, −0.23) = −0.6σ, s2-B OCCUPIES (−0.72, −0.31) = −0.8σ; s0-A between line and deep well (κ₁ −0.30 ± 0.30); s1 has no line well, state hovers ±0.35 | 0.995 / 0.896 / 0.964 / 0.989 |
+| `mem_free`: no κ₀ target (`dpa_hold_anchor="none"`) | NO memory attractors (s0: one well at (+0.53, +0.11), B on a non-attractor; s1–s3 none) | none | 0.52 / 0.49 / 0.54 / 0.51 (chance) |
+| `onesided_early`: both (`dpa_prelick_free=True`, `dpa_nolick_weight=1`, `dpa_hold_anchor="sample"`) | RUNNING (launched 17:52) | | |
+
+Readings. (1) Each single lever leaves the other demand in place, so neither DPA checkpoint could
+move — by construction; `onesided` changed nothing in the geometry and did NOT bring the coupling
+back (s2 is the fragile seed in both arms, n₀ᵀm₁ 2.6 vs 12.5). (2) `mem_early` is the first arm in
+which trials OCCUPY sub-line wells (2 of 8 state-sides) and the deep pair exists in every seed; the
+κ₁ spread on the line widens (sd 0.30–0.41 vs 0.19) — the line is a shelf rather than a well for
+these states. The memory does NOT decay across the delay (noise-free κ₀ flat at 1.2–1.3 at the DPA
+ckpt; I first claimed a decay from trial means and retracted it — that was the post-sample
+relaxation under noise, identical in the baseline). (3) `mem_free` shows the κ₀ target is what makes
+the memory an ATTRACTOR: without it even the seed that learns DPA perfectly encodes the sample as a
+tilted transient (κ₀ ±0.5, identity partly in κ₁, n₁ᵀm₀ 0.9–3.8) that GNG erases in every seed. A
+calibrated-stop_loss rerun would not change that (s0 was fully trained). (4) Noise and no-lick
+weight are Dual-stage forces against a DPA-built geometry: noise carves wells beside the occupied
+one and kills retention past σ ≈ 0.5; weight ≥ 3 sharpens the occupied well on the line and costs
+the rule (dual_gng 0.69–0.80). If they are to be used, it is on top of the DPA recipe that
+`onesided_early` selects (weight 2 first — it targets the occupied well).
+
+### §31d — ★ The noise-model error, and protocol rule 11 corrected
+
+These nets are trained with INPUT noise (`RunConfig.noise`, σ_eff per channel per step) and ZERO
+recurrent noise (`model_noise = 0`). From the grid onward my "under trained noise" landings set
+`model.noise = σ_eff` — isotropic recurrent noise the nets never saw — on top of the input noise.
+The WELL tables were fine (`find_wells(noise_sigma=σ)` is the input-noise-averaged field:
+`low_rank_field_np` averages each neuron's drive over variance g²Aᵢ²σ²‖wᵢ‖², the same object as
+`plot_sweep --field_input_noise`); the LANDINGS were pushed ≈0.1–0.15 too far below the line
+(mem_early s0-A "−0.43" is −0.30). And the plot_sweep trajectories were never noise-free — they draw
+the batch with `meta.noise_sigma()` and recurrent 0, i.e. exactly the trained system. Rule 11 now
+says: wells with `find_wells(noise_sigma=σ_eff)`; landings with `model.noise = 0` and input noise
+σ_eff; never `model.noise = σ_eff`. All §31 numbers above are protocol-correct.

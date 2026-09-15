@@ -290,3 +290,20 @@ target during the memory delay (`src/tasks.py`, both `generate_gng_trials` and `
 during the cue window go → `go_target`, **nogo → −1** (cancel the cue's upward ramp), then the reward
 window rests at `nogo_target`. Default `False` (byte-identical to before). Result: did *not* subcriticalize
 the decision (`docs/ring_lowerplane_log.md` §14d) — kept for the record / future reactive-task work.
+
+
+## Auto-plot and queued launches (2026-09-15)
+
+A sweep is not finished until its figures are in the gallery, and never more than 8 runs share the
+box. Two detached helpers enforce that without a foreground wait:
+
+```bash
+# plot + publish the moment a per-seed-screen sweep finishes (or its screens die)
+screen -dmS plot_<tag> bash -c "bash scratchpad/plot_when_done.sh sweep_<name> <n_runs> <tag> > $CLAUDE_JOB_DIR/tmp/plot_<tag>.log 2>&1"
+# launch arm B when arm A's runs all report RUN COMPLETE (template: scratchpad/queue_onesided.sh)
+screen -dmS queue_<tag> bash -c "bash scratchpad/queue_<tag>.sh > $CLAUDE_JOB_DIR/tmp/queue_<tag>.log 2>&1"
+```
+
+`plot_when_done.sh` runs `plot_sweep.py --auto_xlim --device cuda:1` then `publish_gallery.sh`
+(title from `results/dual/<sweep>/TITLE`). Use `python -u` for long analysis scripts run in a screen
+— block-buffered stdout otherwise shows nothing until exit.

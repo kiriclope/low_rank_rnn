@@ -341,3 +341,52 @@ numbers: the plotted cue-driven activity lasted 0.5 s).
 perturbed) and a per-task widened copy otherwise. `RunMeta.cue_duration` is read from `config.json`.
 Accuracies are unaffected by this class of bug — `run_single` passes its own timings to the evals —
 so a mismatch shows up ONLY in figures, which is what makes it easy to miss.
+
+## ★ Analysis protocol — how to read a sweep (2026-09-15)
+
+Written after a whole session concluded "the memory wells will not go below the line" while a
+complete sub-line pair at (+0.87,−1.53) / (−0.65,−1.25) — −3.4σ, the target geometry — sat in an arm
+that had been written off. The conclusion came from reporting arm MEANS and only the attractor the
+network OCCUPIES. Each rule below names the error that motivated it.
+
+1. **Seed-by-seed, never arm means.** This is a search: does ANY configuration produce the target,
+   and what distinguishes it from its siblings? A mean over 4 seeds hides a success.
+2. **Enumerate ALL attractors, not just the occupied one.** "Where the wells are" (landscape) and
+   "where the state sits" (occupancy) are different claims. Deep sub-line wells routinely coexist
+   with a shallow pair near the line, with the trajectory landing in the shallow one — a TRANSPORT
+   problem, not a landscape one, and the levers differ completely.
+3. **Well selection = nearest to the occupied state, never largest |κ₀|; always print the distance**
+   and flag d > 0.2. (Max-κ₀ selection once manufactured a spurious "46 s approach to a well the
+   network never visits".)
+4. **Depth in units of σ_eff = noise·√(1−e^(−2α)) ≈ 0.373·noise**, never raw κ₁ — a well at −0.09 is
+   −0.24σ and the state is above the line ~40 % of the time. Report that fraction too.
+5. **Check whether the attractor is CONTINUOUS before any well claim.** Map the slow set (|F| < 0.03)
+   and test for an extended manifold (thin curve, area fraction ≈0.01) vs isolated points.
+   `flow_verdict.py` / `find_all_fixed_points` search for ISOLATED roots and return "mem wells: NONE"
+   on a continuous attractor — a structural failure, not a result. It scored 0/4 on an arm whose
+   trajectories hold |κ₀| = 1.05 for five seconds.
+6. **Never normalise κ by ‖n‖.** m₁n₁ᵀ is gauge-invariant but the LOSS anchors the gauge at κ₁ = ±1;
+   dividing by ‖n₁‖ (which doubles across Dual) removes real effects.
+7. **Beware circular readouts.** κ₁(test-off) − κ₁(test-on) IS the trained pairing decision. Test
+   gating/compensation by CONDITION-SPLITTING at a fixed stage, not by comparing stages.
+8. **Fixed-weight counterfactuals ≠ retrained outcomes.** Removing an input and re-evaluating the
+   field is a local statement; the network re-solves when retrained.
+9. **Match confounds before attributing:** DPA-ckpt-loading status (training the DPA stage consumes
+   RNG), `stop_loss` (0.1 truncates GNG to ~ep 35/100 and retention is read right after GNG), and
+   noise (eval uses the run's own σ).
+10. **Any field that changes the task or dynamics must reach `plot_sweep.py` and
+    `bifurcation_probe.load_run`** — verify the INPUT in the figure matches training, not just the
+    training log.
+11. **Probe under the TRAINED noise — and know which noise that is.** These nets are trained with
+    **input** noise (`RunConfig.noise`; σ_eff = noise·√(1−e^(−2α)) on every input channel, every
+    step) and **zero recurrent noise** (`model_noise = 0` → `model.noise = 0` in training and eval).
+    plot_sweep trajectories already use exactly this (`_make_dual_batch(noise=meta.noise_sigma())`,
+    recurrent 0) — they are NOT noise-free. The two halves of a probe:
+    · **Wells / field:** `find_wells(noise_sigma=σ_eff)` — this IS the input-noise-averaged field
+      (`low_rank_field_np` per-neuron Gaussian average with variance g²Aᵢ²σ²‖wᵢ‖², the same object as
+      `plot_sweep --field_input_noise`). Correct. A σ=0 probe is the deterministic field, a different
+      system (at σ 0.56 it put A and B on the same landing point in 3/4 seeds of a 0.97–0.99 cell).
+    · **Landings / time courses:** simulate with `model.noise = 0` and trials drawn with
+      `noise=σ_eff`. **Never set `model.noise = σ_eff`** — that injects isotropic *recurrent* noise the
+      net never saw (mistake 2026-09-15 on the τ×noise grid, onesided, mem_early: it turned an A-side
+      drift to −0.2 into "−0.43"; the well tables from find_wells were unaffected).

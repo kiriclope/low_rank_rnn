@@ -1138,3 +1138,42 @@ Policy (Leon): 4 seeds exploring, 8 for definitive.
 
 **Not run:** "rec" at ~1/5 noise (the readout-noise hypothesis for why it fails); the one-sided
 `dpa_nolick_weight` variant; more seeds for the `n₀ᵀm₁` distribution; `w5lif` full sequence.
+
+## 2026-09-14/15 — attention off, the τ×noise grid, and the two DPA end-of-delay demands (8 sweeps, 44 runs)
+
+Detail: `ring_lowerplane_log.md` §31. 4 seeds each, stop_loss 0.1 all stages, Adam, `integrate="both"`,
+α = dt/τ = 0.075 held when τ changes. Gallery title = sweep name minus `sweep_`.
+
+| sweep | arm | delta | after_gng/dpa (s0–s3) | geometry (protocol readout) |
+|---|---|---|---|---|
+| `sweep_lif_sub_noattn` | `noattn` | `attention_input=False` (τ 0.3, noise 1.0) | 0.996 / 0.999 / 0.972 / 0.998 | U-shaped continuous attractor; dual_gng only 0.59–0.67 |
+| `sweep_lif_sub_noattn_ric` | `noattn_ric` | + `response_in_cue=True` | 0.992 / 0.991 / 0.985 / 0.991 | two isolated wells ON the line; dual_gng 0.91–0.97. Reference substrate |
+| `sweep_lif_sub_noise` | `noise15` / `noise20` | noise 1.5 / 2.0 | 0.78/0.47/0.55/0.54 · 0.55/0.53/0.49/0.47 | retention collapses past σ_eff ≈ 0.5 |
+| `sweep_lif_sub_tau_noise` | `tau20_n10` | τ 0.2, dt_base 0.020 | **1.000 / 0.999 / 0.773 / 0.996** | on-line pair −0.2σ occupied; empty deep well in s0. **Working substrate** |
+| | `tau20_n15` | τ 0.2, noise 1.5 | 0.966 / 0.995 / 0.594 / 0.986 | deep pair in s0 (−1.8σ/−1.6σ), EMPTY |
+| | `tau15_n10` | τ 0.15, dt_base 0.015 | 0.992 / 0.924 / 0.393 / 0.502 | on-line; s3 no memory attractor |
+| | `tau15_n15` | τ 0.15, noise 1.5 | 0.929 / 0.492 / 0.690 / 0.331 | deep wells in s0/s2, A-side drifts down the whole delay and never arrives |
+| `sweep_lif_sub_onesided` | `onesided` | pin → one-sided κ₁ ≤ 0 in DPA (`dpa_prelick_free=True`, `dpa_nolick_weight=1.0`) | 0.999 / 0.999 / 0.796 / 1.000 | DPA-ckpt wells still on the line (one at −0.6σ); no coupling blow-up |
+| `sweep_lif_sub_mem_early` | `mem_early` | `dpa_hold_anchor="sample"` (κ₀ hold in the 0.5 s after sample-off, pin kept) | 0.995 / 0.896 / 0.964 / 0.989 | DPA-ckpt on line, \|κ₀\| 1.02–1.10; expert: deep pair 4/4, **2/8 state-sides occupy sub-line wells** (−0.6σ, −0.8σ) |
+| `sweep_lif_sub_mem_free` | `mem_free` | `dpa_hold_anchor="none"` (no κ₀ target) | 0.52 / 0.49 / 0.54 / 0.51 | NO memory attractors even when DPA is learned — the κ₀ target makes the memory an attractor |
+| `sweep_lif_sub_onesided_early` | `onesided_early` | onesided + mem_early | RUNNING (launched 2026-09-15 17:52) | pre-registered: DPA-ckpt wells first |
+
+**New machinery.** `dpa_hold_anchor` ("test" | "sample" | "none") in `RunConfig` →
+`generate_dpa_trials(hold_anchor=…)`; default path regression-checked bit-identical.
+`scratchpad/readout_arm.py` — the protocol readout (per seed, DPA ckpt + expert, all attractors of
+the input-noise field, landings under input noise, n₀ᵀm₁/n₁ᵀm₀, deepest sub-line well + landing
+distance); `scratchpad/transport_grid.py` (grid version). `scratchpad/plot_when_done.sh <sweep> <n>
+<tag>` — detached auto-plot + gallery publish when a sweep's per-seed screens finish (always-plot
+rule); `scratchpad/queue_*.sh` — launch an arm behind a running one (never > 8 concurrent).
+
+**Headlines.** (1) The tonic attention input was the entanglement channel; without it retention is
+0.97–1.00, and test-driven pairing is needed to get two isolated wells instead of a U. (2) Noise
+carves the deep sub-line wells (σ-proportional hinge force) but beside the occupied one; τ buys
+nothing; the transport into the deep wells is the problem, not the landscape. (3) Neither DPA
+end-of-delay demand alone (κ₁ pin, |κ₀| ≥ 1 at delay end) moves the DPA wells; `mem_early` is the
+first arm with occupied sub-line wells; `mem_free` shows the κ₀ target is what makes the memory an
+attractor at all. (4) ★ Method error caught and fixed (analysis rule 11): trained noise is INPUT
+noise; landings must not add recurrent noise; the well tables were unaffected, landings were
+≈0.1–0.15 too deep.
+
+**Not run:** `onesided_early` + nolick_weight 2; the grid at 8 seeds; noise 1.5 on the best DPA recipe.
