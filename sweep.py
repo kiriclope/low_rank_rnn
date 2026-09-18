@@ -95,6 +95,8 @@ class RunConfig:
     decision_lambda:    float = 0.5              # κ1 (rank-2) / κ2 (rank-3) action-mode init eigenvalue
     target_mn_corr:     float = 0.8
     target_out_mn_corr: float = 0.8
+    readout_scale: float | None = None   # σ(n₁) of the decision mode (init.py default 1.0). ISOTROPY: the memory mode has σ(m₀)=σ(n₀)=√(λ₀/ρ) while the decision mode has σ(n₁)=readout_scale and σ(m₁)=λ₁/(ρ·readout_scale) — set readout_scale=√(λ₁/ρ) to make the two modes exchangeable (§33: the ring needs equal factors, not just equal overlaps)
+    mirror_tying: bool = False          # A↔B reflection symmetry: build the init as two mirrored halves (memory mode sign-flipped, decision mode copied, A↔B / C↔D inputs swapped) and RE-IMPOSE it after every optimiser step. The two memory attractors are then forced to share a κ₁ — they move down together or not at all (§35)
     sample_scale:       float = 1.0
     test_scale:         float = 1.0
     mix_strength:       float = 0.0
@@ -626,6 +628,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             decision_lambda=config.decision_lambda,
             target_mn_corr=config.target_mn_corr,
             target_out_mn_corr=config.target_out_mn_corr,
+            **({} if config.readout_scale is None else {'readout_scale': config.readout_scale}),
             sample_scale=config.sample_scale,
             test_scale=config.test_scale,
             decision_readout_mean=config.decision_readout_mean,
@@ -634,6 +637,22 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             rwd_input_scale=config.rwd_input_scale,
             seed=config.seed, verbose=True,
         )
+    if config.mirror_tying:
+        # Two-population A↔B reflection init (§35): take the first half as prototypes and mirror it —
+        # memory mode sign-flipped, decision mode copied, A↔B / C↔D input columns swapped. Exact at
+        # finite N: n₀ᵀm₀/N and n₁ᵀm₁/N are preserved, n₀ᵀm₁ = n₁ᵀm₀ = 0, and the two memory
+        # attractors are locked to a common κ₁. The trainer re-imposes it after every step.
+        with torch.no_grad():
+            _N = model.m.shape[0]; _h = _N // 2
+            model.m[_h:2*_h, 0] = -model.m[:_h, 0]; model.n[_h:2*_h, 0] = -model.n[:_h, 0]
+            model.m[_h:2*_h, 1] =  model.m[:_h, 1]; model.n[_h:2*_h, 1] =  model.n[:_h, 1]
+            _wi = model.wi.weight
+            _wi[_h:2*_h, 0] = _wi[:_h, 1]; _wi[_h:2*_h, 1] = _wi[:_h, 0]
+            _wi[_h:2*_h, 2] = _wi[:_h, 3]; _wi[_h:2*_h, 3] = _wi[:_h, 2]
+            _wi[_h:2*_h, 4:] = _wi[:_h, 4:]
+        print(f"[{rid}]  mirror tying ON: A↔B reflection (κ₀ → −κ₀, κ₁ fixed); "
+              f"n0·m1={float(model.n[:,0]@model.m[:,1])/_N:+.3f} n1·m0={float(model.n[:,1]@model.m[:,0])/_N:+.3f}", flush=True)
+
     # "random" → keep default LowRankModel init
     _log_params("init")
 
@@ -803,7 +822,13 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     # ------------------------------------------------------------------
     # Stage 1 — DPA
     # ------------------------------------------------------------------
-    if config.dpa_ckpt is not None:
+    if config.dpa_ckpt is None and config.gng_ckpt is not None:
+        # gng_ckpt carries the FULL post-GNG state, so DPA has nothing to contribute: skip it entirely
+        # (it was silently retrained for 250 epochs and then overwritten — 2026-09-18).
+        print(f"[{rid}]  DPA: SKIPPED (gng_ckpt set; the GNG stage loads the full state)", flush=True)
+        losses["dpa"] = {}
+        train_l, val_l, t0 = [], [], time.time()
+    elif config.dpa_ckpt is not None:
         print(f"[{rid}]  DPA: loading checkpoint from {config.dpa_ckpt}", flush=True)
         sd = torch.load(config.dpa_ckpt, map_location=device)
         missing, unexpected = model.load_state_dict(sd, strict=False)
@@ -851,7 +876,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                   kappa_gain_target=config.kappa_gain_target,
                                   rate_reg=config.rate_reg_weight,
                                   max_val_loss=config.max_val_loss,
-                                  verbose=True)
+                                  verbose=True, mirror_tying=config.mirror_tying)
         train_l, val_l, _ = trainer.fit()
         losses["dpa"] = {"train": train_l, "val": val_l}
         torch.save(model.state_dict(), os.path.join(models_dir, f"dpa_{rid}.pth"))
@@ -945,7 +970,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                   rate_reg=config.rate_reg_weight,
                                   max_val_loss=config.max_val_loss,
                                   orthogonalize_cols=_orth,
-                                  verbose=True)
+                                  verbose=True, mirror_tying=config.mirror_tying)
         train_l, val_l, _ = trainer.fit()
         model.rwd = config.rwd         # restore reward for eval and subsequent stages
         losses["gng"] = {"train": train_l, "val": val_l}
@@ -1058,7 +1083,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                               kappa_gain_target=config.kappa_gain_target,
                                   rate_reg=config.rate_reg_weight,
                                   max_val_loss=config.max_val_loss,
-                              verbose=True)
+                              verbose=True, mirror_tying=config.mirror_tying)
     if config.kappa1_clamp is not None:
         print(f"[{rid}]  κ₁ hard clamp: g·λ₁ ≤ {config.kappa1_clamp} after each Dual step", flush=True)
 
@@ -3080,6 +3105,197 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                         "nolick_nogo_in_cue": True,
                                         "nolick_full_delay": True, "nolick_late_delay": False,
                                         "nolick_thresh": 0.0}))
+
+    # ═══ lamscan (Leon 2026-09-18): DPA-stage ONLY, ρ = 1, isotropic construction, λ scanned ═══
+    # Question: what solution does DPA training find as a function of the init overlap, when the init
+    # is ISOTROPIC (both modes with the same λ and ρ, σ(m)=σ(n)=√λ on both — readout_scale=√λ₁)?
+    # §33: the ring exists iff the rank-2 covariance is isotropic; grid 1's ρ = 1 row rings for λ ≳ 3.4
+    # (noise-averaged λ_c; 2.5 deterministic). λ = 1.6 is subcritical (single stable origin at init),
+    # 3.5 just above, 7 the value trained nets reach, 12 well above.
+    # Prediction from §14a/§15c (self-gains are task-locked; init criticality washes out): the trained
+    # J converges to ≈7 whatever the init λ. The open question is whether the ISOTROPY survives DPA
+    # training — i.e. whether the solution is a ring (τ_slow ≫ delay, no discrete picks above the
+    # finite-N floor) or the four cardinal wells that the standard init produces.
+    # Loss = design2's DPA (pairing + A/B hold after the sample, NO κ₁ term); GNG/Dual not run.
+    # Control = the standard-init DPA ckpts (`design2_w1`, ρ 0.8, λ₀ 1.6 / λ₁ 0.5, σ(n₁)=1).
+    # Readouts: J, σ(m)/σ(n) per mode, angular anisotropy of the field, τ_slow/τ_fast, wells, dpa acc.
+    # --run_filter lamscan
+    for tag, lam in (("1p6", 1.6), ("3p5", 3.5), ("7", 7.0), ("12", 12.0)):
+        for seed in range(2):
+            configs.append(RunConfig(run_id=f"s{seed}_lamscan_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": lam, "decision_lambda": lam,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": lam ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 0, "epochs_dual": 0,
+                                        "nolick_weight": 1.0,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ gngscan (Leon 2026-09-18): the GNG stage on the lamscan nets, from their DPA checkpoints ═══
+    # What does learning the rule do to the DPA solution (a ring of radius ≈1 with 2–3 slow wells on it,
+    # J ≈ 7 whatever the init λ — §34)? Same GNG loss as design2: NO go/nogo delay hold
+    # (gng_weight 0), go must lick in the last 0.5 s of the cue (gng_response → rwd_go), nogo held down
+    # by the one-sided relu² no-lick from cue onset. Dual not run.
+    # Readouts: J and the factor scales at the naive ckpt vs the DPA ckpt, angular anisotropy of the
+    # autonomous field, attractors with τ_slow (rule 12), after_gng/dpa retention, gng accuracy.
+    # --run_filter gngscan
+    for tag, lam in (("1p6", 1.6), ("3p5", 3.5), ("7", 7.0), ("12", 12.0)):
+        for seed in range(2):
+            configs.append(RunConfig(run_id=f"s{seed}_gngscan_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     dpa_ckpt=f"results/dual/sweep_lif_dpa_lambda_scan_rho1/s{seed}_lamscan_{tag}/dpa_s{seed}_lamscan_{tag}.pth",
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": lam, "decision_lambda": lam,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": lam ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 0,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "nolick_weight": 1.0,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ gngmem (Leon 2026-09-18): same as gngscan but the GNG delay MEMORY is learnt too ═══
+    # Single-field delta from gngscan: gng_weight 0 → 1.0, so the go/nogo identity is HELD on κ₁ across
+    # the delay (one-sided hinges go ≥ +1 / nogo ≤ −1 over stim-off → cue-on, gng_hold_full_delay=True)
+    # in addition to the cue-time lick (gng_response). gngscan (no hold) gave gng 0.94–1.00 and kept the
+    # memory ring at λ ≤ 7; the open question is what an explicit κ₁ memory does to that ring — §32c
+    # found the absolute hold decouples go/nogo from the well (go +0.4 / nogo −1 regardless of where the
+    # memory sits), so the prediction is a stronger κ₁ structure and more damage to the κ₀ ring.
+    # From the same lamscan DPA checkpoints; Dual not run. --run_filter gngmem
+    for tag, lam in (("1p6", 1.6), ("3p5", 3.5), ("7", 7.0), ("12", 12.0)):
+        for seed in range(2):
+            configs.append(RunConfig(run_id=f"s{seed}_gngmem_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     dpa_ckpt=f"results/dual/sweep_lif_dpa_lambda_scan_rho1/s{seed}_lamscan_{tag}/dpa_s{seed}_lamscan_{tag}.pth",
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": lam, "decision_lambda": lam,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": lam ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 0,
+                                        "gng_weight": 1.0, "gng_response": True,
+                                        "nolick_weight": 1.0,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ dualscan (Leon 2026-09-18): the DUAL stage on the NO-MEMORY-HOLD gng nets ═══
+    # From the gngscan naive checkpoints (GNG learnt without a κ₁ delay hold: gng_weight 0 +
+    # gng_response). Dual = the design2 recipe: two-sided ±1 pairing (pair_pin, the bowl once the Dual
+    # inputs are frozen), softplus no-lick in Dual only (dual_nolick_shape, the tail), no go/nogo hold,
+    # split by sample. epochs_dual 150 (the softplus floor puts stop_loss out of reach).
+    # Question: starting from a DPA ring of radius ≈1 with 2–3 slow wells (λ ≤ 7), does the Dual stage
+    # push the memory wells below the lick line as in design1/design2, and does the answer depend on
+    # the init λ? --run_filter dualscan
+    for tag, lam in (("1p6", 1.6), ("3p5", 3.5), ("7", 7.0), ("12", 12.0)):
+        for seed in range(2):
+            configs.append(RunConfig(run_id=f"s{seed}_dualscan_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     gng_ckpt=f"results/dual/sweep_lif_gng_lambda_scan_rho1/s{seed}_gngscan_{tag}/naive_s{seed}_gngscan_{tag}.pth",
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": lam, "decision_lambda": lam,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": lam ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "dual_nolick_shape": "softplus",
+                                        "nolick_weight": 1.0, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ mirror (Leon 2026-09-18, §35): the A↔B reflection symmetry, built in and HELD ═══
+    # Two-population init (memory mode mirrored between halves, decision mode copied, A↔B / C↔D input
+    # columns swapped) re-imposed after every optimiser step (mirror_tying). The network is then
+    # equivariant under A↔B ⇔ κ₀ → −κ₀ with κ₁ fixed, so the two memory attractors are locked to a
+    # COMMON κ₁: they move down together or not at all — the one-up-one-down solution that the
+    # inversion symmetry of a zero-mean Gaussian ensemble forces (§35, odd violation 0.000 at init) is
+    # structurally excluded. ⟨n₁⟩ = −0.1 seats the pair below the lick line already at init: measured
+    # at λ = 14, ρ = 0.8 the untrained field has a mirror pair at (±0.59, −1.14) = −3.1σ, τ_slow 2.9 s.
+    # DPA stage only, 4 seeds. Loss = the lamscan DPA (pairing + A/B hold after the sample, NO κ₁ term)
+    # so nothing in the objective mentions κ₁ during the delay: any surviving depth is structural.
+    #   mirror_lam14 : mirror_tying ON  (the symmetry is held through training)
+    #   decmean_lam14: identical but mirror_tying OFF — isolates the tying from the ⟨n₁⟩ mean alone
+    # Readouts: wells at the DPA ckpt (both below the line? same κ₁?), τ_slow, odd violation, dpa acc.
+    # --run_filter mirror_lam14 / decmean_lam14
+    for tag, tying in (("mirror_lam14", True), ("decmean_lam14", False)):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": 14.0, "decision_lambda": 14.0,
+                                        "target_mn_corr": 0.8, "target_out_mn_corr": 0.8,
+                                        "readout_scale": (14.0 / 0.8) ** 0.5,
+                                        "decision_readout_mean": -0.1,
+                                        "mirror_tying": tying,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 0, "epochs_dual": 0,
+                                        "nolick_weight": 1.0,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ recipe7 (Leon 2026-09-18): THE recipe, 8 seeds end-to-end ═══
+    # The chain that produced s1_dualscan_7 — the target solution: after Dual the two memory attractors
+    # sit at (±0.94, −0.5) = −1.35σ / −1.5σ, both BELOW the lick line, states on them through the whole
+    # delay (κ₁ ≈ −0.45), with after_gng/dpa 0.998, dual_dpa 1.000, dual_gng 1.000 (go 1.000, nogo 1.000).
+    # Nothing is painted: the DPA stage has NO κ₁ term at all, GNG has no delay hold, and the descent is
+    # the Dual objective's own compromise (bowl + tail).
+    #   init  : ρ = 1 isotropic (target_mn_corr = target_out_mn_corr = 1, readout_scale = √λ), λ₀ = λ₁ = 7
+    #   DPA   : pairing + A/B hold in the 0.5 s after the sample; dpa_nolick_weight 0
+    #   GNG   : gng_weight 0 (no hold) + gng_response (go licks in the cue); relu² no-lick on nogo
+    #   Dual  : pair_pin (two-sided ±1) + dual_nolick_shape softplus + no hold + split by sample, w = 1,
+    #           150 epochs (the softplus floor puts stop_loss out of reach)
+    # Run as ONE sequence (all three stages, no checkpoints) so the result is reproducible from scratch.
+    # 8 seeds = the definitive count (4 explore / 8 definitive). --run_filter recipe7
+    for seed in range(8):
+        configs.append(RunConfig(run_id=f"s{seed}_recipe7", seed=seed,
+                                 dt_base=0.020,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "tau": 0.2, "noise": 1.0,
+                                    "attention_input": False, "response_in_cue": True,
+                                    "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                    "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                    "memory_lambda": 7.0, "decision_lambda": 7.0,
+                                    "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                    "readout_scale": 7.0 ** 0.5,
+                                    "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,
+                                    "gng_weight": 0.0, "gng_response": True,
+                                    "pair_pin": True, "dual_nolick_shape": "softplus",
+                                    "nolick_weight": 1.0, "nolick_split_sample": True,
+                                    "dual_mem_targets": True, "dual_mem_supervise": False,
+                                    "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
 
     return configs
 

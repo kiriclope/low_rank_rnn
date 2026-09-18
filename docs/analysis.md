@@ -420,3 +420,15 @@ network OCCUPIES. Each rule below names the error that motivated it.
   construction; σ(n₀) × σ(n₁)), rendered with the trained-net panel code. Gallery `init_flow_grids`.
 - Always split go/nogo when reporting GNG accuracy (Leon 2026-09-17): go is at ceiling, nogo carries
   the cue push; `dual_go`/`dual_nogo` in `results.jsonl`.
+
+- `scratchpad/flow_lambda_cond_grid.py <sweep> <stage> <seed> <out> <tags...>` — ROWS = arms, COLUMNS =
+  input conditions (Autonomous, A, B, Go, NoGo, C, D by default; `COND_SPEC="name=dims[@value];..."`).
+- `scratchpad/flow_rows_grid.py` — the transpose (rows = conditions, cols = arms), `ROWS_SPEC=`.
+- `scratchpad/trained_flow_grid.py <sweep> <stage> <out> <tags...>` — autonomous flow, cols = arm, rows = seed.
+- `scratchpad/isotropy_readout.py <sweep>` (`STAGE=dpa|naive|expert`) — J, the per-mode factor scales
+  σ(m_i)/σ(n_i) with an isotropy ratio, the angular anisotropy of the field against the 1/√N floor, and
+  every attractor with τ_slow/τ_fast.
+- `scratchpad/init_flow_grid_2pop.py` — two-population init grids (λ × ρ; `DEC_SCAN=1` makes the rows
+  the ⟨n₁⟩ dose at `ROW_RHO`).
+- ⚠ A Dual run given only `gng_ckpt` has no `dpa_*.pth`: copy it from the originating sweep before
+  plotting or the DPA row of every figure is missing.

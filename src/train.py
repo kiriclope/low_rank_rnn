@@ -55,6 +55,7 @@ class Optimization:
         rate_reg: float = 0.0,
         # Hard orthogonality (n_col, m_col): after each step project n[:, n_col] ⟂ m[:, m_col].
         orthogonalize_cols: tuple[int, int] | None = None,
+        mirror_tying: bool = False,
     ):
         self.model         = model
         self.train_loader  = train_loader
@@ -98,6 +99,15 @@ class Optimization:
         self.freeze_low_rank_cols = self._normalize_low_rank_cols(freeze_low_rank_cols)
         self.freeze_input_dims    = freeze_input_dims
         self.orthogonalize_cols   = orthogonalize_cols
+        # mirror_tying (Leon 2026-09-18, §35): re-impose the A↔B reflection symmetry after every
+        # optimiser step — the second half of the units is the mirror of the first with the MEMORY
+        # mode sign-flipped and the DECISION mode copied, and with the A↔B / C↔D input columns
+        # swapped. The network is then equivariant under A↔B ⇔ κ₀ → −κ₀ with κ₁ fixed, so the two
+        # memory attractors are forced to share a κ₁: they move DOWN TOGETHER or not at all, and the
+        # one-up-one-down solution (the inversion symmetry of a zero-mean Gaussian ensemble) is
+        # structurally excluded. Enforced by averaging the two halves (a projection onto the
+        # symmetric subspace), so it is exact and gradient-consistent rather than a copy of one half.
+        self.mirror_tying         = bool(mirror_tying)
 
         self._frozen_m  = None
         self._frozen_n  = None
@@ -163,6 +173,26 @@ class Optimization:
                 self.model.wi.weight[:, self.freeze_input_dims] = (
                     self._frozen_wi[:, self.freeze_input_dims]
                 )
+
+    def _mirror_tie(self):
+        """Project m, n and the input weights onto the A↔B-symmetric subspace (see mirror_tying)."""
+        if not self.mirror_tying:
+            return
+        with torch.no_grad():
+            m, n = self.model.m, self.model.n
+            N = m.shape[0]; h = N // 2
+            for P, sgn in ((m, None), (n, None)):
+                a0, b0 = P[:h, 0], P[h:2 * h, 0]                 # memory mode: mirrored
+                avg0 = 0.5 * (a0 - b0); P[:h, 0] = avg0; P[h:2 * h, 0] = -avg0
+                a1, b1 = P[:h, 1], P[h:2 * h, 1]                 # decision mode: copied
+                avg1 = 0.5 * (a1 + b1); P[:h, 1] = avg1; P[h:2 * h, 1] = avg1
+            wi = self.model.wi.weight
+            for (c1, c2) in ((0, 1), (2, 3)):                    # A↔B and C↔D swap between halves
+                u = 0.5 * (wi[:h, c1] + wi[h:2 * h, c2]); v = 0.5 * (wi[:h, c2] + wi[h:2 * h, c1])
+                wi[:h, c1] = u; wi[h:2 * h, c2] = u
+                wi[:h, c2] = v; wi[h:2 * h, c1] = v
+            for c in range(4, wi.shape[1]):                      # go / nogo / cue / reward: shared
+                u = 0.5 * (wi[:h, c] + wi[h:2 * h, c]); wi[:h, c] = u; wi[h:2 * h, c] = u
 
     def _orthogonalize_cols(self):
         """Hard constraint: n[:, a] ⟂ m[:, b], re-imposed after every optimizer step.
@@ -293,6 +323,7 @@ class Optimization:
                         nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm)
                     self.optimizer.step()
                     self._restore_frozen_weights()
+                    self._mirror_tie()
                     self._orthogonalize_cols()
                     self._clamp_kappa1_gain()
                     self._pin_kappa_gains()

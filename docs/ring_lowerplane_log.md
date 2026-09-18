@@ -2554,3 +2554,146 @@ everything here is labelled "stable attractor".
   like a well. `--slow_tol` 0.06 on the multiplier remains the marker's threshold (it flags what is
   slow at a glance; the seconds are the quantitative statement).
 - **Rule:** never report "wells" from labels alone — report τ_slow in seconds against the delay.
+
+
+## §34 — What DPA training builds, as a function of the init (λ scan at ρ = 1, isotropic) (2026-09-18)
+
+`sweep_lif_dpa_lambda_scan_rho1` — DPA stage ONLY, 2 seeds × λ ∈ {1.6, 3.5, 7, 12}, ρ = 1 on both modes
+and the **isotropic construction** (new `RunConfig.readout_scale` = √(λ₁/ρ) makes σ(m) = σ(n) = √(λ/ρ)
+on both modes; without it `init.py` forces σ(n₁) = 1 and the modes are not exchangeable, §33). Loss =
+pairing + the A/B hold in the 0.5 s after the sample, **no κ₁ term**. Figures: gallery
+`lif_dpa_lambda_scan_rho1` (`fp_lambda_x_condition_dpa`, `flow_rows_lambda`, `flow_grid_lambda`).
+
+**Three things are task-locked, one is not.**
+1. **J ≈ 7 whatever the init.** J₀₀/J₁₁ after DPA: 6.97/6.57 and 6.54/7.44 from λ 1.6; 7.08/6.92, 7.14/6.89
+   from 3.5; 6.81/7.10, 7.06/5.59 from 7; 9.14/7.68, 8.59/9.48 from 12. The low end is forgotten
+   entirely (λ 1.6 is SUBCRITICAL — a single stable origin at init, λ_c = 1/(g·φ′(0)) = 2.5, ≈3.4 under
+   the noise-averaged gain), the high end keeps a little memory. Confirms §14a/§15c.
+2. **The radius is task-locked at |κ| ≈ 1** — every attractor at r = 0.96–1.18, the ±1 target amplitude.
+3. **What DPA builds is a RING of radius ≈1 with 2–3 slow wells on it**, not four cardinal wells: e.g.
+   s0 λ 3.5 → (+1.09, 0.00), (+0.68, +0.84), (−1.01, −0.34), all at r ≈ 1.07.
+4. **λ controls the corrugation, and it runs opposite to the factor isotropy.** λ = 12 keeps σ(m), σ(n)
+   nearly equal across modes (iso ratio 1.04–1.08) yet gives the most anisotropic field (0.42–0.58 vs a
+   1/√N floor of 0.062) and the fastest wells (τ_slow 0.6–1.4 s) — its anisotropy moved into the
+   CROSS-overlaps (J₀₁ = −0.41, −1.21). λ = 1.6/3.5 must grow their overlaps 4×, which re-breaks the
+   factor isotropy (σn₁ 3.6–3.9 vs σn₀ 2.8–2.9) but leaves the field nearly flat (0.085–0.17) with
+   genuinely ring-like slow directions (τ_slow 5.5–6.5 s > the 5 s delay). Cleanest ring: λ 3.5 seed 1.
+
+**Input-driven structure (same at every λ).** A and B each collapse the whole plane to a single point
+(the write); C and D are mirror-image basin choices with a saddle between (the read, rotating the
+memory axis onto κ₁); the sample drive is 2–5× stronger than go/nogo.
+
+### §34a — GNG on the same nets, with and without the delay memory
+`sweep_lif_gng_lambda_scan_rho1` (`gng_weight` 0 + `gng_response`: the rule as a transient, no κ₁ hold)
+and `sweep_lif_gngmem_lambda_scan_rho1` (the same + `gng_weight` 1: the hold IS learnt), both from the
+λ-scan DPA checkpoints.
+
+| λ | GNG acc: no hold → hold | retention: no hold → hold |
+|---|---|---|
+| 1.6 | 0.966, 0.938 → 0.996, 1.000 | 1.000, 0.885 → 0.999, 0.968 |
+| 3.5 | 0.944, 0.957 → 0.996, 0.994 | 0.994, 1.000 → 1.000, 1.000 |
+| 7 | 0.984, 0.989 → 1.000, 1.000 | 0.997, 0.999 → 0.999, 0.998 |
+| 12 | 1.000, 1.000 → 0.993, 1.000 | 0.740, 0.979 → **0.491**, 0.979 |
+
+- **No hold:** GNG shrinks the decision mode (σ(m₁) 2.07→1.87, 2.59→2.22, 2.97→2.49; J₁₁ drops ~1 in 6/8)
+  so the isotropy ratio WORSENS (1.04→1.19, 1.26→1.39, 1.06→1.16) — learning the rule corrugates the
+  ring further. τ_slow falls from ≤6.5 s to 1.0–5.0 s: the slow ring becomes discrete wells.
+- **With the hold:** the field grows a SECOND attractor pair on the **κ₁ axis** ((+0.13, +1.47) and
+  (+0.20, −1.09) at λ 1.6; (+0.32, +0.92) at 3.5; (+0.19, +0.89), (−0.26, −0.98) at 7) — the go/nogo
+  memory stored as its own wells at r ≈ 1, i.e. the four-well structure built deliberately. The rule is
+  then perfect at every λ and retention is better, but κ₁ carries a second memory through the delay.
+- λ = 12 seed 0 is the failure mode in both: after GNG its autonomous field has **no stable attractor**
+  and retention collapses (0.74 / 0.49). Rule perfect, memory gone.
+- ⚠ The go/nogo drive measured at the origin is 2–5× weaker than the sample drive and NOT orthogonal to
+  the memory mode (Go +55…+100°, NoGo −58…−151°, where 90° is pure up), so the clamped-input panels show
+  the memory structure surviving inside them. The trajectories agree with the field on DIRECTION
+  (Go +62…+82°, NoGo −59…−147°); what differs is the endpoint — a GNG trial starts near the ORIGIN and
+  travels only ≈0.4–0.7 in 1 s, so it never reaches the clamped fixed point at r ≈ 1.
+
+### §34b — ★ Dual on the no-hold nets: both memory wells below the line, and λ decides how often
+`sweep_lif_dual_lambda_scan_rho1` — Dual = design2's (two-sided ±1 pairing, softplus no-lick in Dual
+only, no hold, split by sample, w = 1, 150 epochs) from the gngscan naive checkpoints. All 8 learn the
+dual task (dual_dpa 0.990–1.000, dual_gng 0.866–1.000).
+
+| λ | s0 attractors (expert) | s1 |
+|---|---|---|
+| 1.6 | (+1.05, −0.26), (−0.81, **+0.57**) | (+0.88, **+0.56**), (−0.90, **+0.50**) — both ABOVE |
+| 3.5 | (+0.93, −0.37), (−0.73, −0.46), (+0.89, +0.58) | (+0.73, −0.52), (−0.97, **+0.51**) |
+| 7 | (−1.00, −0.37) τ 6.6 s, (+0.89, −0.31), (−0.99, +0.10) | ★ **(+0.94, −0.55), (−0.94, −0.50)** + (+0.98, +0.45) |
+| 12 | **(+1.10, −0.75) = −2.0σ, (−0.94, −0.88) = −2.4σ** + a pair near the line | **(+0.95, −0.24), (−1.01, −0.37)** |
+
+**Both wells below the line in 3–4 of 8, every one of them at λ ≥ 7.** Bigger λ → wells further out along
+κ₀ → the Dual stage's κ₁ displacement does not merge them and both can descend; at λ 1.6 the stage
+splits them one-up-one-down instead. Training breaks the factor isotropy hard here (ratio 1.36–1.72,
+σn₁ 4.3–5.0 vs σn₀ ≈3.0).
+
+**★ `s1_dualscan_7` is the target solution.** Memory wells at (±0.94, −0.5) = −1.35σ / −1.5σ, both
+below, occupied: on DPA-only trials the state is held at κ₁ ≈ −0.45 for the whole delay (DPA ckpt +0.10/
+−0.05 → naive 0/−0.15 → **expert −0.45**), then snaps to ±1 at the test. after_gng/dpa 0.998,
+dual_dpa 1.000, dual_gng 1.000 (go 1.000, nogo 1.000). Input-driven columns show why it is stable: Go
+drives to (±0.8, +1.2) from either side, Cue to (0, +1.6), C/D are mirror basin choices — the pair sits
+exactly where the cue's upward push is absorbed without a false lick. **Nothing is painted: the DPA
+stage has no κ₁ term at all.** `recipe7` (8 seeds, identical config end-to-end) queued to test how often
+it reproduces. ⚠ Dual runs given only `gng_ckpt` have no `dpa_*.pth` — copy it from the originating run
+before plotting, or the DPA row of every figure is missing (done for this sweep).
+
+### §34c — A `sweep.py` bug: `gng_ckpt` did not skip the DPA stage
+The DPA stage was gated only on `dpa_ckpt`, so a run given just a `gng_ckpt` silently retrained DPA for
+250 epochs and then had it overwritten by the checkpoint load. Results were correct, ~40 min/run were
+wasted and `after_dpa` / `dpa_*.pth` were misleading. Fixed: `gng_ckpt` without `dpa_ckpt` now skips DPA
+entirely, as its docstring always claimed.
+
+
+## §35 — The init ensemble's symmetry is what forbids both wells below the line (2026-09-18)
+
+Leon: "right now m and n are unimodal gaussians at init — what if we made them bivariate? what if we
+included symmetries otherwise?"
+
+### §35a — The theorem, and the measurement
+Each neuron's (m₀, m₁, n₀, n₁) is one draw from a **zero-mean 4-D Gaussian** — unimodal, and symmetric
+under the joint sign flip (m, n) → (−m, −n). For ANY transfer function that implies
+⟨n φ(g m·(−κ))⟩ = −⟨n φ(g m·κ)⟩, i.e. **F(−κ) = −F(κ)**: the autonomous field is exactly odd, so every
+attractor has a partner at −κ, and **both memory wells below the lick line is symmetry-forbidden at
+init**. Measured (‖F(κ)+F(−κ)‖/‖F(κ)‖ on a circle): init **0.000**; after DPA 0.32; after GNG 0.26;
+`s0_design1_w1` expert (both wells below) **1.67**. So the solutions we want exist only by destroying
+that symmetry during training, slowly and unreliably — which is precisely the one-up-one-down failure of
+§34b. (This also restates §12a's deadlock correctly: it is a property of the ENSEMBLE, not of odd φ.)
+
+### §35b — Two populations, and which symmetry to keep
+A mixture of Gaussians (multiple populations) is the standard way out — Beiran et al. 2021 and Dubreuil
+et al. 2022 show the number of populations sets which computations a low-rank net can implement. But a
+±μ pair of populations is still sign-flip symmetric; what matters is WHICH symmetry survives:
+- **inversion** κ → −κ (zero-mean Gaussian): wells at (κ₀, −w) and (−κ₀, **+w**) — one up, one down.
+- **reflection** κ₀ → −κ₀ with κ₁ fixed (the task's own A↔B exchange): wells at (±κ₀, w) with a COMMON
+  w — both down or both up, never one each.
+Implementation (`mirror_tying`): two halves related by an involution — memory mode sign-flipped,
+decision mode copied, A↔B and C↔D input columns swapped, go/nogo/cue shared. Exact at finite N:
+n₀ᵀm₀/N and n₁ᵀm₁/N preserved, **n₀ᵀm₁ = n₁ᵀm₀ = 0**. `Optimization._mirror_tie()` re-imposes it after
+every optimiser step by PROJECTING onto the symmetric subspace (averaging the halves, so it is
+gradient-consistent, not a copy). Verified after real training steps: max deviation 0.00e+00 on all four
+components, cross-overlaps 5e−8.
+
+### §35c — The init grids (gallery `init_flow_grids`)
+- **grid4** (2-pop reflection, λ × ρ): exactly two mirror attractors ON the κ₀ axis at (±κ₀*, 0),
+  cross-overlaps 0.00, odd violation 0.000. No ring — the reflection IS an anisotropy in the (m₀, m₁)
+  joint distribution; that is the trade (a ring gives a free κ₁ but couples the wells antisymmetrically).
+- **grid5** (+⟨n₁⟩ = −1): far too strong — the pair merges into a single sink at (0, ≈−1), memory gone.
+- **grid6 / the numeric map** (dose of ⟨n₁⟩ × λ at ρ 0.8; the resting decision is κ₁ ≈ φ(0)·⟨n₁⟩ for a
+  non-negative φ, the only displacement the reflection allows):
+
+| λ | ⟨n₁⟩ −0.05 | −0.10 | −0.15 | −0.20 | −0.30 |
+|---|---|---|---|---|---|
+| 7 | none | none | single −2.3σ | single | single |
+| 10 | PAIR (±0.75, −0.55) −1.5σ | none | none | single −3.0σ | single |
+| 14 | PAIR −1.7σ | **PAIR (±0.59, −1.14) −3.1σ** | PAIR −3.2σ τ6.4 | single | single |
+| 20 | PAIR −1.9σ | PAIR −2.2σ | PAIR (±0.69, −1.41) −3.8σ | PAIR −3.9σ | single |
+
+  There is a window, and it widens with λ: at λ = 14–20 with ⟨n₁⟩ ≈ −0.1…−0.2 the UNTRAINED net already
+  has two mirror memory attractors 2–4σ below the lick line. Too little λ or too much mean and the pair
+  merges into one sink on the κ₁ axis.
+
+### §35d — The experiment (`sweep_lif_mirror_dpa`, running)
+DPA stage only, 4 + 4 seeds, λ = 14, ρ = 0.8, `readout_scale` = √(λ/ρ) = 4.18, ⟨n₁⟩ = −0.1, DPA loss with
+**no κ₁ term**: `mirror_lam14` (tying held through training) vs `decmean_lam14` (identical, tying off) —
+isolating the symmetry from the mean. Question: do both wells stay below the line once the task is
+learned, and is the tying or the mean doing the work.

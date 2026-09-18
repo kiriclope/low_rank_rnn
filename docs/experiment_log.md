@@ -1210,3 +1210,32 @@ covariance property, not a φ property: lif rings at init when both modes are bu
 σ_n at equal J makes an ellipse with four cardinal wells — the trained DPA geometry.
 
 **Not run:** design3 (w1, w4); isotropic-init DPA probe; plateau stop for Dual; a gain axis on grid 1.
+
+## 2026-09-18 — the λ scan (DPA/GNG/Dual), ★ the target solution, and the symmetry idea (5 sweeps, 40 runs)
+
+Detail: `ring_lowerplane_log.md` §34 (what each stage builds vs the init λ) and §35 (the ensemble
+symmetry). All: ρ = 1 isotropic init, no attention, test-driven pairing, τ 0.2, noise 1.0, gain 1.
+
+| sweep | arms | stage(s) | result |
+|---|---|---|---|
+| `sweep_lif_dpa_lambda_scan_rho1` | `lamscan_{1p6,3p5,7,12}` ×2 seeds | DPA only | J → ≈7 and radius → ≈1 whatever the init λ; the solution is a RING of radius 1 with 2–3 slow wells; λ sets the corrugation (τ_slow 6.5 s at λ 3.5 → 0.6 s at λ 12) |
+| `sweep_lif_gng_lambda_scan_rho1` | `gngscan_*` | GNG, no hold | rule 0.94–1.00 as a transient; GNG shrinks σ(m₁) and corrugates the ring further; λ 12 s0 loses its attractors (ret 0.74) |
+| `sweep_lif_gngmem_lambda_scan_rho1` | `gngmem_*` | GNG, hold learnt | rule 0.99–1.00 and better retention; a SECOND attractor pair appears on the κ₁ axis (the go/nogo memory as its own wells) |
+| `sweep_lif_dual_lambda_scan_rho1` | `dualscan_*` | Dual (design2) | all learn the dual task; **both memory wells below the line in 3–4/8, all at λ ≥ 7**. ★ `s1_dualscan_7`: (±0.94, −0.5) = −1.35σ/−1.5σ, state held at κ₁ ≈ −0.45 all delay, after_gng/dpa 0.998, dual_dpa 1.000, dual_gng 1.000 (go 1.000 nogo 1.000) |
+| `sweep_lif_mirror_dpa` | `mirror_lam14` / `decmean_lam14` ×4 | DPA only | RUNNING — A↔B reflection tying (held through training) vs the ⟨n₁⟩ mean alone |
+| `sweep_lif_recipe7` | `recipe7` ×8 | all three | QUEUED — the `s1_dualscan_7` config end-to-end, 8 seeds, to test reproducibility |
+
+**New machinery.** `RunConfig.readout_scale` (σ(n₁); √(λ₁/ρ) makes the two modes exchangeable),
+`mirror_tying` (+ `Optimization._mirror_tie()`: projects m, n, W_in onto the A↔B-symmetric subspace after
+every step), `decision_readout_mean` now used. **Bug fixed:** `gng_ckpt` did not skip the DPA stage
+(§34c). Tools: `scratchpad/flow_lambda_cond_grid.py` (rows = arms, cols = input conditions),
+`flow_rows_grid.py` (`ROWS_SPEC`), `trained_flow_grid.py`, `isotropy_readout.py` (`STAGE=`),
+`init_flow_grid_2pop.py` (grids 4–6, `DEC_SCAN`).
+
+**Headlines.** (1) DPA builds a ring of radius 1 at J ≈ 7 regardless of the init λ; λ only sets how
+corrugated it is. (2) The Dual stage pushes both wells below the line only when the wells are far enough
+apart along κ₀ — i.e. λ ≥ 7. (3) ★ A complete, unpainted solution exists (`s1_dualscan_7`). (4) The
+zero-mean Gaussian init makes the field exactly ODD (measured 0.000), which FORBIDS both-wells-below at
+init and explains the one-up-one-down failures; the A↔B reflection tying replaces that symmetry with one
+that forces the two wells to share a κ₁, and ⟨n₁⟩ ≈ −0.1 at λ ≥ 14 puts the untrained pair 2–4σ below
+the line already.

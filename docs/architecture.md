@@ -240,6 +240,23 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
   Only the two-sided DPA κ₁ pin and this hold are ever applied to the delay; the Dual stage sets no
   κ₀ target.
 
+- **Init / symmetry flags (2026-09-18, `ring_lowerplane_log` §34–§35).**
+  `readout_scale` — σ(n₁) of the decision mode (`init.py` default 1.0). The memory mode has
+  σ(m₀) = σ(n₀) = √(λ₀/ρ) while the decision mode has σ(n₁) = readout_scale and σ(m₁) = λ₁/(ρ·readout_scale),
+  so **readout_scale = √(λ₁/ρ) is what makes the two modes exchangeable** — without it the covariance is
+  anisotropic whatever λ and ρ are, and no ring is possible (§33).
+  `mirror_tying` — the A↔B reflection symmetry: build the init as two halves related by an involution
+  (memory mode sign-flipped, decision mode copied, A↔B / C↔D input columns swapped, go/nogo/cue shared)
+  and re-impose it after every optimiser step (`Optimization._mirror_tie()`, a projection onto the
+  symmetric subspace). Exact: n₀ᵀm₁ = n₁ᵀm₀ = 0 and the two memory attractors are locked to a common κ₁ —
+  they move below the lick line together or not at all. Replaces the inversion symmetry κ → −κ of a
+  zero-mean Gaussian ensemble, which forces one well up for every well down (§35a).
+  `decision_readout_mean` — ⟨n₁⟩. With a non-negative φ the resting decision is κ₁ ≈ φ(0)·⟨n₁⟩, so a small
+  negative value seats the whole memory manifold below the line; it is the only displacement the
+  reflection symmetry allows. Useful window: ⟨n₁⟩ ≈ −0.1…−0.2 at λ ≥ 14 (more merges the pair into one sink).
+  `gng_ckpt` now skips the DPA stage (it carries the full post-GNG state); before 2026-09-18 DPA was
+  silently retrained and overwritten.
+
 - **Design flags (2026-09-16/17, `ring_lowerplane_log` §32).**
   `nolick_split_sample` — the no-lick hinge (and the legacy κ₁ = 0 pin) scored as two masked means, A-sample
   rows + B-sample rows; identity = sign of the row's κ₀ target. Dual trials need `dual_mem_targets=True`
