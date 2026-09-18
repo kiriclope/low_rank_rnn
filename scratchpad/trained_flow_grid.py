@@ -40,9 +40,15 @@ for i, s in enumerate(seeds):
         w = [(f, tt) for f, k, tt in find_wells(m, cfg, xlim=2.5, n_seeds=41, noise_sigma=sig, with_eigs=True)
              if str(k).lower().startswith(("stable", "attract"))]
         ts = max([t_[0] for _, t_ in w], default=float("nan"))
-        ax.set_title(f"λ init {cfg['memory_lambda']:g}   J {J[0,0]:.1f}/{J[1,1]:.1f}", fontsize=8)
-        ax.text(0.02, 0.02, f"σm {sm[0]:.1f}/{sm[1]:.1f}  σn {sn[0]:.1f}/{sn[1]:.1f}\nτ_slow max {ts:.1f}s  ({len(w)} attr)",
-                transform=ax.transAxes, fontsize=5.5, color="w", va="bottom")
+        head = (t + "\n") if i == 0 else ""
+        ax.set_title(f"{head}λ init {cfg['memory_lambda']:g}   J {J[0,0]:.1f}/{J[1,1]:.1f}", fontsize=8)
+        if not os.environ.get("NOANNOT"):
+            ax.text(0.03, 0.03, f"σm {sm[0]:.1f}/{sm[1]:.1f}  σn {sn[0]:.1f}/{sn[1]:.1f}\nτ_slow max {ts:.1f}s  ({len(w)} attr)",
+                    transform=ax.transAxes, fontsize=5.5, color="w", va="bottom", linespacing=1.9)
+        if os.environ.get("LICKLINE"):
+            import matplotlib.patheffects as pe
+            ax.axhline(0, color="w", lw=1.1, ls=(0, (5, 4)), alpha=1.0, zorder=6,
+                       path_effects=[pe.Stroke(linewidth=2.6, foreground="k", alpha=0.65), pe.Normal()])
         ax.set_xticks([-1, 0, 1]); ax.set_yticks([-1, 0, 1]); ax.tick_params(labelsize=6)
         if j == 0: ax.set_ylabel(f"seed {s}\nκ₁", fontsize=8)
         if i == len(seeds) - 1: ax.set_xlabel("κ₀", fontsize=8)

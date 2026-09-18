@@ -1222,8 +1222,8 @@ symmetry). All: ρ = 1 isotropic init, no attention, test-driven pairing, τ 0.2
 | `sweep_lif_gng_lambda_scan_rho1` | `gngscan_*` | GNG, no hold | rule 0.94–1.00 as a transient; GNG shrinks σ(m₁) and corrugates the ring further; λ 12 s0 loses its attractors (ret 0.74) |
 | `sweep_lif_gngmem_lambda_scan_rho1` | `gngmem_*` | GNG, hold learnt | rule 0.99–1.00 and better retention; a SECOND attractor pair appears on the κ₁ axis (the go/nogo memory as its own wells) |
 | `sweep_lif_dual_lambda_scan_rho1` | `dualscan_*` | Dual (design2) | all learn the dual task; **both memory wells below the line in 3–4/8, all at λ ≥ 7**. ★ `s1_dualscan_7`: (±0.94, −0.5) = −1.35σ/−1.5σ, state held at κ₁ ≈ −0.45 all delay, after_gng/dpa 0.998, dual_dpa 1.000, dual_gng 1.000 (go 1.000 nogo 1.000) |
-| `sweep_lif_mirror_dpa` | `mirror_lam14` / `decmean_lam14` ×4 | DPA only | RUNNING — A↔B reflection tying (held through training) vs the ⟨n₁⟩ mean alone |
-| `sweep_lif_recipe7` | `recipe7` ×8 | all three | QUEUED — the `s1_dualscan_7` config end-to-end, 8 seeds, to test reproducibility |
+| `sweep_lif_mirror_dpa` | `mirror_lam14` / `decmean_lam14` ×4 | DPA only | DONE — see the 2026-09-18 (later) block below |
+| `sweep_lif_recipe7` | `recipe7` ×8 | all three | DONE — see the 2026-09-18 (later) block below |
 
 **New machinery.** `RunConfig.readout_scale` (σ(n₁); √(λ₁/ρ) makes the two modes exchangeable),
 `mirror_tying` (+ `Optimization._mirror_tie()`: projects m, n, W_in onto the A↔B-symmetric subspace after
@@ -1239,3 +1239,29 @@ zero-mean Gaussian init makes the field exactly ODD (measured 0.000), which FORB
 init and explains the one-up-one-down failures; the A↔B reflection tying replaces that symmetry with one
 that forces the two wells to share a κ₁, and ⟨n₁⟩ ≈ −0.1 at λ ≥ 14 puts the untrained pair 2–4σ below
 the line already.
+
+## 2026-09-18 (later) — symmetry as a curriculum: σ₁ vs the Klein group, held in DPA and released (3 sweeps, 24 runs)
+
+Detail: `ring_lowerplane_log.md` §36; theory `theory_landscape.md` §9.3–9.6. Base for all three: the
+`s1_dualscan_7` recipe (lif, gain 1, ρ = 1 isotropic, `pair_pin` two-sided, `nolick_shape` softplus,
+no-hold, `nolick_split_sample`), **no κ₁ term in the DPA loss**.
+
+| sweep | arms | stage(s) | result |
+|---|---|---|---|
+| `sweep_lif_mirror_dpa` | `mirror_lam14` / `decmean_lam14` ×4 | DPA only, λ 14, ρ 0.8, ⟨n₁⟩ −0.1 | tied **4/4 both wells below** (−0.47…−0.89σ, occupied d ≤ 0.04, τ_slow 0.4–0.9 s, cross-overlaps 0.00, DPA 0.993–1.000); untied **3/4 fail** (asymmetric, or one well missing). The tying, not the mean, makes the matched pair |
+| `sweep_lif_recipe7` | `recipe7` ×8 | all three, free | 8/8 learn (dual_dpa 0.995–1.000, nogo 0.932–1.000); **6/8** end with both states in wells below the line. Mean depth −1.43σ, mean left–right imbalance 0.231σ (worst 0.48σ). The 2 misses are the σ₂ pattern |
+| `sweep_lif_symdpa` | `symdpa_pair` / `symdpa_klein` ×4 | all three, symmetry in **DPA only** | DPA ckpt: σ₁ gives the pair at −0.3σ with attractor counts 3,3,3,4 (a LONE sink on the κ₁ axis); V gives the pair **pinned on the line** (\|κ₁\| ≤ 0.02) with counts 2,4,4,2 (extras always a σ₃ pair). Expert ckpt, released: **8/8 both below**, −0.89…−1.79σ, mean imbalance 0.077σ, dual_dpa 0.999–1.000, nogo 0.947–0.997 |
+
+**New machinery.** `RunConfig.symmetry` (`"pair"` / `"test"` / `"klein"`) and `symmetry_stages`;
+`project_symmetry(model, kind)` and `symmetrize_init(model, kind)` in `src/train.py`
+(`mirror_tying=True` is now the legacy alias for `symmetry="pair"`). Tools: `scratchpad/mn_blocks.py`
+(unit-by-unit orbit check: actual vs D_σ-predicted, per component), `trained_flow_grid.py` gained column
+headers plus `NOANNOT=` / `LICKLINE=` env flags, `mn_scatter.py`, `n_vs_input_scatter.py`.
+
+**Headlines.** (1) The two group predictions of §9.3 are both confirmed in trained nets: under the full
+group the memory wells are PINNED on the lick line, and the attractor count is always even and
+reflection-symmetric; under σ₁ alone the height is free (it settles at −0.3σ) and lone sinks on the κ₁
+axis are allowed, so odd counts appear. (2) Holding a symmetry through DPA and releasing it costs
+nothing in depth (−1.49σ vs −1.43σ free) but takes reliability from 6/8 to **8/8** and the left–right
+imbalance from 0.231σ to 0.077σ. The symmetry is scaffolding: it removes the residual σ₂ that otherwise
+sends one well up while the other goes down.

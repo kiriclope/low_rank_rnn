@@ -37,6 +37,7 @@ import torch.optim as optim
 from src.tasks import TaskTiming, make_timings, generate_dpa_trials, generate_gng_trials, generate_dual_trials
 from src.models import LowRankModel, EILowRankModel, EISTPModel
 from src.train  import Optimization, UnifiedLoss, train_val_split
+from src.train  import project_symmetry, symmetrize_init
 from src.init   import init_dpa_internal_readout_prepost
 
 
@@ -97,6 +98,8 @@ class RunConfig:
     target_out_mn_corr: float = 0.8
     readout_scale: float | None = None   # σ(n₁) of the decision mode (init.py default 1.0). ISOTROPY: the memory mode has σ(m₀)=σ(n₀)=√(λ₀/ρ) while the decision mode has σ(n₁)=readout_scale and σ(m₁)=λ₁/(ρ·readout_scale) — set readout_scale=√(λ₁/ρ) to make the two modes exchangeable (§33: the ring needs equal factors, not just equal overlaps)
     mirror_tying: bool = False          # A↔B reflection symmetry: build the init as two mirrored halves (memory mode sign-flipped, decision mode copied, A↔B / C↔D inputs swapped) and RE-IMPOSE it after every optimiser step. The two memory attractors are then forced to share a κ₁ — they move down together or not at all (§35)
+    symmetry: str = ""                  # task symmetry to tie: "" | "pair" (σ₁ = A↔B & C↔D, κ↦(−κ₀,+κ₁)) | "test" (σ₃ = C↔D, κ↦(+κ₀,−κ₁)) | "klein" (the full group). §36
+    symmetry_stages: list = field(default_factory=lambda: ["dpa", "gng", "dual"])   # stages where the symmetry is enforced; release it later and the next stage is free to break it
     sample_scale:       float = 1.0
     test_scale:         float = 1.0
     mix_strength:       float = 0.0
@@ -637,20 +640,11 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             rwd_input_scale=config.rwd_input_scale,
             seed=config.seed, verbose=True,
         )
-    if config.mirror_tying:
-        # Two-population A↔B reflection init (§35): take the first half as prototypes and mirror it —
-        # memory mode sign-flipped, decision mode copied, A↔B / C↔D input columns swapped. Exact at
-        # finite N: n₀ᵀm₀/N and n₁ᵀm₁/N are preserved, n₀ᵀm₁ = n₁ᵀm₀ = 0, and the two memory
-        # attractors are locked to a common κ₁. The trainer re-imposes it after every step.
-        with torch.no_grad():
-            _N = model.m.shape[0]; _h = _N // 2
-            model.m[_h:2*_h, 0] = -model.m[:_h, 0]; model.n[_h:2*_h, 0] = -model.n[:_h, 0]
-            model.m[_h:2*_h, 1] =  model.m[:_h, 1]; model.n[_h:2*_h, 1] =  model.n[:_h, 1]
-            _wi = model.wi.weight
-            _wi[_h:2*_h, 0] = _wi[:_h, 1]; _wi[_h:2*_h, 1] = _wi[:_h, 0]
-            _wi[_h:2*_h, 2] = _wi[:_h, 3]; _wi[_h:2*_h, 3] = _wi[:_h, 2]
-            _wi[_h:2*_h, 4:] = _wi[:_h, 4:]
-        print(f"[{rid}]  mirror tying ON: A↔B reflection (κ₀ → −κ₀, κ₁ fixed); "
+    _sym = (config.symmetry or ("pair" if config.mirror_tying else "")).lower()
+    if _sym:
+        symmetrize_init(model, _sym)
+        _N = model.m.shape[0]
+        print(f"[{rid}]  symmetry '{_sym}' enforced in stages {config.symmetry_stages}; "
               f"n0·m1={float(model.n[:,0]@model.m[:,1])/_N:+.3f} n1·m0={float(model.n[:,1]@model.m[:,0])/_N:+.3f}", flush=True)
 
     # "random" → keep default LowRankModel init
@@ -876,7 +870,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                   kappa_gain_target=config.kappa_gain_target,
                                   rate_reg=config.rate_reg_weight,
                                   max_val_loss=config.max_val_loss,
-                                  verbose=True, mirror_tying=config.mirror_tying)
+                                  verbose=True, symmetry=(_sym if "dpa" in config.symmetry_stages else ""))
         train_l, val_l, _ = trainer.fit()
         losses["dpa"] = {"train": train_l, "val": val_l}
         torch.save(model.state_dict(), os.path.join(models_dir, f"dpa_{rid}.pth"))
@@ -970,7 +964,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                   rate_reg=config.rate_reg_weight,
                                   max_val_loss=config.max_val_loss,
                                   orthogonalize_cols=_orth,
-                                  verbose=True, mirror_tying=config.mirror_tying)
+                                  verbose=True, symmetry=(_sym if "gng" in config.symmetry_stages else ""))
         train_l, val_l, _ = trainer.fit()
         model.rwd = config.rwd         # restore reward for eval and subsequent stages
         losses["gng"] = {"train": train_l, "val": val_l}
@@ -1083,7 +1077,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                               kappa_gain_target=config.kappa_gain_target,
                                   rate_reg=config.rate_reg_weight,
                                   max_val_loss=config.max_val_loss,
-                              verbose=True, mirror_tying=config.mirror_tying)
+                              verbose=True, symmetry=(_sym if "dual" in config.symmetry_stages else ""))
     if config.kappa1_clamp is not None:
         print(f"[{rid}]  κ₁ hard clamp: g·λ₁ ≤ {config.kappa1_clamp} after each Dual step", flush=True)
 
@@ -3296,6 +3290,42 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                     "nolick_nogo_in_cue": True,
                                     "nolick_full_delay": True, "nolick_late_delay": False,
                                     "nolick_thresh": 0.0}))
+
+    # ═══ symdpa (Leon 2026-09-18, §36): the task symmetry enforced in DPA only, then released ═══
+    # The DPA response is r = ¬(s ⊕ t); its symmetry group is the Klein four-group {1, σ₁, σ₂, σ₃}
+    # (σ₁ = A↔B & C↔D ⇒ κ ↦ (−κ₀,+κ₁); σ₃ = C↔D ⇒ κ ↦ (+κ₀,−κ₁); σ₂ = σ₁σ₃ = the inversion κ ↦ −κ that
+    # any zero-mean Gaussian ensemble has for free, and which forbids both wells below the line).
+    # Leon: enforce the symmetry during DPA — it is fine if the wells are pinned there — and RELEASE it
+    # for GNG/Dual, which are then free to break it downward. `symmetry_stages = ["dpa"]`.
+    #   symdpa_pair : σ₁ only  → the two memory wells share a common κ₁ (a symmetric pair, free height)
+    #   symdpa_klein: the full group → the fixed-point set is closed under κ₁ ↦ −κ₁ as well, so the
+    #                 wells come in QUADRUPLES (±κ₀*, ±w) — a 4-fold degenerate memory — or sit at w = 0.
+    # Base = recipe7 (the chain that produced the target solution): ρ = 1 isotropic init at λ = 7, DPA
+    # with NO κ₁ term, GNG with no hold + cue-time go lick, Dual = bowl + softplus tail + no hold, w 1.
+    # Readouts: DPA-ckpt wells (how many, at what κ₁, occupied?), then naive/expert — does releasing the
+    # symmetry let the pair descend, and does the degeneracy resolve. --run_filter symdpa
+    for tag, sym in (("symdpa_pair", "pair"), ("symdpa_klein", "klein")):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     symmetry=sym, symmetry_stages=["dpa"],
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": 7.0, "decision_lambda": 7.0,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": 7.0 ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "dual_nolick_shape": "softplus",
+                                        "nolick_weight": 1.0, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
 
     return configs
 

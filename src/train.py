@@ -24,6 +24,105 @@ def train_val_split(X, y, batch_size=32, frac=0.8):
     return train_loader, val_loader
 
 
+def project_symmetry(model, kind):
+    """Project m, n and W_in onto the subspace equivariant under a DPA task symmetry (§36).
+
+    kind = "pair"  (σ₁: A↔B and C↔D; κ ↦ (−κ₀, +κ₁))  — 2 unit blocks
+           "test"  (σ₃: C↔D;          κ ↦ (+κ₀, −κ₁))  — 2 unit blocks
+           "klein" (the full group ⟨σ₁, σ₃⟩)            — 4 unit blocks, one orbit per prototype
+    Exact at finite N: n₀ᵀm₁ = n₁ᵀm₀ = 0 identically for "pair" and "klein".
+    """
+    kind = kind.lower()
+    with torch.no_grad():
+        m, n, wi = model.m, model.n, model.wi.weight
+        N, C = m.shape[0], wi.shape[1]
+        if kind in ("pair", "test"):
+            h = N // 2
+            s0, s1 = (-1.0, +1.0) if kind == "pair" else (+1.0, -1.0)    # signs of (κ₀, κ₁) under σ
+            for P in (m, n):
+                a = 0.5 * (P[:h, 0] + s0 * P[h:2 * h, 0]); P[:h, 0] = a; P[h:2 * h, 0] = s0 * a
+                b = 0.5 * (P[:h, 1] + s1 * P[h:2 * h, 1]); P[:h, 1] = b; P[h:2 * h, 1] = s1 * b
+            swaps = ((0, 1), (2, 3)) if kind == "pair" else ((2, 3),)
+            swapped = {c for pr in swaps for c in pr}
+            for (c1, c2) in swaps:
+                u = 0.5 * (wi[:h, c1] + wi[h:2 * h, c2]); v = 0.5 * (wi[:h, c2] + wi[h:2 * h, c1])
+                wi[:h, c1] = u; wi[h:2 * h, c2] = u
+                wi[:h, c2] = v; wi[h:2 * h, c1] = v
+            for c in range(C):
+                if c in swapped: continue
+                u = 0.5 * (wi[:h, c] + wi[h:2 * h, c]); wi[:h, c] = u; wi[h:2 * h, c] = u
+        elif kind == "klein":
+            Q = N // 4
+            B = [slice(k * Q, (k + 1) * Q) for k in range(4)]             # block k ↔ (a, b) = (k>>1, k&1)
+            sa = (+1.0, +1.0, -1.0, -1.0)                                 # (−1)^a : σ₁ sign on κ₀
+            sb = (+1.0, -1.0, +1.0, -1.0)                                 # (−1)^b : σ₃ sign on κ₁
+            for P in (m, n):
+                mu0 = sum(sa[k] * P[B[k], 0] for k in range(4)) / 4.0
+                mu1 = sum(sb[k] * P[B[k], 1] for k in range(4)) / 4.0
+                for k in range(4):
+                    P[B[k], 0] = sa[k] * mu0; P[B[k], 1] = sb[k] * mu1
+            alpha = (wi[B[0], 0] + wi[B[1], 0] + wi[B[2], 1] + wi[B[3], 1]) / 4.0   # A/B depend on a only
+            beta  = (wi[B[2], 0] + wi[B[3], 0] + wi[B[0], 1] + wi[B[1], 1]) / 4.0
+            for k in range(4):
+                first = (k >> 1) == 0
+                wi[B[k], 0] = alpha if first else beta
+                wi[B[k], 1] = beta if first else alpha
+            gam = (wi[B[0], 2] + wi[B[3], 2] + wi[B[1], 3] + wi[B[2], 3]) / 4.0     # C: γ if a==b else δ
+            dlt = (wi[B[1], 2] + wi[B[2], 2] + wi[B[0], 3] + wi[B[3], 3]) / 4.0
+            for k in range(4):
+                same = (k >> 1) == (k & 1)
+                wi[B[k], 2] = gam if same else dlt
+                wi[B[k], 3] = dlt if same else gam
+            for c in range(4, C):
+                u = sum(wi[B[k], c] for k in range(4)) / 4.0
+                for k in range(4): wi[B[k], c] = u
+        elif kind:
+            raise ValueError(f"unknown symmetry {kind!r} (use '', 'pair', 'test' or 'klein')")
+
+
+def symmetrize_init(model, kind):
+    """Make an init exactly symmetric by COPYING the first block onto its group orbit (with the right
+    signs / channel swaps). Unlike project_symmetry (a signed average, used after every training step),
+    this preserves the per-unit magnitudes and therefore the init overlaps λ₀, λ₁ exactly."""
+    kind = kind.lower()
+    if not kind:
+        return
+    with torch.no_grad():
+        m, n, wi = model.m, model.n, model.wi.weight
+        N, C = m.shape[0], wi.shape[1]
+        if kind in ("pair", "test"):
+            h = N // 2
+            s0, s1 = (-1.0, +1.0) if kind == "pair" else (+1.0, -1.0)
+            m[h:2 * h, 0] = s0 * m[:h, 0]; m[h:2 * h, 1] = s1 * m[:h, 1]
+            n[h:2 * h, 0] = s0 * n[:h, 0]; n[h:2 * h, 1] = s1 * n[:h, 1]
+            swaps = ((0, 1), (2, 3)) if kind == "pair" else ((2, 3),)
+            swapped = {c for pr in swaps for c in pr}
+            for (c1, c2) in swaps:
+                wi[h:2 * h, c1] = wi[:h, c2].clone(); wi[h:2 * h, c2] = wi[:h, c1].clone()
+            for c in range(C):
+                if c not in swapped: wi[h:2 * h, c] = wi[:h, c]
+        elif kind == "klein":
+            Q = N // 4
+            B = [slice(k * Q, (k + 1) * Q) for k in range(4)]
+            sa = (+1.0, +1.0, -1.0, -1.0); sb = (+1.0, -1.0, +1.0, -1.0)
+            m0, m1 = m[B[0], 0].clone(), m[B[0], 1].clone()
+            n0, n1 = n[B[0], 0].clone(), n[B[0], 1].clone()
+            alpha, beta = wi[B[0], 0].clone(), wi[B[0], 1].clone()      # w_A, w_B on block (a,b) = (0,0)
+            gam, dlt = wi[B[0], 2].clone(), wi[B[0], 3].clone()         # w_C, w_D
+            rest = {c: wi[B[0], c].clone() for c in range(4, C)}
+            for k in range(4):
+                m[B[k], 0] = sa[k] * m0; m[B[k], 1] = sb[k] * m1
+                n[B[k], 0] = sa[k] * n0; n[B[k], 1] = sb[k] * n1
+                first = (k >> 1) == 0; same = (k >> 1) == (k & 1)
+                wi[B[k], 0] = alpha if first else beta
+                wi[B[k], 1] = beta if first else alpha
+                wi[B[k], 2] = gam if same else dlt
+                wi[B[k], 3] = dlt if same else gam
+                for c in range(4, C): wi[B[k], c] = rest[c]
+        else:
+            raise ValueError(f"unknown symmetry {kind!r}")
+
+
 class Optimization:
     """Small PyTorch train/validation loop with optional parameter freezing."""
 
@@ -56,6 +155,7 @@ class Optimization:
         # Hard orthogonality (n_col, m_col): after each step project n[:, n_col] ⟂ m[:, m_col].
         orthogonalize_cols: tuple[int, int] | None = None,
         mirror_tying: bool = False,
+        symmetry: str = "",
     ):
         self.model         = model
         self.train_loader  = train_loader
@@ -99,15 +199,26 @@ class Optimization:
         self.freeze_low_rank_cols = self._normalize_low_rank_cols(freeze_low_rank_cols)
         self.freeze_input_dims    = freeze_input_dims
         self.orthogonalize_cols   = orthogonalize_cols
-        # mirror_tying (Leon 2026-09-18, §35): re-impose the A↔B reflection symmetry after every
-        # optimiser step — the second half of the units is the mirror of the first with the MEMORY
-        # mode sign-flipped and the DECISION mode copied, and with the A↔B / C↔D input columns
-        # swapped. The network is then equivariant under A↔B ⇔ κ₀ → −κ₀ with κ₁ fixed, so the two
-        # memory attractors are forced to share a κ₁: they move DOWN TOGETHER or not at all, and the
-        # one-up-one-down solution (the inversion symmetry of a zero-mean Gaussian ensemble) is
-        # structurally excluded. Enforced by averaging the two halves (a projection onto the
-        # symmetric subspace), so it is exact and gradient-consistent rather than a copy of one half.
+        # ── Task-symmetry tying (Leon 2026-09-18, §36) ─────────────────────────────────────────
+        # The DPA response is r = ¬(s ⊕ t), sample s ∈ {A,B}, test t ∈ {C,D}. Its symmetry group is the
+        # Klein four-group {1, σ₁, σ₂, σ₃}:
+        #   σ₁ = (A↔B and C↔D)  pairing preserved   κ ↦ (−κ₀, +κ₁)   D₁ = diag(−1, +1)
+        #   σ₂ = (A↔B alone)    match ↔ nonmatch    κ ↦ (−κ₀, −κ₁)   D₂ = −I   (= σ₁σ₃)
+        #   σ₃ = (C↔D alone)    match ↔ nonmatch    κ ↦ (+κ₀, −κ₁)   D₃ = diag(+1, −1)
+        # Equivariance under σ (unit permutation P, input-channel permutation S_σ, κ-action D_σ) iff
+        #   P m = m D_σ,  P n = n D_σ,  P W_in = W_in S_σ
+        # ⇒ κ(P r) = D_σ κ(r), the trajectories commute, the autonomous field obeys F(D_σ κ) = D_σ F(κ)
+        # and the fixed-point set is D_σ-invariant. For the two memory wells at (±κ₀*, w):
+        #   σ₂ (free for any zero-mean Gaussian ensemble) ⇒ partner at (−κ₀*, −w): one well above the
+        #      lick line for every one below — both-below is FORBIDDEN.
+        #   σ₁ ⇒ the pair shares a common w: both go below together or not at all.
+        #   σ₃ / the full group ⇒ closed under κ₁ ↦ −κ₁, so attractors come in QUADRUPLES (±κ₀*, ±w) —
+        #      a 4-fold degenerate memory (or w = 0 if only two wells exist).
+        # `symmetry` ∈ {"", "pair" (σ₁), "test" (σ₃), "klein" (⟨σ₁, σ₃⟩)}, re-projected after every
+        # optimiser step. "pair"/"test" use 2 unit blocks, "klein" 4 (one group orbit per prototype).
+        # It is a PROJECTION (signed average over the orbit), not a copy, so every block contributes.
         self.mirror_tying         = bool(mirror_tying)
+        self.symmetry             = (symmetry or ("pair" if mirror_tying else "")).lower()
 
         self._frozen_m  = None
         self._frozen_n  = None
@@ -175,24 +286,8 @@ class Optimization:
                 )
 
     def _mirror_tie(self):
-        """Project m, n and the input weights onto the A↔B-symmetric subspace (see mirror_tying)."""
-        if not self.mirror_tying:
-            return
-        with torch.no_grad():
-            m, n = self.model.m, self.model.n
-            N = m.shape[0]; h = N // 2
-            for P, sgn in ((m, None), (n, None)):
-                a0, b0 = P[:h, 0], P[h:2 * h, 0]                 # memory mode: mirrored
-                avg0 = 0.5 * (a0 - b0); P[:h, 0] = avg0; P[h:2 * h, 0] = -avg0
-                a1, b1 = P[:h, 1], P[h:2 * h, 1]                 # decision mode: copied
-                avg1 = 0.5 * (a1 + b1); P[:h, 1] = avg1; P[h:2 * h, 1] = avg1
-            wi = self.model.wi.weight
-            for (c1, c2) in ((0, 1), (2, 3)):                    # A↔B and C↔D swap between halves
-                u = 0.5 * (wi[:h, c1] + wi[h:2 * h, c2]); v = 0.5 * (wi[:h, c2] + wi[h:2 * h, c1])
-                wi[:h, c1] = u; wi[h:2 * h, c2] = u
-                wi[:h, c2] = v; wi[h:2 * h, c1] = v
-            for c in range(4, wi.shape[1]):                      # go / nogo / cue / reward: shared
-                u = 0.5 * (wi[:h, c] + wi[h:2 * h, c]); wi[:h, c] = u; wi[h:2 * h, c] = u
+        if self.symmetry:
+            project_symmetry(self.model, self.symmetry)
 
     def _orthogonalize_cols(self):
         """Hard constraint: n[:, a] ⟂ m[:, b], re-imposed after every optimizer step.

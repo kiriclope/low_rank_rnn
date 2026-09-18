@@ -425,6 +425,17 @@ network OCCUPIES. Each rule below names the error that motivated it.
   input conditions (Autonomous, A, B, Go, NoGo, C, D by default; `COND_SPEC="name=dims[@value];..."`).
 - `scratchpad/flow_rows_grid.py` — the transpose (rows = conditions, cols = arms), `ROWS_SPEC=`.
 - `scratchpad/trained_flow_grid.py <sweep> <stage> <out> <tags...>` — autonomous flow, cols = arm, rows = seed.
+  Column headers carry the arm name. `NOANNOT=1` drops the per-panel σ/τ corner text and `LICKLINE=1`
+  draws a dashed κ₁ = 0 line — use both for figures meant for a reader rather than for triage.
+- `scratchpad/mn_scatter.py <sweep> <run_id> <stage> <out>` (`K=`, `NMAX=`) — all 6 pairwise scatters of
+  the per-neuron (m₀, m₁, n₀, n₁) with marginals, colored by a Gaussian-mixture fit, BIC over k = 1..4
+  in the title. This is how the four-cluster Klein orbit was found in free nets.
+- `scratchpad/mn_blocks.py <sweep> <out> <run_id>:<pair|klein> ...` — the symmetry check that a scatter
+  cannot make: for every unit of block 0 and every group element, actual vs D_σ-predicted value, per
+  component, against the identity line. Exact equivariance reads as max |actual − predicted| = 0. Use it
+  on the held checkpoint AND the released one; the residual scatter is the symmetry breaking.
+- `scratchpad/n_vs_input_scatter.py` — m, n against each input weight column with Pearson r, i.e. where
+  each stimulus writes.
 - `scratchpad/isotropy_readout.py <sweep>` (`STAGE=dpa|naive|expert`) — J, the per-mode factor scales
   σ(m_i)/σ(n_i) with an isotropy ratio, the angular anisotropy of the field against the 1/√N floor, and
   every attractor with τ_slow/τ_fast.

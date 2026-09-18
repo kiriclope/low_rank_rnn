@@ -17,7 +17,9 @@ def cpl(m):
 for sw,arm in ARMS:
     for stage,task in (("dpa","dpa"),("expert","dual")):
         print(f"=== {arm} — {stage} ckpt ({task} trials, TRAINED noise = input noise σ={0:.2f}, recurrent 0; wells of the deterministic field) ===".format(0.373*cfg0["noise"]) if False else f"=== {arm} — {stage} ckpt ({task} trials; wells of the INPUT-noise-averaged field; landings: input noise σ as trained, recurrent 0) ===")
-        for s in range(4):
+        import glob as _g, re as _re
+        _seeds = sorted({int(_re.search(r"/s(\d+)_", d).group(1)) for d in _g.glob(f"{sw}/s*_{arm}")})
+        for s in (_seeds or list(range(4))):
             try: m,cfg=load_run(sw,f"s{s}_{arm}",stage=stage,device="cpu")
             except Exception as e: print(f" s{s} load failed: {e}"); continue
             m.eval(); dt,a,_=run_dt_alpha(cfg); sig=cfg["noise"]*math.sqrt(1-math.exp(-2*a))

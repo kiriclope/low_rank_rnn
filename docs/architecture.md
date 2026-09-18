@@ -251,6 +251,16 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
   symmetric subspace). Exact: n₀ᵀm₁ = n₁ᵀm₀ = 0 and the two memory attractors are locked to a common κ₁ —
   they move below the lick line together or not at all. Replaces the inversion symmetry κ → −κ of a
   zero-mean Gaussian ensemble, which forces one well up for every well down (§35a).
+  `symmetry` / `symmetry_stages` (2026-09-18, §36) — the general form of the same idea, and what
+  `mirror_tying` is now an alias for. `symmetry="pair"` is σ₁, the A↔B pair exchange, two unit blocks;
+  `"test"` is σ₃, the C↔D test exchange; `"klein"` is the whole four-group V, four blocks indexed by
+  (a, b) with m₀, n₀ ∝ (−1)^a and m₁, n₁ ∝ (−1)^b. `symmetrize_init` builds the orbit by copying the
+  first block with the right signs and channel swaps, so the init overlaps λ₀, λ₁ are preserved exactly;
+  `project_symmetry` re-imposes it after every optimizer step as a *signed average over the orbit* — an
+  orthogonal projection, so every block contributes to the gradient rather than being overwritten.
+  `symmetry_stages` picks which stages hold it; **DPA only, then released, is the useful setting**: σ₁
+  leaves the common well height free while V pins the pair on the lick line, and after release the
+  Dual breaking field drives both wells down together (8/8 vs 6/8 free, §36c).
   `decision_readout_mean` — ⟨n₁⟩. With a non-negative φ the resting decision is κ₁ ≈ φ(0)·⟨n₁⟩, so a small
   negative value seats the whole memory manifold below the line; it is the only displacement the
   reflection symmetry allows. Useful window: ⟨n₁⟩ ≈ −0.1…−0.2 at λ ≥ 14 (more merges the pair into one sink).

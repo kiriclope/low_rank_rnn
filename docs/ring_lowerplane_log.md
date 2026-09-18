@@ -2697,3 +2697,68 @@ DPA stage only, 4 + 4 seeds, λ = 14, ρ = 0.8, `readout_scale` = √(λ/ρ) = 4
 **no κ₁ term**: `mirror_lam14` (tying held through training) vs `decmean_lam14` (identical, tying off) —
 isolating the symmetry from the mean. Question: do both wells stay below the line once the task is
 learned, and is the tying or the mean doing the work.
+
+---
+
+## §36 — Symmetry as a curriculum: hold it through DPA, release it, and both wells go down 8/8 (2026-09-18)
+
+Three sweeps close the §35 thread. All three use the `s1_dualscan_7` recipe as the base (lif, gain 1,
+λ = 7, ρ = 1, isotropic init, `pair_pin` two-sided, `nolick_shape` softplus, no-hold, `nolick_split_sample`)
+and **no κ₁ term anywhere in the DPA loss**.
+
+### §36a — `sweep_lif_mirror_dpa` (λ = 14, ⟨n₁⟩ = −0.1): the tying is what does it
+DPA stage only, 4 + 4 seeds. `mirror_lam14` (σ₁ tied through training) vs `decmean_lam14` (identical
+init and mean, tying off).
+- **Tied: 4/4 both wells below**, −0.47…−0.89σ, occupied (d ≤ 0.04), fast (τ_slow 0.4–0.9 s against a
+  5 s delay, so genuine wells and not ring remnants), cross-overlaps n₀ᵀm₁ = n₁ᵀm₀ = **0.00 exactly**,
+  DPA 0.993–1.000.
+- **Untied: 3/4 fail** — asymmetric pairs, or one memory well missing altogether (one odor with nowhere
+  to sit). Same init statistics, same ⟨n₁⟩. So it is the symmetry, not the mean, that produces the
+  matched pair.
+
+### §36b — `sweep_lif_recipe7` (8 seeds, free): the target solution reproduces 6/8
+Eight seeds of the exact `s1_dualscan_7` configuration, end to end, nothing tied.
+- 8/8 learn the whole task: dual_dpa 0.995–1.000, go 1.000, nogo 0.932–1.000, retention 0.990–1.000.
+- **6/8** end with BOTH memory states in wells below the line. Mean depth −1.43σ, mean left–right
+  imbalance **0.231σ** (worst 0.48σ). The 2 misses are the σ₂ pattern: one well down, one up.
+
+### §36c — `sweep_lif_symdpa`: σ₁ vs the full Klein group, held in DPA only, then released
+8 runs, 4 seeds each of `symdpa_pair` (σ₁, 2 blocks) and `symdpa_klein` (V, 4 blocks), `symmetry_stages`
+= DPA only, released before GNG. This is the sharp test of §9.3, because **σ₁ and V differ in exactly
+one way**: σ₁ = diag(−1,+1) ties the two wells to a COMMON κ₁ but leaves that height free; adding
+σ₃ = diag(+1,−1) closes the fixed-point set under κ₁ → −κ₁, so two wells must be **pinned at κ₁ = 0**
+and any extra attractor must come with its reflection.
+
+**At the DPA checkpoint (constraint held) — the prediction is confirmed on both halves:**
+
+| arm | memory pair κ₁ | in σ | attractor count, 4 seeds | extra attractors |
+|---|---|---|---|---|
+| `symdpa_pair` (σ₁) | −0.11 … −0.14 | −0.29 … −0.37σ | **3, 3, 3, 4** | a LONE sink at (≈0, +1.1…+1.3) — its own σ₁ image, so odd counts are allowed |
+| `symdpa_klein` (V) | −0.02 … +0.02 | ≤ 0.1σ | **2, 4, 4, 2** | when present, a σ₃ PAIR at (≈0, ±0.93…±1.02) — equal and opposite |
+
+Cross-overlaps **0.000 exactly** in both arms; DPA 0.998–1.000. The orbit relation is exact unit by
+unit: max |actual − D_σ·predicted| = **0.00e+00** on all four components at the DPA checkpoint, and
+4.1 (pair) / 9.5 (klein) at the expert checkpoint, with J off-diagonals moving 0.000 → 0.10–0.23. That
+residual is the symmetry breaking, measured in the parameters rather than in the flow.
+
+The −0.3σ the σ₁ arm shows at DPA, with no κ₁ term in the loss, is the memory task's own mild
+preference for sitting low — a preference the full group is strong enough to forbid.
+
+**At the expert checkpoint (released, GNG + Dual trained freely) — 8/8:**
+
+| curriculum | both states below | mean depth | mean \|left−right\| | worst |
+|---|---|---|---|---|
+| free throughout (`recipe7`, 8 seeds) | 6 / 8 | −1.43σ | 0.231σ | 0.48σ |
+| symmetry held in DPA, then released (`symdpa`, 8 seeds) | **8 / 8** | −1.49σ | **0.077σ** | 0.23σ |
+
+Behavior after release: dual_dpa 0.999–1.000, dual_gng 0.974–1.000, go 0.994–1.000, nogo 0.947–0.997.
+
+**The mechanism is not that the constraint pushes anything down** — it is gone by the Dual stage, and
+while it was on it either held the wells level (σ₁) or pinned them on the line (V). What it does is
+hand GNG a configuration with **no residual σ₂**, so the breaking field acts on both memories the same
+way and they descend together. Depth is unchanged; reliability and balance are what improve. Symmetry
+here is scaffolding: it selects which solution the later stages are pushed away from.
+
+Figures: gallery `rnn/lif_symdpa` — `summary_symmetry_flow_grid_dpa/expert.png` (4 seeds × pair/klein,
+lick line dashed), `summary_orbit_block_check.png` (unit-by-unit identity check, held vs released),
+`s0_mn_pairs_symdpa_*_dpa.png`. Artifact: https://claude.ai/artifact/ANVVa4bWp1bzB4fByKJFwW

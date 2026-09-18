@@ -256,3 +256,102 @@ $V(-\kappa)=V(\kappa)$ **in the readout plane**. Three routes, and what the theo
 - The **EI model** has a dense static backbone, so its κ‑reduction is *not* the clean rank‑2 form here;
   the qualitative landscape language (wells, slow manifold, saturation collapse) still applies but the
   $G$/$V$ formulas must include the backbone.
+
+
+## §9 — The task symmetry group, and which symmetry a network is allowed to keep
+
+*(added 2026-09-18; implementation `src/train.py: project_symmetry / symmetrize_init`,
+`RunConfig.symmetry` + `symmetry_stages`; results in `ring_lowerplane_log.md` §36)*
+
+### 9.1 The group
+Write the DPA response as a parity: sample $s\in\{A,B\}$, test $t\in\{C,D\}$, and
+
+$$r \;=\; \neg\,(s \oplus t)\qquad\text{(match iff } (A,C)\text{ or }(B,D)).$$
+
+Relabelling the stimuli by flipping $s$, $t$ or both gives three non-trivial involutions, closing into
+the **Klein four-group** $V=\{1,\sigma_1,\sigma_2,\sigma_3\}$:
+
+| map | stimulus relabelling | effect on $r$ | action on $\kappa=(\kappa_0,\kappa_1)$ |
+|---|---|---|---|
+| $\sigma_1$ | $A\!\leftrightarrow\!B$ **and** $C\!\leftrightarrow\!D$ | preserved | $D_1=\mathrm{diag}(-1,+1)$ |
+| $\sigma_2=\sigma_1\sigma_3$ | $A\!\leftrightarrow\!B$ alone | match $\leftrightarrow$ nonmatch | $D_2=-I$ |
+| $\sigma_3$ | $C\!\leftrightarrow\!D$ alone | match $\leftrightarrow$ nonmatch | $D_3=\mathrm{diag}(+1,-1)$ |
+
+$\sigma_1$ is the only one that preserves the pairing; the other two are *anti*-symmetries of the
+response, and they act on $\kappa_1$ with a sign flip because the readout must change sign with $r$.
+
+### 9.2 Equivariance conditions on $(m,n,W_{\rm in})$
+With $W_{\rm rec}=\frac1N m n^{\mathsf T}$ and $\kappa=\frac1N n^{\mathsf T}r$, let $P$ be a permutation
+of units (an involution), $S_\sigma$ the permutation of input channels, $D_\sigma$ the action above.
+The network is $\sigma$-equivariant iff
+
+$$P\,m = m\,D_\sigma,\qquad P\,n = n\,D_\sigma,\qquad P\,W_{\rm in} = W_{\rm in}\,S_\sigma .$$
+
+*Proof sketch.* $\kappa(Pr)=\frac1N(Pn)^{\mathsf T}r=D_\sigma\kappa(r)$; the recurrent drive obeys
+$W_{\rm rec}(Pr)=m\,D_\sigma\kappa = P(m\kappa)=P\,W_{\rm rec}r$; the input drive obeys
+$W_{\rm in}S_\sigma x = P\,W_{\rm in}x$; and $\varphi$ acts elementwise, hence commutes with $P$. So
+$r(t)\mapsto Pr(t)$ maps the trajectory for $x$ onto the trajectory for $S_\sigma x$. ∎
+
+Consequences: the autonomous field satisfies $F(D_\sigma\kappa)=D_\sigma F(\kappa)$, its fixed-point
+set is $D_\sigma$-invariant, and the cross-overlaps obey $n_0^{\mathsf T}m_1=n_1^{\mathsf T}m_0=0$
+identically whenever $D_\sigma$ has distinct diagonal entries (true for $\sigma_1$, $\sigma_3$ and the
+whole group, verified numerically to $10^{-16}$).
+
+### 9.3 What each symmetry does to the two memory wells
+Let the memory attractors be at $(\pm\kappa_0^*,w)$.
+
+- **$\sigma_2$ — the inversion.** *Any* ensemble whose joint distribution of $(m,n)$ is invariant under
+  $(m,n)\mapsto(-m,-n)$ — in particular any zero-mean Gaussian, i.e. the standard init — makes
+  $F(-\kappa)=-F(\kappa)$ for **any** transfer function (§8 restated: it is a property of the
+  ensemble, not of an odd $\varphi$). Then $(\kappa_0^*,w)$ forces a partner at $(-\kappa_0^*,-w)$:
+  **one well above the lick line for every well below**. Both-below is symmetry-forbidden, and a
+  network can only reach it by destroying the symmetry during training (measured odd-symmetry
+  violation: $0.000$ at init, $1.67$ in a trained net that has both wells below).
+- **$\sigma_1$ — the pairing symmetry.** $D_1$ leaves $\kappa_1$ alone, so the mirror partner of
+  $(\kappa_0^*,w)$ is $(-\kappa_0^*,w)$: the two wells **share a common height** and can only move
+  below the line *together*. This is the symmetry to keep.
+- **$\sigma_3$ / the full group $V$.** The set is additionally closed under $\kappa_1\mapsto-\kappa_1$,
+  so attractors come in **quadruples** $(\pm\kappa_0^*,\pm w)$ — a four-fold degenerate memory — or,
+  if only two wells exist, they are pinned at $w=0$ on the lick line.
+
+### 9.4 Symmetry as a curriculum
+$V$-equivariance is compatible with DPA but not with the full task: GNG is not invariant under
+$\sigma_3$ once go/nogo has a meaning, and the Dual no-lick pressure is explicitly asymmetric in
+$\kappa_1$. That suggests enforcing the symmetry **stage by stage** (`symmetry_stages`): hold it
+through DPA — where a pinned or four-fold-degenerate memory is harmless, the wells being symmetric and
+the pairing readout unaffected — then release it, letting GNG and Dual break it in the one direction
+the task rewards. Note that GNG freezes rank-0, so after release the **decision mode breaks first**
+(verified: at the DPA checkpoint all components are tied to $0$; after GNG $m_1,n_1$ deviate while
+$m_0,n_0$ are still exact; after Dual all four break).
+
+### 9.5 Realization
+`symmetrize_init` builds the orbit by copying the first block with the signs/channel swaps above (so
+the init overlaps $\lambda_0,\lambda_1$ are preserved exactly); `project_symmetry` re-imposes it after
+every optimizer step by a *signed average over the orbit* — an orthogonal projection onto the
+equivariant subspace, so all blocks contribute to the gradient. $\sigma_1$ and $\sigma_3$ use two unit
+blocks; $V$ uses four, indexed by $(a,b)$ with $m_0\propto(-1)^a$, $m_1\propto(-1)^b$ (same for $n$),
+$w_A$ depending on $a$ only and exchanged with $w_B$ by $\sigma_1$, and $w_C=\gamma$ where $a=b$,
+$\delta$ otherwise (with $C\!\leftrightarrow\!D$ swapped). Verified: structural ties exact, field
+equivariance $\sim10^{-16}$, $J_{01}=J_{10}=0$.
+
+### 9.6 Measured (2026-09-18, `sweep_lif_symdpa`)
+The distinction in 9.3 between $\sigma_1$ and the full group $V$ is directly testable, because the two
+differ only in whether the fixed-point set must also be closed under $\kappa_1\mapsto-\kappa_1$.
+Eight networks on the same base ($\lambda=7$, $\rho=1$, four seeds each), the symmetry imposed by
+projection after every optimizer step and **only during DPA**, with no $\kappa_1$ term in the loss:
+
+| held during DPA | memory pair $\kappa_1$ | attractor counts (4 seeds) | extra attractors |
+|---|---|---|---|
+| $\sigma_1$ | $-0.11\ldots-0.14$ ($-0.3\sigma$) | 3, 3, 3, 4 | a lone sink on the $\kappa_1$ axis — its own $\sigma_1$ image, so an odd count is allowed |
+| $V$ | $\lvert\kappa_1\rvert\le 0.02$ ($\le 0.1\sigma$) | 2, 4, 4, 2 | always a $\sigma_3$ pair, $(\approx 0,\pm w)$ |
+
+Both arms give cross-overlaps $J_{01}=J_{10}=0.000$ and DPA accuracy $0.998$–$1.000$; the orbit
+relation holds to $0$ unit by unit. So the group's two consequences — *pinning* under $V$ and the
+*parity of the attractor count* — both show up in the trained networks, and the $-0.3\sigma$ residual
+under $\sigma_1$ alone is the memory task's own preference, which $V$ forbids.
+
+After release the picture is 9.4's curriculum claim, quantified against a free control of the same
+size (8 seeds each, expert checkpoint): both states below the line **8/8 vs 6/8**, mean depth
+$-1.49\sigma$ vs $-1.43\sigma$ (unchanged), mean left–right imbalance $0.077\sigma$ vs $0.231\sigma$.
+The symmetry does not do the pushing — it removes the residual $\sigma_2$ that otherwise sends one
+well up while the other goes down.
