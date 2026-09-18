@@ -2355,3 +2355,202 @@ The WELL tables were fine (`find_wells(noise_sigma=σ)` is the input-noise-avera
 the batch with `meta.noise_sigma()` and recurrent 0, i.e. exactly the trained system. Rule 11 now
 says: wells with `find_wells(noise_sigma=σ_eff)`; landings with `model.noise = 0` and input noise
 σ_eff; never `model.noise = σ_eff`. All §31 numbers above are protocol-correct.
+
+
+## §32 — The design: bowl + tail + no hold. Both memory wells below the line, occupied, task perfect (2026-09-16/17)
+
+All arms 4 seeds on the `tau20_n10` substrate (no attention, test-driven pairing, τ 0.2, noise 1.0, Adam,
+stop_loss 0.1, `integrate="both"`), protocol readouts (`scratchpad/readout_arm.py`: input-noise field
+wells, landings under input noise, per side, at the DPA / naive / expert checkpoints).
+
+### §32a — The loss split by sample, and the two DPA end-of-delay demands together
+
+- **`nolick_split_sample`** (Leon): the no-lick hinge scored as TWO masked means, A-sample rows + B-sample
+  rows, so the side that already satisfies the hinge cannot dilute the pressure on the other. Identity
+  from the sign of the row's κ₀ target; Dual trials get the A/B hold written into their targets
+  (`dual_mem_targets=True`) but the memory terms stay OFF (`dual_mem_supervise=False`) — Dual remains
+  supervised through pairing only. Also splits the legacy κ₁ = 0 pin and the DPA one-sided hinge
+  (`dpa_nolick_split`). GNG has no sample → no split there.
+- **`onesided_early`** (pin → one-sided hinge AND κ₀ hold moved to after the sample): the FIRST arm whose
+  DPA-ckpt wells all sit below the line (−0.3…−1.0σ, 7/8, states on them), retention 0.95–0.99. GNG
+  keeps/deepens them; DUAL flattens the A side (3/4 lose the A well; s2-A ends on an upper well).
+- **`onesided_early_w1split_dpa`** (+ split at both stages): DPA wells symmetric within 0.1σ in 3/4
+  (s0 −0.5/−0.5, s1 −0.9/−1.0, s3 −0.4/−0.2), retention 0.999/0.923/0.948/0.984; Dual still reshapes
+  but the A side descends further (−0.50/−0.10/+0.13/−0.36) and nobody ends above the line.
+- **`free_early_w1split`** (NO κ₁ term in DPA at all): retention 0.99/0.97/0.99/1.00 — the best — but the
+  DPA wells scatter ±0.9σ, 5/8 ABOVE the line: with nothing imposed the κ₁ of a DPA well is
+  undetermined (sign per seed and per side). The one-sided hinge is not fighting an upward force; it
+  resolves an indifference — which is also why it stops at −0.3…−1σ once the sign is chosen.
+- Dual never converged in any of these (train 0.2–0.4 at 300 epochs, still falling); the dominant
+  residual is the go hold (`gng_pos` 0.26–0.36) and nolick ~0.02–0.10 (≈ the relu² noise floor).
+
+### §32b — Why every hinge saturates: two caps
+
+1. DPA (inputs free): relu(κ₁)² has force 2[μΦ(μ/s)+sφ(μ/s)] — 0.8s at the line, 0.17s at −1s,
+   0.02s at −2s. It switches itself off a noise-width below zero. Weight scales it, not where it dies
+   (§29i's "weight buys tightening, not depth", now with the reason).
+2. Dual (inputs frozen): the response is a fixed additive kick — measured pairing kick 0.6–1.0, go kick
+   0.5–0.9 in every arm — so the paired trial must reach +1 from the well and a well below ≈ −0.2 costs
+   the pairing directly. "The net adjusts the vertical flows instead of moving the wells" (Leon, 09-10)
+   is this cap.
+
+### §32c — Leon's specification and its three ingredients
+
+Loss as a function of the well height w: **DPA a bowl at w = 0** (moving the wells away deteriorates
+pairing); **GNG an inverted sigmoid** (the cue pushes up, a lick is wrong on nogo → lower wells better,
+with a tail); **Dual = the sum → w* < 0**, no threshold anywhere. Reduced model
+(`scratchpad/landscape.py`, kicks fixed at measured values, state noise 0.3): w* −0.37 (relu²) …
+−0.5 (softplus) at weight 1, deeper with weight; DPA-only a bowl, GNG-only min at −0.5.
+Each ingredient alone, measured:
+
+| arm | what | result |
+|---|---|---|
+| `w1split_dpa_softplus` (A) | no-lick shape → softplus (logistic lick cost), both stages | DPA wells at (±0.85, **−3.2**) = −8.5σ, DPA 1.0 — with one-sided pairing NOTHING opposes the tail in DPA (the kick just grows); after GNG the pairing readout is dead (0.63/0.54/0.57/0.50) |
+| `w1split_dpa_nohold` | no go/nogo delay hold (`gng_weight` 0 — the go LICK had to be added: `gng_response=True`, the old recipe had NO cue-time go target, the hold WAS the lick) | go/nogo become displacements of the well (go +0.35…+0.39, nogo −0.23…−0.50, none ≈ 0) instead of absolute (+0.4 / −1); GNG learns it (0.73–0.96) but Dual LIFTS the wells (+0.6…+1.6σ): the go hinge (unsatisfied at 0.74) pulls up, relu² nolick pushes nothing at 0 |
+| `design1_w1/w4` (from the nohold DPA ckpt): `pair_pin` (two-sided ±1 pairing) + softplus + no hold | **w1: 3/4 seeds with BOTH wells at −1.8…−2.7σ, symmetric, OCCUPIED (d ≤ 0.44), dual_dpa 0.996–1.0, go 0.99–1.0, nogo 1.0.** w4: −2.8…−3.9σ, nogo 1.0, go 0.85–0.96. The target geometry, no painted value. BUT the softplus in GNG (nothing opposes it there) killed retention after GNG (0.51–0.64); Dual rebuilt it |
+| `design2_w1/w4` (full sequence; DPA no push, GNG relu², Dual bowl+softplus+no hold) | retention after GNG 0.94–1.00 (GNG clean). DPA wells scattered ±0.9σ (§32d); Dual pushes ONE side per seed (−1.0…−1.4σ) and leaves/raises the other; w4: s0/s1 symmetric (−1.5/−1.9σ, −3.3/−3.4σ) |
+
+Reduced model vs design1 (kicks re-measured): structure right everywhere (interior optimum, depth ∝
+weight, go pays at w4); quantitatively right at w4 (−0.84…−1.00 vs −0.88…−1.31) and a lower bound at
+w1 (−0.22…−0.34 vs −0.39…−0.82): with frozen inputs the net still GREW the effective kicks (go d+C
+1.0–1.8, K 1.2–1.9 vs 0.75/1.0 in nohold) through the recurrent dynamics — the "free inputs" row of
+the model is the better predictor.
+
+### §32d — The bowl is NOT available in DPA (a claim of mine, falsified)
+
+I argued that two-sided ±1 pairing forces w = 0 (w + K = 1, w − K = −1). `design2` with `pair_pin`
+confirmed active in DPA gives the SAME scattered wells as `free_early`, to two decimals. The pairing
+response is not a fixed symmetric kick: it is computed by the recurrence from the (sample × test)
+conjunction and can be asymmetric (+0.7 / −1.3 from a well at +0.3). In DPA, with inputs and
+recurrence free, κ₁ of the wells is undetermined by the task — with lif there is no ring to give
+κ₁ = 0 for free (§33), and no target does either. The bowl exists only in Dual, where the kicks are
+frozen. Consequence: the Dual stage propagates the DPA start's symmetry — design1 (symmetric hinge
+wells) → symmetric deep pairs; design2 (scattered) → one side per seed. **Best recipe on the table =
+design1's DPA (one-sided hinge, split) + design2's GNG (relu²) + Dual (bowl + softplus + no hold) —
+`design3`, not yet run.**
+
+### §32e — Fig. 4c of the dual project, for the RNN (`scratchpad/fig4c_rnn.py`)
+
+Per seed × sample: Δ well depth (κ₁ of the OCCUPIED attractor of the input-noise field, expert −
+naive) vs Δ accuracy (DPA on DPA-only trials; NoGo on dual trials — go is at ceiling, pooled GNG hid
+the effect). Naive nogo accuracy per sample is binary on well side (0.00 above the line, 0.93–1.00
+below); the sample-sides that go down gain nogo (0.00 → 0.87–0.98), those that go up lose it — the
+mouse sign on the NoGo arm. The DPA arm is flat at ceiling (naive DPA ≈ 1.0), unlike the mice; and
+the arms with a broken naive stage (design1) have no naive wells to measure Δ from.
+
+### §32f — Method notes
+- Dual with softplus never reaches stop_loss 0.1 (floor 2·ln2·w = 1.39 at w=1, 5.5 at w=4 at the
+  line) → `epochs_dual` 150 for design2 (Leon). A plateau stop is the cleaner fix (not built).
+- The go/nogo "hold" (`gng_weight`) and the cue-time lick (`gng_response` → `rwd_go`) are different
+  terms; the recipe up to 09-16 had no cue-time go target at all.
+- Trained noise = INPUT noise (rule 11): never `model.noise = σ`.
+
+
+## §33 — The ring: covariance, not the transfer function (2026-09-17/18)
+
+Leon: "in the theory the ring should not depend on the transfer function but on the covariance
+between n₀ and n₁." Correct, and now measured in-house; the `nonlinearities.md` line "ring-capable:
+tanh and erf only (odd + saturating)" is an empirical statement from structured inits, not the theory.
+
+### §33a — Mean-field
+F(κ) = −κ + Σ·⟨φ′(Δ(κ))⟩·κ with Δ(κ) = κᵀΣ_m κ (Stein's lemma, zero-mean Gaussian vectors): φ
+enters only through the averaged gain; the field is rotationally symmetric iff the rank-2 covariance
+is isotropic — equal σ_m across modes, equal σ_n, zero cross-covariances (m₀·m₁, n₀·n₁, m₀·n₁,
+m₁·n₀), zero means. The overlap matrix **J_ij = g·n_iᵀm_j/N** (the linearised κ-gain; origin unstable
+when g·J·φ′(0) > 1, i.e. J > 2.5 for lif φ′(0) = 0.399 at gain 1; ≈ 3.4 under the input-noise-averaged
+gain) is necessary but NOT sufficient: it constrains only the products.
+Per mode (`init.py`: m = a·u + s·p_m, n = a·u + s·p_n): λ = a² = nᵀm/N, σ² = a² + s² = ‖m‖²/N =
+‖n‖²/N, ρ = λ/σ² → **two free parameters per mode (λ, ρ), σ² = λ/ρ**, plus the gain. The literature
+convention (unit-variance Gaussian entries) is the σ = 1 slice, ρ = λ ≤ 1.
+
+### §33b — Surrogate fields on a trained DPA net (`s0_design2_w1`)
+Anisotropy index = range of the radial field component around a circle (input-noise-averaged field):
+
+| field | R 0.8 | R 1.1 | R 1.5 |
+|---|---|---|---|
+| trained lif vectors (J₀₀ 6.8, J₁₁ 7.4, |J₀₁|,|J₁₀| ≤ 0.6, m₀⊥m₁, n₀⊥n₁) | 0.21 | 0.41 | 0.69 |
+| Gaussian surrogate, same 4×4 covariance + means, lif | 0.38 | 0.44 | 0.50 |
+| Gaussian surrogate, same covariance, zero means | 0.30 | 0.34 | 0.39 |
+| Gaussian surrogate, ISOTROPISED covariance, zero means, lif | 0.16 | 0.16 | 0.16 (finite-N floor) |
+
+The anisotropy is second-order structure, not higher-order sculpting, and lif rings once the covariance
+is isotropic. The trained nets have isotropic J but unequal FACTORS: σ(m₀) 2.56 vs σ(m₁) 2.08, σ(n₀)
+2.91 vs σ(n₁) 3.91 — DPA training equalises the products (the task cares about J) and never the
+factors. The seed is `init.py`: memory mode σ_m = σ_n = √(λ₀/ρ) = 1.41; decision mode n₁ unit-variance
+(`readout_scale`) and m₁ = λ₁/ρ₁ ≈ 0.63 — the two modes are not exchangeable from the start.
+(July's tanh ring nets: checkpoints no longer on disk; the criterion could not be checked on them.)
+
+### §33c — The init grids (`scratchpad/init_flow_grid.py`, gallery `init_flow_grids`)
+Autonomous fields of rank-2 lif nets AT INIT rendered with the trained-net panel code (input-noise
+field σ_eff 0.37, magma, ● attractor / × saddle / △ repeller), gain 1, N 1024, box ±1.5.
+- **Grid 1** (isotropic construction, cols λ ∈ {1.6, 3, 5, 7, 10}, rows ρ ∈ {0.3, 0.5, 0.8, 1.0}): single
+  stable origin below λ_c (our init λ₀ = 1.6 is subcritical — every DPA stage crosses criticality; the
+  trained nets sit at J ≈ 7 because the ±1 targets need radius 1); above it a closed low-speed
+  ANNULUS around a repelling origin — the ring — radius growing with λ and shrinking with ρ (σ² = λ/ρ:
+  ρ 0.3 r 0.4→0.6, ρ 0.8 r 0.6→1.0, ρ 1.0 r 0.7→1.1 over λ 5→10). Finite N picks 2 ● + 2 × on it
+  (tangential eigenvalue 0 → any residual anisotropy chooses); at ρ 0.3–0.5, λ 7 the finder reports NO
+  discrete point on the annulus — the most isotropic cells.
+- **Grid 2** (memory mode at J₀₀ 7, ρ 0.8; decision λ₁/λ₀ ∈ {0.25, 0.5, 1, 2}; rows = `init.py`
+  construction vs isotropic): ratio ≤ 0.5 two memory wells on κ₀ in both; ratio 1 isotropic = annulus,
+  `init.py` = NO annulus, a tight ●●×× cross with ● on κ₁ at r ≈ 0.3 — the ring is broken at equal
+  overlaps by σ(n₁) = 1 vs σ(n₀) = 2.96; ratio 2 wells on κ₁ (r 0.3 vs 1.3).
+- **Grid 3** (λ₀ = λ₁ = 7, ρ 0.8 both; rows σ(n₀) ∈ {1, 1.7, 2.96}, cols σ(n₁) ∈ {1, 1.7, 2.96, 4};
+  general construction n = σ_n(√ρ u + √(1−ρ) p_n), m = σ_m(√ρ u + √(1−ρ) p_m), σ_m = λ/(ρσ_n)):
+  **σ_n sets the radius of its mode at fixed J** (n only via the overlap, σ_m via saturation
+  Δ = σ_m²R²): σ_n 1 → r 0.3, 1.7 → 0.5, 2.96 → 0.85, 4 → 1.1. Off the diagonal the ring becomes an
+  ELLIPSE and breaks into **four wells at the ends of both axes** with saddles between — the
+  four-cardinal-wells geometry of the trained DPA nets (σ(n₀) 2.91 vs σ(n₁) 3.91 → predicted radii 0.85
+  vs 1.1 ≈ measured). Equal σ_n restores the circle.
+
+Open: whether a DPA ring is wanted, and whether isotropy would survive training (isotropic init,
+DPA-only probe, 4 seeds — not run). Any isotropy term would be a constraint on the representation.
+
+### §33d — ★ Ring vs wells is a QUANTITATIVE call, and the multiplier is the wrong yardstick (2026-09-18)
+
+Leon: "our solver finds fixed points on the ring; I feel like these are incorrect, because the whole
+ring is a fixed point." Right in the mean-field limit, and the solver is right about the field it is
+given — the two are reconciled by finite N, and the measurement forced a change of diagnostic.
+
+**Finite-size scaling** (isotropic construction λ = 7, ρ = 0.5 both modes; noise-free field; 3 seeds):
+
+| N | max \|F_θ\| on the ring | angular modulation of F_r | ring radius |
+|---|---|---|---|
+| 512 | 0.059–0.104 | 0.071–0.075 | 0.67–0.76 |
+| 2048 | 0.025–0.029 | 0.030–0.036 | 0.69–0.70 |
+| 8192 | 0.013–0.019 | 0.021–0.024 | 0.69–0.70 |
+
+The corrugation falls as ~1/√N (16× more units → ≈4× smaller) while the radius is stable: it is
+sampling noise in the covariance, not structure. The fixed points the solver returns ARE genuine zeros
+of the finite-N field (residual < 1e-8); they are the discrete residue of a continuous attractor.
+**Why exactly four, on the mode axes:** the leading perturbation is the covariance mismatch, a
+quadratic form in κ, hence a SECOND harmonic cos 2(θ−θ₀) — which pins exactly 2 attractors + 2 saddles,
+at the eigenvectors of the anisotropy (= the κ₀/κ₁ axes when it is the σ_m/σ_n split). Same mechanism,
+larger amplitude, gives grid 3's ellipse-with-four-wells.
+
+**The eigenvalue evidence, and why the raw multiplier is useless.** A map multiplier is
+λ_i = 1 − dt/τ_i, so with dt = 0.015 and τ ≈ 0.2 s (α = 0.075) EVERY attractor reads |λ| ≈ 0.99 and a
+threshold on it says nothing. In relaxation times τ_i = dt/(1−|λ_i|):
+
+| field | multipliers (slow/fast) | τ_slow / τ_fast | anisotropy |
+|---|---|---|---|
+| isotropic init ring (λ 7, ρ 0.8) | 0.9973 / 0.8417 | **5.6 s** / 0.095 s | 59× |
+| trained DPA nets (`design2_w1`, 4 seeds) | 0.9912–0.9962 / 0.843–0.847 | **1.0–3.9 s** / 0.10 s | 17–41× |
+
+So the trained "wells" are not qualitatively different from the ring: a fast radial contraction
+(0.1 s) onto a slow set, with a tangential time constant of 1–4 s against a **5 s delay**. The state
+does not finish settling along the slow direction within a trial. This is the same object as §31a's
+U-shaped continuous attractor and §31b's states drifting the whole delay toward a well they never
+reach — those were not anomalies, they are what a 1–4 s tangential time constant looks like.
+`classify_fixed_points`' `marginal_tol` = 2e-3 (on the multiplier) only catches exact degeneracy, so
+everything here is labelled "stable attractor".
+
+**Changes made (so future flow plots characterise FPs correctly):**
+- `bifurcation_probe.find_wells(..., with_eigs=True)` → `(κ, kind, (τ_slow, τ_fast))` in SECONDS
+  (backward compatible; default return unchanged). Docstring states the rule.
+- `scratchpad/readout_arm.py` prints `τ slow/fast s` per attractor and flags `SLOW` when
+  τ_slow > the delay.
+- `plot_sweep.py --mark_slow` is now **default ON** (`--no_mark_slow` restores the old behaviour):
+  shallow/slow attractors get the orange ring in every flow panel, so a ring remnant is never drawn
+  like a well. `--slow_tol` 0.06 on the multiplier remains the marker's threshold (it flags what is
+  slow at a glance; the seconds are the quantitative statement).
+- **Rule:** never report "wells" from labels alone — report τ_slow in seconds against the delay.

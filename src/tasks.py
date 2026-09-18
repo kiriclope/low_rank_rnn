@@ -295,6 +295,9 @@ def generate_dual_trials(
     ramping_gng: bool = False,
     windowed_targets: bool = False,
     decay_to_zero: bool = True,
+    mem_targets: bool = False,        # write the A/B memory hold (±1 on κ₀) into the DUAL targets
+    mem_hold_window: float = 0.0,     #   … over this window (s); 0 = sample onset → test onset
+    mem_hold_anchor: str = "test",    #   … "test" = ending at test onset, "sample" = starting at sample offset
     gng_response: bool = False,
     gng_memory: bool = True,
     decay_onesided: bool = False,
@@ -364,6 +367,22 @@ def generate_dual_trials(
 
     # baseline
     targets[:, :n_on[0]] = 0.0
+    # A/B memory hold in the DUAL targets (Leon 2026-09-16): the Dual generator never wrote the
+    # sample identity into κ₀ (Dual memory is supervised through the pairing decision only). With
+    # mem_targets=True the same hold as generate_dpa_trials(hold_window, hold_anchor) is written on
+    # channel 0 so the LOSS can (a) balance the no-lick hinge per sample (nolick_split_sample) and,
+    # only if UnifiedLoss(mem_supervise=True), (b) supervise the memory in Dual as in DPA.
+    if mem_targets:
+        _w = int(round(mem_hold_window / timing.dt))
+        if mem_hold_anchor == "sample" and mem_hold_window:
+            _m0, _m1 = int(n_off[0]), int(n_off[0]) + _w
+        elif mem_hold_window:
+            _m0, _m1 = int(n_on[3]) - _w, int(n_on[3])
+        else:
+            _m0, _m1 = int(n_on[0]), int(n_on[3])
+        _m0 = max(_m0, int(n_on[0])); _m1 = min(_m1, int(n_on[3]))
+        targets[idx_A, _m0:_m1, 0] = 1.0
+        targets[idx_B, _m0:_m1, 0] = -1.0
 
     half    = int(round(0.5 / timing.dt))    # 0.5 s in steps
     quarter = int(round(0.25 / timing.dt))   # 0.25 s (shortened gng-hold / pairing windows)

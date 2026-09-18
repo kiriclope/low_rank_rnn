@@ -1177,3 +1177,36 @@ noise; landings must not add recurrent noise; the well tables were unaffected, l
 ≈0.1–0.15 too deep.
 
 **Not run:** `onesided_early` + nolick_weight 2; the grid at 8 seeds; noise 1.5 on the best DPA recipe.
+
+## 2026-09-16/18 — the design (bowl + tail + no hold) and the ring/covariance grids (11 sweeps, 44 runs)
+
+Detail: `ring_lowerplane_log.md` §32 (design) and §33 (ring). Base for all: `tau20_n10`
+(no attention, `response_in_cue`, τ 0.2, noise 1.0). 4 seeds each.
+
+| sweep | arm | delta | after_gng/dpa | expert geometry (protocol) |
+|---|---|---|---|---|
+| `sweep_lif_sub_onesided_early_w1split_dpa` | `…w1split_dpa` | onesided_early + `nolick_split_sample` (Dual) + `dpa_nolick_split` | 0.999/0.923/0.948/0.984 | DPA wells symmetric −0.4…−1.0σ; Dual: A side −0.5/−0.1/+0.1/−0.4, deep pairs in s0/s3 |
+| `sweep_lif_sub_free_early_w1split` | `free_early_w1split` | NO κ₁ term in DPA | 0.990/0.968/0.992/0.997 | DPA wells scatter ±0.9σ (5/8 above) — κ₁ undetermined without the hinge |
+| `sweep_lif_sub_w1split_dpa_softplus` | arm A | `nolick_shape="softplus"` both stages | 0.63/0.54/0.57/0.50 | DPA wells at −8.5σ (nothing opposes the tail in DPA); readout dead after GNG |
+| `sweep_lif_sub_w1split_dpa_nohold` | `…nohold` | `gng_weight` 0 + `gng_response` True (no delay hold, go licks at the cue) | 0.979/0.836/0.870/1.000 | go/nogo = displacements of the well (±0.4); Dual lifts wells (+0.6…+1.6σ); nogo 0.48–0.80 |
+| `sweep_lif_sub_design1_w1` / `_w4` | design1 (from nohold DPA ckpt) | + `pair_pin` + softplus (both) + no hold; w 1 / 4 | 0.51–0.64 (GNG softplus breaks the readout) | **w1: 3/4 both wells −1.8…−2.7σ, occupied, task perfect**; w4: −2.8…−3.9σ, go 0.85–0.96 |
+| `sweep_lif_sub_design2_w1` / `_w4` | design2 (full sequence) | DPA no push + pair_pin; GNG relu², no hold; Dual bowl + `dual_nolick_shape` softplus; `epochs_dual` 150 | 0.94–1.00 | DPA wells scattered (bowl does NOT act in DPA, §32d); Dual: one side per seed −1.0…−1.4σ (w1); w4 s0/s1 symmetric −1.5/−1.9σ, −3.3/−3.4σ; go 0.57–0.80 at w4 |
+| (first design2 pass, `rwd_pin` mis-wired: no DPA bowl) | | identical DPA to free_early | 0.94–1.00 | kept in the job tmp dir |
+
+**New machinery.** `nolick_split_sample`, `dual_mem_targets`, `dual_mem_supervise`, `dpa_nolick_split`,
+`nolick_shape` / `dual_nolick_shape` ("softplus" = logistic lick cost), `pair_pin` (two-sided ±1 pairing;
+DPA pairing lives in the PAIR group → `pair_pin`, Dual go/nogo response stays one-sided), no-hold =
+`gng_weight 0` + `gng_response True`. `generate_dual_trials(mem_targets, mem_hold_window, mem_hold_anchor)`.
+Tools: `scratchpad/readout_arm.py` (stages dpa/naive/expert), `landscape.py` (reduced model of the
+loss over well height), `fig4c_rnn.py` (Δ well depth vs Δ accuracy, mouse Fig. 4c), `init_flow_grid.py`
+(grids 1–3), `plot_when_done.sh`, `queue_*.sh`.
+
+**Headlines.** (1) The loss/task design gives the target geometry: both memory wells 2σ below the line,
+occupied, task perfect (design1 w1, 3/4). (2) Depth is bought against go accuracy with the no-lick weight
+— a rank-2 trade-off (w4: go 0.57–0.80). (3) The DPA "bowl" does not exist (two-sided pairing is
+satisfied from any well height); the Dual stage propagates the DPA start's symmetry → the one-sided
+DPA hinge stays in the recipe (design3 = design1 DPA + design2 GNG/Dual, NOT RUN). (4) The ring is a
+covariance property, not a φ property: lif rings at init when both modes are built alike; unequal
+σ_n at equal J makes an ellipse with four cardinal wells — the trained DPA geometry.
+
+**Not run:** design3 (w1, w4); isotropic-init DPA probe; plateau stop for Dual; a gain axis on grid 1.

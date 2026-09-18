@@ -1766,8 +1766,12 @@ Examples:
                         help="Use simulation-based flow field instead of analytical κ-plane")
     parser.add_argument("--sim_n_warmup", type=int, default=0,
                         help="Warmup steps for sim flow field (0=grid-aligned/streamplot, >0=scattered/quiver)")
-    parser.add_argument("--mark_slow", action="store_true",
-                        help="Annotate shallow attractors (1-max|λ| <= slow_tol) as 'slow_attractor' (orange ring).")
+    # DEFAULT ON since 2026-09-18 (ring_lowerplane_log §33d): a fixed point with max multiplier ≈ 1 is
+    # the finite-N residue of a RING (continuous attractor), not a well — the marker must say which.
+    parser.add_argument("--mark_slow", action="store_true", default=True,
+                        help="Annotate shallow attractors (1-max|λ| <= slow_tol) as 'slow_attractor' (orange ring). DEFAULT ON.")
+    parser.add_argument("--no_mark_slow", dest="mark_slow", action="store_false",
+                        help="Disable the slow-attractor annotation (pre-2026-09-18 behaviour).")
     parser.add_argument("--slow_tol", type=float, default=0.06,
                         help="Slowness threshold for --mark_slow (default 0.06).")
     parser.add_argument("--n_batch", type=int, default=256,

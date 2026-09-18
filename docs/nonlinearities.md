@@ -120,3 +120,16 @@ trainable unit biases did not either, because no term asks for λ⁺ < 1 at the 
 needs λ_full > 1 > λ⁺ (the threshold-linear bump mechanism) — via a two-sided memory pin, a
 half-population gain constraint, or EI inhibition (what the EISTP model's depression supplies).
 Figure: `results/figures/sweep_r2rr01/field_profiles_relu_vs_lif.png`.
+
+
+## 2026-09-17/18 — CORRECTION: the ring is a covariance property, not a transfer-function property
+
+The "ring-capable: odd + saturating (tanh, erf only)" verdicts above were empirical, from structured
+inits. Mean-field: F(κ) = −κ + Σ·⟨φ′(κᵀΣ_m κ)⟩·κ — φ enters only through the averaged gain; the ring
+exists iff the rank-2 covariance is isotropic (equal σ_m and σ_n across modes, zero cross-covariances,
+zero means). Measured (`ring_lowerplane_log` §33): lif rings at init once λ > λ_c = 1/(g·φ′(0)) = 2.5
+when both modes are built alike (`scratchpad/init_flow_grid.py`, grids 1–3); a Gaussian surrogate with
+the trained net's covariance reproduces its anisotropy and an isotropised one rings. What breaks it in
+our nets is `init.py`'s decision construction (σ(n₁) = 1 vs σ(n₀) = √(λ/ρ)) and training, which
+equalises the overlaps J but not the factors σ_m, σ_n. Unequal σ_n at equal J → ellipse → four cardinal
+wells. The rows above remain valid as descriptions of what those (structured-init) nets did.

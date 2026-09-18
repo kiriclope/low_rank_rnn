@@ -390,3 +390,33 @@ network OCCUPIES. Each rule below names the error that motivated it.
       `noise=σ_eff`. **Never set `model.noise = σ_eff`** — that injects isotropic *recurrent* noise the
       net never saw (mistake 2026-09-15 on the τ×noise grid, onesided, mem_early: it turned an A-side
       drift to −0.2 into "−0.43"; the well tables from find_wells were unaffected).
+
+12. **Characterise fixed points in SECONDS, not by their label or multiplier.** A map multiplier is
+    λ_i = 1 − dt/τ_i, so at α = dt/τ = 0.075 every attractor reads |λ| ≈ 0.99 and the number carries no
+    information; `classify_fixed_points`' `marginal_tol` (2e-3) only catches exact degeneracy, so ring
+    remnants are labelled "stable attractor". Use `find_wells(..., with_eigs=True)` → `(κ, kind,
+    (τ_slow, τ_fast))` in seconds and compare **τ_slow with the delay**: τ_slow ≫ delay ⇒ a slow
+    manifold / ring remnant (the state never settles along that direction within a trial); τ_slow ≪
+    delay ⇒ a genuine well. Measured (§33d): isotropic-init ring 5.6 s / 0.095 s; trained DPA nets
+    1.0–3.9 s / 0.10 s against a 5 s delay — ours are slow sets, not deep wells. In figures, the
+    orange "slow attractor" ring (`--mark_slow`, default ON since 2026-09-18) marks them.
+    Corollary: on an isotropic covariance the discrete points are a finite-N artefact — the
+    corrugation of the ring scales as 1/√N (0.076 at N 512 → 0.016 at N 8192) and the four cardinal
+    picks come from the second-harmonic (cos 2θ) anisotropy of the covariance.
+
+
+
+## Readout and figure tools added 2026-09-16/18
+
+- `scratchpad/readout_arm.py <sweep> <arm> [...]` — the protocol readout: per seed, DPA/naive/expert
+  ckpts, ALL memory attractors of the input-noise-averaged field (depth in σ_eff), landings simulated under
+  the training input noise (recurrent 0), nearest attractor per side, deepest sub-line well, n₀ᵀm₁ / n₁ᵀm₀.
+- `scratchpad/fig4c_rnn.py <sweep> <arm>` — Fig. 4c of the dual project for an RNN sweep: Δ well depth
+  (κ₁ of the OCCUPIED attractor from the flow, expert − naive; NaN if a side has no attractor) vs Δ DPA
+  accuracy (DPA-only trials) and Δ NoGo accuracy (dual trials; go is at ceiling, pooled GNG hides it).
+  Circles = the two samples per seed, joined; ρ/p and regression on per-seed means.
+- `scratchpad/landscape.py` — reduced model of the Dual loss over the well height w with fixed kicks.
+- `scratchpad/init_flow_grid.py` — autonomous flows of rank-2 nets AT INIT (grids: λ × ρ; λ₁/λ₀ ×
+  construction; σ(n₀) × σ(n₁)), rendered with the trained-net panel code. Gallery `init_flow_grids`.
+- Always split go/nogo when reporting GNG accuracy (Leon 2026-09-17): go is at ceiling, nogo carries
+  the cue push; `dual_go`/`dual_nogo` in `results.jsonl`.

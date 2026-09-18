@@ -21,13 +21,19 @@ for sw,arm in ARMS:
             try: m,cfg=load_run(sw,f"s{s}_{arm}",stage=stage,device="cpu")
             except Exception as e: print(f" s{s} load failed: {e}"); continue
             m.eval(); dt,a,_=run_dt_alpha(cfg); sig=cfg["noise"]*math.sqrt(1-math.exp(-2*a))
-            mem=[f for f,t in find_wells(m,cfg,xlim=2.5,n_seeds=61,noise_sigma=sig) if str(t).lower().startswith(("stable","attract")) and abs(f[0])>0.5]
-            T=make_timings(dt)[task]; m.noise=0.0; torch.manual_seed(0)   # input noise sig in X (as trained); NO recurrent noise
+            _w=find_wells(m,cfg,xlim=2.5,n_seeds=61,noise_sigma=sig,with_eigs=True)
+            mem=[f for f,t,_ in _w if str(t).lower().startswith(("stable","attract")) and abs(f[0])>0.5]
+            mult={tuple(np.round(f,3)):tt for f,t,tt in _w}   # (tau_slow, tau_fast) in s; tau_slow >> delay = slow manifold
+            T=make_timings(dt)[task]; m.noise=0.0; torch.manual_seed(0)
+            _delay=float(T.stim_on[-1]-T.stim_off[0])          # sample-off -> test-on, the memory delay   # input noise sig in X (as trained); NO recurrent noise
             X,y,names=tv._gen(task,cfg,T,768,0,sig)
             with torch.no_grad(): _,r,_=m(X,y,ret_rates=True)
             k=kappa_from_rates(m,r).numpy(); i=int(T.n_stim_on[-1])-1
             c01,c10=cpl(m)
-            allk=" ".join(f"({f[0]:+.2f},{f[1]:+.2f}={f[1]/sig:+.1f}σ)" for f in sorted(mem,key=lambda f:f[1]))
+            def _tag(f):
+                ts,tf=mult.get(tuple(np.round(f,3)),(float("nan"),float("nan")))
+                return f"({f[0]:+.2f},{f[1]:+.2f}={f[1]/sig:+.1f}σ, τ {ts:.1f}/{tf:.2f}s{' SLOW' if ts>_delay else ''})"
+            allk=" ".join(_tag(f) for f in sorted(mem,key=lambda f:f[1]))
             print(f" s{s}  aDPA {acc(sw,s,arm,'after_dpa'):.3f} gng/dpa {acc(sw,s,arm,'after_gng'):.3f}  n0·m1 {c01:+.2f} n1·m0 {c10:+.2f}  attractors: {allk or 'none found'}")
             for pre in "AB":
                 if task=="dual": msk=np.array([(("_go_" not in n and "_nogo_" not in n) and n.startswith(pre)) for n in names])

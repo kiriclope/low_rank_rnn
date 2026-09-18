@@ -239,6 +239,22 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
   measured: the memory is then NOT an attractor — a tilted transient GNG erases; retention at chance).
   Only the two-sided DPA κ₁ pin and this hold are ever applied to the delay; the Dual stage sets no
   κ₀ target.
+
+- **Design flags (2026-09-16/17, `ring_lowerplane_log` §32).**
+  `nolick_split_sample` — the no-lick hinge (and the legacy κ₁ = 0 pin) scored as two masked means, A-sample
+  rows + B-sample rows; identity = sign of the row's κ₀ target. Dual trials need `dual_mem_targets=True`
+  (writes the A/B hold, window/anchor = `dpa_hold_window`/`dpa_hold_anchor`, into the Dual targets);
+  `dual_mem_supervise` (default False) decides whether the Dual memory terms USE it — False keeps Dual
+  supervised through pairing only. `dpa_nolick_split` — the same split in the DPA loss.
+  `nolick_shape` / `dual_nolick_shape` — the no-lick term's own shape ("softplus" = log(1+e^κ₁), the
+  cross-entropy of not licking under p(lick) = σ(κ₁): a pressure with a tail below the line; relu²
+  switches off a noise-width below 0). Use the tail only where a bowl opposes it (Dual): in DPA it ran the
+  wells to −8σ, in GNG it killed the pairing readout.
+  `pair_pin` — two-sided (p ∓ θ)² pairing decision at DPA (pair group) and Dual; go/nogo response stays
+  one-sided. NOTE it does not make DPA a bowl at κ₁ = 0 (§32d).
+  No delay hold = `gng_weight 0` (the hold TARGETS stay in the tensor for the no-lick row classification)
+  + `gng_response True` (go must lick in the last 0.5 s of the cue, `rwd_go`) — the old recipe had NO
+  cue-time go target; the hold was the lick.
 - `nolick_full_delay` — extend the Dual don't-lick to the WHOLE delay on the DPA trials only
   (rows identified by no finite decision target in the go/nogo span; guarded: needs
   `dual_gng_memory=True` and `target_rank=2`). go/nogo trials keep the late window.

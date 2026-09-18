@@ -214,6 +214,13 @@ class RunConfig:
     dpa_hold_anchor: str = "test"  # where dpa_hold_window sits: "test" = last hold_window s ending at test onset (default); "sample" = first hold_window s after sample offset, then FREE to decay across the delay; "none" = no A/B memory target at all (pairing at test is the only memory supervision)
     dpa_nolick_weight: float = 0.0  # apply the same one-sided don't-lick over the DPA-STAGE delay (sample-off → test-onset). NOT the legacy two-sided pin (dpa_prelick_free=False), which clamps wells ON the line: one-sided leaves κ₁<0 free, so wells may seat at/below 0 but are never pulled back up. Intent: enter GNG with no up-structure to inherit.
     nolick_thresh:   float = 0.0   # DISPLACE the no-lick hinge to κ₁ ≤ −thresh (all stages that use nolick). relu/relu² have zero gradient once satisfied, so a hinge at 0 seats wells AT the line no matter how wide the window — this is the only lever that buys DEPTH (§25e).
+    nolick_shape: str | None = None     # shape of the no-lick term only (None = hinge_shape). "softplus" = logistic lick cost log(1+e^κ₁): keeps a tail below the line instead of switching off (Leon 2026-09-16, arm A)
+    pair_pin: bool = False              # TWO-SIDED ±1 pairing decision (DPA rwd group + Dual pair group): DPA becomes a bowl at κ₁=0 for any test kick (Leon 2026-09-17, design item 1)
+    dual_nolick_shape: str | None = None   # no-lick shape for the DUAL stage only (None = nolick_shape). design2: softplus tail in Dual, relu² in DPA/GNG (Leon 2026-09-17: the tail only where the bowl opposes it)
+    nolick_split_sample: bool = False   # DUAL loss (GNG has no sample): no-lick hinge as two masked means (A-sample rows + B-sample rows) so both memories are pushed down equally; identity = sign of the κ₀ target → Dual needs dual_mem_targets=True (Leon 2026-09-16)
+    dual_mem_targets: bool = False      # write the A/B memory hold (dpa_hold_window / dpa_hold_anchor) into the DUAL targets
+    dual_mem_supervise: bool = False    # … and USE it in the Dual memory loss (False = Dual memory supervised through pairing only; targets serve the nolick split)
+    dpa_nolick_split: bool = False      # DPA loss: split the pre-test κ₁ term (one-sided no-lick hinge, or the legacy κ₁=0 pin) into A-rows + B-rows means (Leon 2026-09-16)
     gng_decouple_decision: bool = False # GNG stage: after each step project n[:,dec] ⟂ m[:,0], keeping the decision readout blind to the sample-memory direction. Targets the leakage that INVERTS the DPA memory during GNG (§26/§27): |κ₁(A)−κ₁(B)| ≥ 0.85 → flip in 6/6, ≤ 0.27 → intact in 5/5. m[:,0] is frozen in GNG so n[:,dec] is the only party that can build the overlap.
     rwd_go_thresh: float | None = None # RESPONSE-window go hinge threshold, decoupled from go_hinge_thresh (the hold). Set ABOVE the hold (e.g. 2.0 vs 1.0) so the parked +1 rule cannot satisfy the lick by itself — the cue must supply the difference in its 0.5 s, i.e. the cue gets a trained push (Leon 2026-09-04, §27g). Needs gng_response=True (guarded).
     gng_hold_pin: bool = False    # score the go/nogo HOLD two-sided (pinned to ±θ) instead of one-sided. Companion to rwd_go_thresh: with a one-sided hold the net parks the go rule AT the lick threshold and the cue never has to push (cuego, 2026-09-04: hold +1.8, push unchanged). Pinned hold ⇒ the cue must carry lick−hold.
@@ -362,13 +369,11 @@ def _dual_accuracy(model, timing, input_size, noise, device, n_trials=1024, targ
                    cue_on_go_input=False, cue_scale=1.0, nogo_target=0.0, go_on_rwd_input=False, input_scale=1.0, attention_input=False, attention_gated=False, attention_scale=1.0,
                    go_target=1.0, response_in_cue=False, go_hinge_thresh=None, nogo_hinge_thresh=-1.0, gng_rwd_after_cue=False):
     model.eval()
-    X, y, _, condition_names = generate_dual_trials(
-        n_trials, timing=timing, input_size=input_size, noise=noise, target_rank=target_rank,
+    X, y, _, condition_names = generate_dual_trials(n_trials, timing=timing, input_size=input_size, noise=noise, target_rank=target_rank,
         cue_on_go_input=cue_on_go_input, cue_scale=cue_scale, nogo_target=nogo_target,
         go_on_rwd_input=go_on_rwd_input, input_scale=input_scale,
         attention_input=attention_input, attention_gated=attention_gated, attention_scale=attention_scale,
-        response_in_cue=response_in_cue, gng_rwd_after_cue=gng_rwd_after_cue,
-    )
+        response_in_cue=response_in_cue, gng_rwd_after_cue=gng_rwd_after_cue)
     pred  = model(X.to(device), y.to(device))[..., -1].cpu()
     names = np.asarray(condition_names).astype(str)
 
@@ -674,11 +679,13 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                 rwd_nogo_l1=config.rwd_nogo_l1,
                 rwd_keep_go_hinge=config.rwd_keep_go_hinge,
                 decay_onesided=config.decay_onesided,
-                mem_weight=config.aux_weight, bl_weight=config.bl_weight)
+                mem_weight=config.aux_weight, bl_weight=config.bl_weight,
+                nolick_shape=config.nolick_shape)
     # The one-sided nogo scoring (rwd_nogo_onesided) drops the go +1 hinge in the response window; that
     # is fine in DUAL (frees the nogo value to settle low) but MUST NOT apply in the GNG stage, where it
     # would remove the go supervision and the go/nogo working memory never forms (go→0). So GNG always
     # trains the go/nogo memory TWO-SIDED; one-sided is a Dual-only relaxation.
+    _uw_d   = {**_uw, "nolick_shape": config.dual_nolick_shape or config.nolick_shape}   # Dual-stage loss kwargs (own no-lick shape)
     _uw_gng = ({**_uw} if config.gng_rwd_onesided
                else {**_uw, "rwd_nogo_onesided": False})
     _half_steps = int(round(0.5 / gng_timing.dt))   # response window length in steps
@@ -686,7 +693,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     # own pinned term; the decision channel splits into separate gng/pair terms at test onset.
     # dpa_nolick_weight: one-sided don't-lick over the DPA-stage delay (sample-off → test-onset).
     # There is no go/nogo in DPA, so every row gets it and no trial-scoping is needed.
-    dpa_criterion = UnifiedLoss(dpa_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
+    dpa_criterion = UnifiedLoss(dpa_timing, pair_pin=config.pair_pin, rwd_pin=config.pair_pin, nolick_split_sample=config.dpa_nolick_split, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
                                 pair_start=int(dpa_timing.n_stim_on[1]),
                                 nolick_weight=config.dpa_nolick_weight,
                                 nolick_window=(int(dpa_timing.n_stim_off[0]), int(dpa_timing.n_stim_on[1])),
@@ -731,6 +738,10 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             raise ValueError(f"gng_hold_ceiling={config.gng_hold_ceiling} needs rwd_go_thresh ABOVE it "
                              f"(got {config.rwd_go_thresh}): otherwise the held rule still satisfies the "
                              "lick and the cue has no job — the cuego loophole (§27g).")
+    if config.dpa_nolick_split and config.dpa_hold_anchor == "none":
+        raise ValueError("dpa_nolick_split needs an A/B memory target in the DPA trials (dpa_hold_anchor != 'none')")
+    if config.nolick_split_sample and not config.dual_mem_targets:
+        raise ValueError("nolick_split_sample needs dual_mem_targets=True: the Dual loss reads the sample identity from the κ₀ target")
     if config.dpa_nolick_weight > 0 and not config.dpa_prelick_free:
         raise ValueError("dpa_nolick_weight needs dpa_prelick_free=True: the legacy two-sided 0-pin "
                          "fills the DPA delay with finite targets, leaving the one-sided term no free "
@@ -749,7 +760,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                 nolick_window=_nlw_g, nolick_gng_span=_nlg_g, nolick_nogo_window=_nln_g, nolick_thresh=config.nolick_thresh, rwd_go_thresh=config.rwd_go_thresh, hold_pin=config.gng_hold_pin, hold_ceiling=config.gng_hold_ceiling, **_uw_gng)
     print(f"[{rid}]  loss=unified (ALL stages): ±1→one-sided hinge(gng th={_uth}, pair/mem th={_uth_pair}),"
           f" 0→pin, NaN→free  [bl | gng | pair split @ test-on]"
-          f"{f'  DPA-stage nolick w={config.dpa_nolick_weight} over the delay' if config.dpa_nolick_weight else ''}",
+          f"{f'  DPA-stage nolick w={config.dpa_nolick_weight} over the delay' if config.dpa_nolick_weight else ''}{f'  nolick_shape={config.nolick_shape}' if config.nolick_shape else ''}{'  pairing TWO-SIDED (pair_pin)' if config.pair_pin else ''}{'  DPA κ₁ term SPLIT by sample (A-rows + B-rows)' if config.dpa_nolick_split else ''}",
           flush=True)
     losses    = {}
     _global_step = [0]   # mutable so the nested helper can increment it
@@ -960,7 +971,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         _stage_header("Dual-paired", config.epochs_dual_paired, paired_freeze_input,
                       dual_mem_freeze or [])
         t0 = time.time()
-        Xp, yp, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise,
+        Xp, yp, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise, mem_targets=config.dual_mem_targets, mem_hold_window=config.dpa_hold_window, mem_hold_anchor=config.dpa_hold_anchor,
                                             target_rank=config.target_rank, cue_on_go_input=config.cue_on_go_input,
                                             cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                             go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
@@ -973,12 +984,12 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         _co_d = int(dual_timing.n_stim_off[2])
         _ric_d = config.response_in_cue and not config.gng_rwd_after_cue
         _rw_d = (_co_d - _half_steps, _co_d) if _ric_d else (_co_d, _co_d + _half_steps)
-        paired_criterion = UnifiedLoss(dual_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
+        paired_criterion = UnifiedLoss(dual_timing, pair_pin=config.pair_pin, nolick_split_sample=config.nolick_split_sample, mem_supervise=config.dual_mem_supervise, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
                                        pair_start=int(dual_timing.n_stim_on[3]),
                                        rwd_window=_rw_d,
                                        nolick_weight=config.nolick_weight,
                                        nolick_window=_nlw_d, nolick_full_window=_nlf_d,
-                                       nolick_gng_span=_nlg_d, nolick_nogo_window=_nln_d, nolick_thresh=config.nolick_thresh, rwd_go_thresh=config.rwd_go_thresh, hold_pin=config.gng_hold_pin, hold_ceiling=config.gng_hold_ceiling, **_uw)
+                                       nolick_gng_span=_nlg_d, nolick_nogo_window=_nln_d, nolick_thresh=config.nolick_thresh, rwd_go_thresh=config.rwd_go_thresh, hold_pin=config.gng_hold_pin, hold_ceiling=config.gng_hold_ceiling, **_uw_d)
         trainer = Optimization(model, tlp, vlp, paired_criterion, optp, schedp,
                                config.grad_clip_norm, num_epochs=config.epochs_dual_paired,
                                freeze_low_rank_cols=dual_mem_freeze,
@@ -1003,7 +1014,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     dual_freeze_input = list(range(config.input_size)) if "dual" in config.freeze_input_stages else []
     _stage_header("Dual", config.epochs_dual, dual_freeze_input, dual_mem_freeze or [])
     t0 = time.time()
-    X, y, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise, target_rank=config.target_rank,
+    X, y, _, _ = generate_dual_trials(config.n_batch, dual_timing, config.input_size, noise=noise, target_rank=config.target_rank, mem_targets=config.dual_mem_targets, mem_hold_window=config.dpa_hold_window, mem_hold_anchor=config.dpa_hold_anchor,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                        nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                        input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
@@ -1016,16 +1027,18 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     _co_d = int(dual_timing.n_stim_off[2])
     _ric_d = config.response_in_cue and not config.gng_rwd_after_cue
     _rw_d = (_co_d - _half_steps, _co_d) if _ric_d else (_co_d, _co_d + _half_steps)
-    dual_criterion = UnifiedLoss(dual_timing, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
+    dual_criterion = UnifiedLoss(dual_timing, pair_pin=config.pair_pin, nolick_split_sample=config.nolick_split_sample, mem_supervise=config.dual_mem_supervise, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
                                  pair_start=int(dual_timing.n_stim_on[3]),
                                  rwd_window=_rw_d,
                                  nolick_weight=config.nolick_weight,
                                  nolick_window=_nlw_d, nolick_full_window=_nlf_d,
-                                 nolick_gng_span=_nlg_d, nolick_nogo_window=_nln_d, nolick_thresh=config.nolick_thresh, rwd_go_thresh=config.rwd_go_thresh, hold_pin=config.gng_hold_pin, hold_ceiling=config.gng_hold_ceiling, **_uw)
+                                 nolick_gng_span=_nlg_d, nolick_nogo_window=_nln_d, nolick_thresh=config.nolick_thresh, rwd_go_thresh=config.rwd_go_thresh, hold_pin=config.gng_hold_pin, hold_ceiling=config.gng_hold_ceiling, **_uw_d)
     print(f"[{rid}]  loss=unified  gng_w={config.gng_weight}  pair_w={config.dpa_weight}"
           f"  nolick_w={config.nolick_weight}"
           f"{f'  nolick_window={_nlw_d} (late delay)' if _nlw_d else ''}"
           f"{f'  nolick_FULL={_nlf_d} on none-rows (gng span {_nlg_d})' if _nlf_d else ''}"
+          f"{'  nolick SPLIT by sample (A-rows + B-rows; κ₀ targets carried, mem_supervise=' + str(config.dual_mem_supervise) + ')' if config.nolick_split_sample else ''}"
+          f"  nolick_shape(Dual)={_uw_d['nolick_shape'] or config.hinge_shape}"
           f"{f'  nolick_NOGO={_nln_d} on nogo-rows from cue-on' if _nln_d else ''}"
           f"{f'  nolick_thresh=−{config.nolick_thresh}' if config.nolick_thresh else ''}", flush=True)
 
@@ -2872,6 +2885,201 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                     "nolick_weight": 1.0, "nolick_nogo_in_cue": True,
                                     "nolick_full_delay": True, "nolick_late_delay": False,
                                     "nolick_thresh": 0.0}))
+
+    # ═══ onesided_early + no-lick weight, SPLIT by sample (Leon 2026-09-16) ═══
+    # onesided_early: DPA-ckpt wells all below the line for the first time (−0.3…−1.0σ, 7/8), retention
+    # 0.95–0.99; GNG keeps/deepens them; DUAL flattens the A side (3/4 lose the A well, s2-A ends on
+    # an upper well). Dual has no κ₀ target and its no-lick hinge is satisfied at 0, so nothing holds
+    # the wells down through Dual. Leon: impose the no-lick weight, but as TWO terms — one over the
+    # A trials, one over the B — so both memories are pushed down equally (a single mean spends its
+    # gradient on whichever side violates). `nolick_split_sample` (GNG+Dual losses only; the DPA
+    # stage is exactly onesided_early). Two arms, single-field deltas from onesided_early:
+    #   onesided_early_w1split : split only (w=1)            — the effect of the split
+    #   onesided_early_w2split : split + nolick_weight 2.0   — the weight on top (≥3 costs the rule)
+    # Readouts: expert wells per side (A AND B), occupied depth, dual_gng ≥ 0.95, after_gng/dpa.
+    # --run_filter onesided_early_w1split / onesided_early_w2split
+    for tag, w in (("onesided_early_w1split", 1.0), ("onesided_early_w2split", 2.0)):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 1.0,
+                                        "memory_lambda": 1.6,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                        "nolick_weight": w, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ onesided_early_w1split_dpa (Leon 2026-09-16): the split also in the DPA stage ═══
+    # = onesided_early_w1split + dpa_nolick_split: the DPA-stage one-sided κ₁ ≤ 0 hinge is scored as
+    # A-rows + B-rows means (would also split the legacy κ₁ = 0 pin). Motivation: the onesided_early
+    # DPA ckpt was already uneven between sides (s1 A −0.7σ vs B −1.0σ; s2 a B well but no A well),
+    # and DPA is where the wells are built. --run_filter onesided_early_w1split_dpa
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_onesided_early_w1split_dpa", seed=seed,
+                                 dt_base=0.020,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "tau": 0.2, "noise": 1.0,
+                                    "attention_input": False, "response_in_cue": True,
+                                    "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                    "dpa_prelick_free": True, "dpa_nolick_weight": 1.0, "dpa_nolick_split": True,
+                                    "memory_lambda": 1.6,
+                                    "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "nolick_weight": 1.0, "nolick_split_sample": True,
+                                    "dual_mem_targets": True, "dual_mem_supervise": False,
+                                    "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ free_early_w1split (Leon 2026-09-16): NOTHING imposed on κ₁ during the DPA stage ═══
+    # = onesided_early_w1split_dpa with the DPA-stage κ₁ delay term removed entirely: no pin
+    # (dpa_prelick_free=True) AND no one-sided hinge (dpa_nolick_weight=0). What remains on κ₁ in DPA
+    # is the pre-sample baseline pin and the pairing decision at test — the task itself. The wells
+    # then sit wherever the memory + pairing training puts them. Dual stage unchanged (split, w=1).
+    # --run_filter free_early_w1split
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_free_early_w1split", seed=seed,
+                                 dt_base=0.020,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "tau": 0.2, "noise": 1.0,
+                                    "attention_input": False, "response_in_cue": True,
+                                    "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                    "dpa_prelick_free": True, "dpa_nolick_weight": 0.0, "dpa_nolick_split": False,
+                                    "memory_lambda": 1.6,
+                                    "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "nolick_weight": 1.0, "nolick_split_sample": True,
+                                    "dual_mem_targets": True, "dual_mem_supervise": False,
+                                    "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ w1split_dpa_softplus (Leon 2026-09-16, arm "A"): the no-lick cost keeps a tail below the line ═══
+    # = onesided_early_w1split_dpa with nolick_shape="softplus" for the no-lick term at BOTH stages
+    # (DPA one-sided delay term and Dual/GNG no-lick). Why: relu² switches off a noise-width below 0
+    # (§31, the −0.4…−1σ ceiling); softplus = log-likelihood of not licking under p(lick)=σ(κ₁), a
+    # pressure that decays but never vanishes. The ±1 hinges are unchanged. Pre-registered: DPA-ckpt
+    # depth (should pass −1σ), expert occupied depth per side, dual_gng ≥ 0.95 (the go hold fights
+    # it), after_gng/dpa. --run_filter w1split_dpa_softplus
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_w1split_dpa_softplus", seed=seed,
+                                 dt_base=0.020,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "tau": 0.2, "noise": 1.0,
+                                    "attention_input": False, "response_in_cue": True,
+                                    "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                    "dpa_prelick_free": True, "dpa_nolick_weight": 1.0, "dpa_nolick_split": True,
+                                    "memory_lambda": 1.6,
+                                    "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "nolick_weight": 1.0, "nolick_split_sample": True, "nolick_shape": "softplus",
+                                    "dual_mem_targets": True, "dual_mem_supervise": False,
+                                    "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ w1split_dpa_nohold (Leon 2026-09-16): NO go/nogo delay hold — go/nogo push the memory state ═══
+    # Leon's design: A/B sends the state to a memory well; in Dual trials go/nogo push THAT state up or
+    # down; the cue pushes up; DPA is a bowl at w=0, GNG an inverted sigmoid in w, Dual = the sum → w*<0.
+    # Measured: the absolute delay hold (go ≥ +1 / nogo ≤ −1) pins go at +0.4 and nogo at −1 in every
+    # arm while the memory well moves (−0.2…+0.2) — the pushes are NOT displacements of the well, so
+    # the well's height never reaches the GNG cost. Fix = do not supervise the hold: gng_weight=0 at
+    # every stage (the hold TARGETS stay in the tensor so the nolick row classification is intact;
+    # the cue-time response rwd_go / nolick-on-nogo is what scores go/nogo). Reduced model with the
+    # measured kicks (K_test 0.8, C_cue 1.0, s 0.3; scratchpad/landscape.py): DPA-only bowl at 0,
+    # GNG-only min at −0.5, sum w* ≈ −0.37 (relu²) / −0.3…−0.5 (softplus), deeper with weight.
+    # Risk: go/nogo identity must bridge 1 s (stim-off → cue) as a transient — watch after_gng gng.
+    # NOTE the current recipe has NO cue-time go target (gng_response=False): the go lick was only ever
+    # the delay hold. So no-hold = gng_weight 0 AND gng_response True (go → +1 in the last 0.5 s of the
+    # cue, scored by rwd_go; nogo stays free + nolick from cue-on). Two fields vs the base.
+    # Base = onesided_early_w1split_dpa. --run_filter w1split_dpa_nohold
+    for seed in range(4):
+        configs.append(RunConfig(run_id=f"s{seed}_w1split_dpa_nohold", seed=seed,
+                                 dt_base=0.020,
+                                 **{**emergent, **shared_unfrozen, **nocue_common,
+                                    "tau": 0.2, "noise": 1.0,
+                                    "attention_input": False, "response_in_cue": True,
+                                    "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                    "dpa_prelick_free": True, "dpa_nolick_weight": 1.0, "dpa_nolick_split": True,
+                                    "memory_lambda": 1.6,
+                                    "cue_scale": 2.0,
+                                    "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                    "gng_weight": 0.0, "gng_response": True,   # no delay hold; go scored in the cue (rwd_go)
+                                    "nolick_weight": 1.0, "nolick_split_sample": True,
+                                    "dual_mem_targets": True, "dual_mem_supervise": False,
+                                    "nolick_nogo_in_cue": True,
+                                    "nolick_full_delay": True, "nolick_late_delay": False,
+                                    "nolick_thresh": 0.0}))
+
+    # ═══ design1 (Leon 2026-09-16/17): bowl + tail + no hold, from the nohold DPA checkpoint ═══
+    # Leon's spec: DPA optimal at κ₁=0 (bowl), GNG an inverted sigmoid in the well height (tail), Dual
+    # = the sum → wells below zero. Ingredients, each shown necessary on its own (§32):
+    #   pair_pin        two-sided ±1 pairing → bowl at 0 for any kick (softplus alone ran DPA to −8σ)
+    #   nolick softplus the no-lick cost keeps a tail below the line (relu² switches off at −1σ)
+    #   no hold         go/nogo = displacements of the well (absolute hold decoupled them)
+    # Reduced model (scratchpad/landscape.py, kicks as learned, inputs frozen): w* −0.3σ (wn 1) …
+    # −1.6σ (wn 4) … −2.6σ (wn 8); the go lick (w + d + C ≥ 1, no margin) is what depth is bought
+    # against. Two arms bracket it: nolick_weight 1 and 4. DPA stage SKIPPED — starts from the nohold
+    # DPA checkpoint (Leon: "start from the last dpa stage"; identical DPA config), so the bowl acts
+    # in Dual only here. --run_filter design1_w1 / design1_w4
+    for tag, w in (("design1_w1", 1.0), ("design1_w4", 4.0)):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     dpa_ckpt=f"results/dual/sweep_lif_sub_w1split_dpa_nohold/s{seed}_w1split_dpa_nohold/dpa_s{seed}_w1split_dpa_nohold.pth",
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 1.0, "dpa_nolick_split": True,
+                                        "memory_lambda": 1.6,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 300,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "nolick_shape": "softplus",
+                                        "nolick_weight": w, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ design2 (Leon 2026-09-17): the design with each stage asking only what it should ═══
+    # DPA: NO push — two-sided pairing (pair_pin) makes it a bowl at κ₁=0, no no-lick term at all
+    #      (dpa_nolick_weight 0; "a ring with attractors at 0 is fine").
+    # GNG: no delay hold (gng_weight 0); go responds at the cue with a push up (rwd_go, one-sided ≥1 —
+    #      below threshold is fine, accuracy threshold adjustable later); nogo not (one-sided relu² no-lick
+    #      from cue-on). relu² here: the softplus tail in GNG (design1) had nothing opposing it and
+    #      collapsed the pairing readout (after_gng/dpa 0.51) — the tail belongs where the bowl is.
+    # Dual: bowl (pair_pin) + softplus no-lick tail (dual_nolick_shape) + no hold, weight 1 / 4.
+    # design1 expert (same Dual, but pushed DPA ckpt + softplus GNG): 3/4 seeds with BOTH wells at
+    # −1.8…−2.7σ occupied and the task perfect (w1); −2.8…−3.9σ at w4 (go 0.85–0.96). Full sequence,
+    # DPA retrained. --run_filter design2_w1 / design2_w4
+    for tag, w in (("design2_w1", 1.0), ("design2_w4", 4.0)):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0, "dpa_nolick_split": False,
+                                        "memory_lambda": 1.6,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,   # softplus floor ≫ stop_loss: Dual never early-stops, so cap it (Leon 2026-09-17)
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "nolick_shape": None, "dual_nolick_shape": "softplus",
+                                        "nolick_weight": w, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
 
     return configs
 

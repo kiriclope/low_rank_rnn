@@ -843,9 +843,14 @@ class UnifiedLoss(nn.Module):
                  nolick_full_window: tuple[int, int] | None = None,
                  nolick_gng_span: tuple[int, int] | None = None,
                  nolick_thresh: float = 0.0,
+                 nolick_shape: str | None = None,
                  nolick_nogo_window: tuple[int, int] | None = None,
                  rwd_go_thresh: float | None = None,
                  hold_pin: bool = False,
+                 pair_pin: bool = False,
+                 rwd_pin: bool = False,
+                 nolick_split_sample: bool = False,
+                 mem_supervise: bool = True,
                  hold_ceiling: float | None = None):
         super().__init__()
         self.timing        = timing
@@ -918,6 +923,17 @@ class UnifiedLoss(nn.Module):
         self.nolick_full_window = nolick_full_window
         self.nolick_gng_span    = nolick_gng_span
         self.nolick_thresh      = float(nolick_thresh)
+        # nolick_shape (Leon 2026-09-16, "A"): the no-lick term gets its OWN shape, default = hinge_shape.
+        # relu2's force 2·relu(κ₁) switches itself off a noise-width below the line (noise-averaged:
+        # 0.8s at 0, 0.17s at −1s, 0.02s at −2s) — the DPA wells stop at −0.4…−1σ for that reason.
+        # "softplus" = log(1+e^{κ₁}) = the cross-entropy of NOT licking under a logistic lick model
+        # p(lick)=σ(κ₁): the cost of a possible lick never reaches zero, so the pressure keeps a tail
+        # below the line (σ(−1)=0.27, σ(−2)=0.12) and the depth emerges from the balance with the
+        # response demand. No threshold, no painted value. The ±1 hinges keep hinge_shape.
+        self.nolick_shape = nolick_shape or hinge_shape
+        assert self.nolick_shape in ("relu2", "relu", "softplus"), self.nolick_shape
+        self._nl = {"relu2": lambda x: torch.relu(x) ** 2, "relu": torch.relu,
+                    "softplus": torch.nn.functional.softplus}[self.nolick_shape]
         # nolick_nogo_window (steps): on the NOGO rows (a negative hold target inside nolick_gng_span)
         # the don't-lick span starts at CUE ONSET — the cue is the lick window, and a nogo trial must
         # not be in κ₁>0 during it, not only after it. Leon 2026-09-07: forbid κ₁>0 wherever a lick
@@ -935,6 +951,28 @@ class UnifiedLoss(nn.Module):
         # go rule at the lick threshold (cuego: hold +1.8, cue push unchanged). Pinning caps the hold
         # so the CUE has to carry the lick − hold difference.
         self.hold_pin           = bool(hold_pin)
+        # pair_pin / rwd_pin (Leon 2026-09-17, design item 1 — "DPA is optimal at κ₁ = 0"): score the
+        # pairing decision TWO-SIDED, (p ∓ θ)², instead of the one-sided hinges. One-sided: paired ≥ +1,
+        # unpaired ≤ −1 is satisfiable from ANY well height by scaling the test kick (K ≥ 1 + |w|) — a
+        # flat plateau; the softplus no-lick then ran the DPA wells to −8σ. Two-sided: w + K = 1 and
+        # w − K = −1 have the unique solution w = 0, K = 1 → a bowl at the line whatever the kick. pair_pin
+        # acts on the Dual pairing group (p_mask); rwd_pin on the rwd group, which in the DPA criterion IS
+        # the pairing (Dual's rwd group is the go/nogo cue response and stays one-sided).
+        self.pair_pin           = bool(pair_pin)
+        self.rwd_pin            = bool(rwd_pin)
+        # nolick_split_sample (Leon 2026-09-16): score the no-lick hinge as TWO masked means — one over
+        # the A-sample trials, one over the B-sample trials — instead of one mean over all rows. With a
+        # single mean the side that already satisfies the hinge contributes nothing and the whole
+        # gradient budget goes to whichever side violates it; two means push both memories down
+        # equally (each term carries the full nolick_weight). Sample identity = the SIGN of the finite
+        # κ₀ target of the row (the A/B hold: ±1), so the batch must carry it — DPA trials always do,
+        # Dual trials only with generate_dual_trials(mem_targets=True).
+        # mem_supervise=False: those κ₀ targets are used ONLY for the split — the memory terms
+        # (mem_pos/mem_neg/mem_decay) are switched off, so Dual stays supervised through the pairing
+        # decision alone (Leon: "keep dual supervised only through pairing but use the targets for
+        # balancing the no lick loss"). The pre-sample baseline pin is unaffected.
+        self.nolick_split_sample = bool(nolick_split_sample)
+        self.mem_supervise       = bool(mem_supervise)
         # hold_ceiling: PREMATURE-LICK ceiling on the go HOLD (absolute κ₁ value). One-sided hinge
         # from ABOVE on the go-hold steps only (pre-cue, tgt>0): hinge(p − ceiling). Keeps the hold
         # one-sided at θ (a lick is a threshold event, ≥θ is correct — Leon 2026-09-04, pin rejected)
@@ -955,18 +993,36 @@ class UnifiedLoss(nn.Module):
     def _rwd_th(self):
         return self.gng_thresh if self.rwd_go_thresh is None else self.rwd_go_thresh
 
-    def _class_terms(self, p, tgt, mask, pos_thresh, neg_thresh):
+    def _class_terms(self, p, tgt, mask, pos_thresh, neg_thresh, split=None):
         """(pos, neg, decay) — each its own masked_mean over `mask` ∩ its value class.
-        pos: p ≥ +pos_thresh (free above); neg: p ≤ −neg_thresh (free below); 0: pinned."""
+        pos: p ≥ +pos_thresh (free above); neg: p ≤ −neg_thresh (free below); 0: pinned.
+        split (B,1) bool or None: with nolick_split_sample the 0-PIN is scored as two means, A rows
+        + B rows (the pos/neg classes are already per-sign, i.e. per sample for the memory hold)."""
         pos = self.masked_mean(self._hinge(pos_thresh - p), mask & (tgt > 0))
         neg = self.masked_mean(self._hinge(p + neg_thresh), mask & (tgt < 0))
-        dec = self.masked_mean(self._pin(p),                mask & (tgt == 0))
+        zm  = mask & (tgt == 0)
+        if split is None:
+            dec = self.masked_mean(self._pin(p), zm)
+        else:
+            dec = self.masked_mean(self._pin(p), zm & split) + self.masked_mean(self._pin(p), zm & ~split)
         return pos, neg, dec
 
     def forward(self, y_pred: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         B, T, C = y.shape
         device  = y.device
         dec_ch  = self.readout_index % C
+        isA = None
+        if self.nolick_split_sample:
+            # sample identity from the κ₀ (first non-decision) channel: sign of its finite non-zero
+            # targets (the A/B hold), one value per row. Used to split the no-lick hinge AND the
+            # decision-channel 0-pin (legacy DPA delay pin) into A-rows + B-rows means.
+            mem_ch = 0 if dec_ch != 0 else 1
+            mt  = y[:, :, mem_ch]
+            fin = torch.isfinite(mt) & (mt != 0)
+            if not bool(fin.any(dim=1).all()):
+                raise ValueError("nolick_split_sample=True: every row needs an A/B memory target on κ₀ "
+                                 "(Dual: generate_dual_trials(mem_targets=True); DPA: dpa_hold_anchor != 'none')")
+            isA = ((torch.where(fin, mt, torch.zeros_like(mt)).sum(dim=1)) > 0)[:, None]   # (B,1)
         t       = torch.arange(T, device=device)
         pre     = (t < int(self.timing.n_stim_on[0]))[None, :]
 
@@ -1018,6 +1074,9 @@ class UnifiedLoss(nn.Module):
                     else:
                         rgo = self.masked_mean(self._hinge(self._rwd_th() - p), rwd_m & (tgt > 0))      # go +1 hinge
                         rn  = self.masked_mean(self._hinge(p + self.gng_neg_thresh), rwd_m & (tgt < 0))  # nogo −1 hinge (≤ −neg_th, free below)
+                        if self.rwd_pin:   # two-sided (DPA pairing scored in the rwd window)
+                            rgo = self.masked_mean(self._pin(p - self._rwd_th()),     rwd_m & (tgt > 0))
+                            rn  = self.masked_mean(self._pin(p + self.gng_neg_thresh), rwd_m & (tgt < 0))
                         nogo_pin = torch.abs(p) if self.rwd_nogo_l1 else self._pin(p)                 # L1 |κ₁| (forced) or the hinge's own norm
                         rz  = self.masked_mean(nogo_pin, rwd_m & (tgt == 0))                          # nogo pin to 0
                         comp["rwd_go"]   = rgo
@@ -1033,14 +1092,17 @@ class UnifiedLoss(nn.Module):
                     dcy_nogo = post & (tgt ==  0.5)
                     g_mask = g_mask & ~dcy_go & ~dcy_nogo
                     p_mask = p_mask & ~dcy_go & ~dcy_nogo
-                gp, gn, gd = self._class_terms(p, tgt, g_mask, self.gng_thresh, self.gng_neg_thresh)
+                gp, gn, gd = self._class_terms(p, tgt, g_mask, self.gng_thresh, self.gng_neg_thresh, split=isA)
                 if self.hold_pin:   # two-sided hold: (p ∓ θ)² instead of the one-sided hinges
                     gp = self.masked_mean(self._pin(p - self.gng_thresh),     g_mask & (tgt > 0))
                     gn = self.masked_mean(self._pin(p + self.gng_neg_thresh), g_mask & (tgt < 0))
                 if self.hold_ceiling is not None:   # premature-lick ceiling: go hold ≤ ceiling
                     comp["gng_ceil"] = self.masked_mean(self._hinge(p - self.hold_ceiling),
                                                         g_mask & (tgt > 0))
-                pp, pn, pd = self._class_terms(p, tgt, p_mask, self.thresh, self.thresh)
+                pp, pn, pd = self._class_terms(p, tgt, p_mask, self.thresh, self.thresh, split=isA)
+                if self.pair_pin:   # two-sided pairing: (p ∓ θ)² — the bowl at κ₁ = 0
+                    pp = self.masked_mean(self._pin(p - self.thresh), p_mask & (tgt > 0))
+                    pn = self.masked_mean(self._pin(p + self.thresh), p_mask & (tgt < 0))
                 if self.decay_onesided:
                     gd = gd + self.masked_mean(self._hinge(p),  dcy_go) \
                             + self.masked_mean(self._hinge(-p), dcy_nogo)
@@ -1091,8 +1153,15 @@ class UnifiedLoss(nn.Module):
                     # matter how many steps it covers — depth needs the displaced threshold, not a
                     # bigger window or a different shape (ring_lowerplane_log §25e).
                     pfree = torch.where(freem, pred + self.nolick_thresh, torch.zeros_like(pred))
-                    comp["nolick"] = self.masked_mean(self._hinge(pfree), freem)
+                    if self.nolick_split_sample:
+                        hn  = self._nl(pfree)
+                        comp["nolick"] = (self.masked_mean(hn, freem & isA)
+                                          + self.masked_mean(hn, freem & ~isA))
+                    else:
+                        comp["nolick"] = self.masked_mean(self._nl(pfree), freem)
             else:
+                if not self.mem_supervise:
+                    continue      # κ₀ targets present only to identify the sample (nolick split)
                 mp, mn, md = self._class_terms(p, tgt, post, self.thresh, self.thresh)
                 comp["mem_pos"]   = comp["mem_pos"]   + mp
                 comp["mem_neg"]   = comp["mem_neg"]   + mn
