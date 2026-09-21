@@ -1,0 +1,418 @@
+<title>Klein Group Derivations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400;1,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']], tags: 'ams', macros: {
+    R: '\\mathbb{R}', E: '\\mathbb{E}', Tr: '\\mathrm{T}', diag: '\\operatorname{diag}', sgn: '\\operatorname{sgn}',
+    kap: '\\kappa', bk: '\\boldsymbol{\\kappa}' } },
+  svg: { fontCache: 'global' },
+  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js" async></script>
+
+<style>
+:root {
+  --paper: #f7f4f7; --surface: #ffffff; --ink: #1b1520; --ink-soft: #4a4152; --muted: #7c7385;
+  --rule: #ded6e2; --plum: #6b2f74; --ember: #b0460e; --teal: #0d818b;
+  --def-bg: #eeeaf1; --thm-bg: #e4f1f1; --rem-bg: #f6ebe4;
+  --measure: 70ch;
+  --f-serif: "Spectral", "Iowan Old Style", Georgia, serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #141018; --surface: #1c1723; --ink: #ece7f0; --ink-soft: #c0b7c9; --muted: #918799;
+    --rule: #332a3c; --plum: #c79bd0; --ember: #e8863f; --teal: #3fc6ce;
+    --def-bg: #221b2a; --thm-bg: #12262a; --rem-bg: #2a1d18;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #141018; --surface: #1c1723; --ink: #ece7f0; --ink-soft: #c0b7c9; --muted: #918799;
+  --rule: #332a3c; --plum: #c79bd0; --ember: #e8863f; --teal: #3fc6ce;
+  --def-bg: #221b2a; --thm-bg: #12262a; --rem-bg: #2a1d18;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--f-serif); font-size: 18px; line-height: 1.62; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 62rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+.mast { border-bottom: 1px solid var(--rule); padding-bottom: 2rem; margin-bottom: 1rem; }
+.kicker { font-family: var(--f-mono); font-size: 0.72rem; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--plum); margin: 0 0 1rem; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.2rem); line-height: 1.04; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 1rem; text-wrap: balance; max-width: 18ch; }
+.standfirst { font-size: 1.1rem; color: var(--ink-soft); max-width: var(--measure); margin: 0; }
+h2 { font-size: 1.55rem; font-weight: 600; letter-spacing: -0.012em; line-height: 1.22; margin: 3.2rem 0 0.9rem; text-wrap: balance; }
+h3 { font-size: 1.05rem; font-weight: 600; margin: 2rem 0 0.6rem; }
+p { margin: 0 0 1rem; max-width: var(--measure); }
+ul, ol { margin: 0 0 1rem; padding-left: 1.2rem; max-width: var(--measure); }
+li { margin-bottom: 0.4rem; }
+li::marker { color: var(--plum); }
+a { color: var(--plum); }
+code { font-family: var(--f-mono); font-size: 0.85em; background: var(--surface); border: 1px solid var(--rule); border-radius: 3px; padding: 0.06em 0.34em; }
+.box { margin: 1.4rem 0; padding: 1rem 1.2rem; border-radius: 2px; max-width: var(--measure); }
+.box p { margin: 0 0 0.6rem; } .box p:last-child { margin-bottom: 0; }
+.box .tag { font-family: var(--f-mono); font-size: 0.7rem; letter-spacing: 0.13em; text-transform: uppercase; display: block; margin-bottom: 0.4rem; }
+.def { background: var(--def-bg); } .def .tag { color: var(--plum); }
+.thm { background: var(--thm-bg); border-left: 3px solid var(--teal); } .thm .tag { color: var(--teal); }
+.rem { background: var(--rem-bg); } .rem .tag { color: var(--ember); }
+.proof { margin: 0.4rem 0 1.4rem; padding-left: 1.2rem; border-left: 2px solid var(--rule); max-width: var(--measure); color: var(--ink-soft); }
+.proof p:first-child::before { content: "Proof. "; font-style: italic; color: var(--ink); }
+.qed { float: right; color: var(--muted); }
+.tbl-scroll { overflow-x: auto; margin: 1.4rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; padding: 0.55rem 0.8rem 0.55rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+thead th { font-family: var(--f-mono); font-size: 0.7rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--ink-soft); }
+td.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cayley td, .cayley th { text-align: center; padding: 0.4rem 0.7rem; font-family: var(--f-mono); }
+mjx-container { overflow-x: auto; overflow-y: hidden; }
+.foot { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--muted); max-width: var(--measure); }
+.toc { font-size: 0.95rem; columns: 2; column-gap: 2rem; max-width: 60ch; }
+.toc li { break-inside: avoid; margin-bottom: 0.25rem; }
+:focus-visible { outline: 2px solid var(--plum); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="kicker">Companion to &ldquo;Three Tasks, Three Groups&rdquo; &middot; 2026-09-21</p>
+    <h1>Klein Group Derivations</h1>
+    <p class="standfirst">
+      The full derivations behind the symmetry note, with the group-theoretic tools recalled from their
+      definitions. Nothing here is assumed beyond linear algebra and the model. Each result is stated, proved,
+      and tied to the quantity it is measured by in the main document.
+    </p>
+  </header>
+
+  <ol class="toc">
+    <li><a href="#s0">Notation and the model</a></li>
+    <li><a href="#s1">Groups, actions, orbits</a></li>
+    <li><a href="#s2">Representations and characters of \(V\)</a></li>
+    <li><a href="#s3">The task group from the truth table</a></li>
+    <li><a href="#s4">Equivariance of the reduced field</a></li>
+    <li><a href="#s5">Orbits of fixed points and the counting rule</a></li>
+    <li><a href="#s6">The even part of the field: inversion</a></li>
+    <li><a href="#s7">Isotypic orthogonality: deafness and zero cross-overlap</a></li>
+    <li><a href="#s8">The equivariant subspace and the projection</a></li>
+    <li><a href="#s9">Invariant losses and what gradient descent preserves</a></li>
+    <li><a href="#s10">The accidental \(O(2)\): ring, zero mode, corrugation</a></li>
+    <li><a href="#s11">What is measured</a></li>
+  </ol>
+
+  <!-- ─────────────────────────── 0 ─────────────────────────── -->
+  <h2 id="s0">0. Notation and the model</h2>
+  <p>
+    Units \(i = 1,\dots,N\). The rank-2 connectivity is \(m, n \in \R^{N\times 2}\) with columns
+    \(m_0, m_1, n_0, n_1 \in \R^N\); \(W_{\rm in} \in \R^{N\times C}\) has columns \(w_c\), one per input
+    channel; \(b \in \R^N\) is the per-unit input bias; \(g\) the gain; \(\varphi:\R\to\R\) the transfer
+    function, applied componentwise. Rates \(r\in\R^N\). The overlaps are
+  </p>
+  \[
+    \kappa \;=\; \tfrac1N\, n^{\Tr} r \;\in\; \R^2, \qquad \kappa_0 \text{ the memory}, \quad \kappa_1 \text{ the decision},
+  \]
+  <p>
+    and since \(W_{\rm rec}\, r = \tfrac1N m\, n^{\Tr} r = m\kappa\), the recurrent input is a function of
+    \(\kappa\) alone. A state is a fixed point of the network under a constant input \(x\in\R^C\) exactly
+    when \(r = \varphi(g(m\kappa + W_{\rm in}x + b))\) with \(\kappa = n^{\Tr}r/N\), i.e. when \(\kappa\) is
+    a zero of
+  </p>
+  \[
+    F(\kappa; x) \;=\; \Psi(\kappa; x) - \kappa, \qquad
+    \Psi(\kappa; x) \;=\; \tfrac1N\, n^{\Tr}\, \varphi\big(g(m\kappa + W_{\rm in}x + b)\big).
+    \tag{0.1}
+  \]
+  <p>
+    \(F\) is the planar field drawn in every flow figure; \(F(\kappa) := F(\kappa; 0)\) is the autonomous
+    field. Input noise is \(\xi \sim \mathcal N(0, \sigma^2 I_C)\) added to \(x\); the noise-averaged field
+    is \(\bar F(\kappa; x) = \E_\xi F(\kappa; x+\xi)\). Our transfer function is the Gaussian cumulative,
+  </p>
+  \[
+    \varphi(u) = \Phi(u) = \tfrac12\big(1 + \operatorname{erf}(u/\sqrt2)\big), \qquad \Phi(-u) = 1 - \Phi(u), \qquad \Phi'(0) = \tfrac1{\sqrt{2\pi}}.
+    \tag{0.2}
+  \]
+  <p>
+    The overlap matrix is \(J = g\, n^{\Tr} m / N\), a \(2\times2\) matrix; \(\langle n\rangle = \tfrac1N\sum_i n_i \in \R^2\)
+    is the unit-mean of the read vectors. Sign matrices on the plane are written
+    \(D = \diag(\pm1, \pm1)\). Throughout, \(\rho(\sigma)\) denotes an \(N\times N\) permutation matrix
+    and \(S_\sigma\) a \(C\times C\) permutation matrix.
+  </p>
+
+  <!-- ─────────────────────────── 1 ─────────────────────────── -->
+  <h2 id="s1">1. Groups, actions, orbits</h2>
+  <div class="box def"><span class="tag">Definition 1.1 &mdash; group</span>
+    <p>A set \(G\) with a binary operation \((g,h)\mapsto gh\) that is associative, has an identity \(e\), and in which every element has an inverse. \(G\) is <em>abelian</em> if \(gh = hg\) for all \(g, h\). The <em>order</em> \(|G|\) is the number of elements. An element with \(g^2 = e\) is an <em>involution</em>.</p>
+  </div>
+  <div class="box def"><span class="tag">Definition 1.2 &mdash; the Klein four-group</span>
+    <p>\(V = \{e, \sigma_1, \sigma_2, \sigma_3\}\) with every non-identity element an involution and the product of any two non-identity elements equal to the third. It is abelian, of order 4, isomorphic to \(\mathbb Z_2\times\mathbb Z_2\), and it is the smallest group that is not cyclic (no single element generates it). Its Cayley table:</p>
+    <div class="tbl-scroll"><table class="cayley">
+      <thead><tr><th>&middot;</th><th>\(e\)</th><th>\(\sigma_1\)</th><th>\(\sigma_2\)</th><th>\(\sigma_3\)</th></tr></thead>
+      <tbody>
+        <tr><th>\(e\)</th><td>\(e\)</td><td>\(\sigma_1\)</td><td>\(\sigma_2\)</td><td>\(\sigma_3\)</td></tr>
+        <tr><th>\(\sigma_1\)</th><td>\(\sigma_1\)</td><td>\(e\)</td><td>\(\sigma_3\)</td><td>\(\sigma_2\)</td></tr>
+        <tr><th>\(\sigma_2\)</th><td>\(\sigma_2\)</td><td>\(\sigma_3\)</td><td>\(e\)</td><td>\(\sigma_1\)</td></tr>
+        <tr><th>\(\sigma_3\)</th><td>\(\sigma_3\)</td><td>\(\sigma_2\)</td><td>\(\sigma_1\)</td><td>\(e\)</td></tr>
+      </tbody></table></div>
+    <p>Its proper nontrivial subgroups are the three copies of \(\mathbb Z_2\): \(\{e,\sigma_1\}\), \(\{e,\sigma_2\}\), \(\{e,\sigma_3\}\). &ldquo;Tying \(\sigma_1\)&rdquo; means imposing the subgroup \(\{e,\sigma_1\}\); &ldquo;tying the whole group&rdquo; means imposing \(V\).</p>
+  </div>
+  <div class="box def"><span class="tag">Definition 1.3 &mdash; action, orbit, stabilizer, invariant, equivariant</span>
+    <p>An <em>action</em> of \(G\) on a set \(X\) is a map \((g, x)\mapsto g\cdot x\) with \(e\cdot x = x\) and \(g\cdot(h\cdot x) = (gh)\cdot x\). The <em>orbit</em> of \(x\) is \(G\cdot x = \{g\cdot x : g\in G\}\); the <em>stabilizer</em> is the subgroup \(G_x = \{g : g\cdot x = x\}\). A subset \(A\subseteq X\) is <em>invariant</em> if \(g\cdot A = A\) for all \(g\), i.e. \(A\) is a union of orbits. A function \(f: X\to\R\) is invariant if \(f(g\cdot x) = f(x)\). A map \(\Phi: X\to Y\) between two \(G\)-sets is <em>equivariant</em> if \(\Phi(g\cdot x) = g\cdot\Phi(x)\).</p>
+  </div>
+  <div class="box thm"><span class="tag">Theorem 1.4 &mdash; orbit&ndash;stabilizer</span>
+    <p>For a finite group, \(|G\cdot x| = |G| / |G_x|\). In particular orbit sizes divide \(|G|\).</p>
+  </div>
+  <div class="proof"><p>The map \(g \mapsto g\cdot x\) from \(G\) onto the orbit sends \(g\) and \(g'\) to the same point iff \(g^{-1}g' \in G_x\), so each point of the orbit has exactly \(|G_x|\) preimages. <span class="qed">&#8718;</span></p></div>
+  <div class="box thm"><span class="tag">Theorem 1.5 &mdash; zeros of an equivariant map form an invariant set</span>
+    <p>Let \(G\) act linearly on \(\R^d\) by matrices \(D_g\) and let \(F:\R^d\to\R^d\) satisfy \(F(D_g\kappa) = D_g F(\kappa)\). Then \(F(\kappa^*) = 0\) implies \(F(D_g\kappa^*) = 0\), and the Jacobians satisfy \(J(D_g\kappa^*) = D_g\, J(\kappa^*)\, D_g^{-1}\), so \(\kappa^*\) and every point of its orbit have the same eigenvalues and the same stability type.</p>
+  </div>
+  <div class="proof"><p>\(F(D_g\kappa^*) = D_g F(\kappa^*) = 0\). Differentiating \(F(D_g\kappa) = D_gF(\kappa)\) in \(\kappa\) gives \(J(D_g\kappa)D_g = D_gJ(\kappa)\). <span class="qed">&#8718;</span></p></div>
+
+  <!-- ─────────────────────────── 2 ─────────────────────────── -->
+  <h2 id="s2">2. Representations and characters of \(V\)</h2>
+  <div class="box def"><span class="tag">Definition 2.1 &mdash; representation, permutation representation, character</span>
+    <p>A <em>representation</em> of \(G\) on a real vector space \(U\) is a homomorphism \(\rho: G\to GL(U)\), i.e. an action by linear maps. It is <em>orthogonal</em> if every \(\rho(g)\) is orthogonal. Permuting the units of the network is the <em>permutation representation</em> on \(\R^N\): \(\rho(g)\) is a permutation matrix, hence orthogonal, and for an involution \(\rho(g)^{\Tr} = \rho(g)^{-1} = \rho(g)\). A one-dimensional representation is a homomorphism \(\chi: G\to\{\pm1\}\) (for a real representation of a group of involutions), called a <em>character</em>.</p>
+  </div>
+  <div class="box thm"><span class="tag">Proposition 2.2 &mdash; the four characters of \(V\)</span>
+    <p>A character of \(V\) is determined by its values on the generators \(\sigma_1, \sigma_3\), and any choice of signs works. There are exactly four:</p>
+    <div class="tbl-scroll"><table class="cayley">
+      <thead><tr><th>\(\chi\)</th><th>\(\chi(\sigma_1)\)</th><th>\(\chi(\sigma_3)\)</th><th>\(\chi(\sigma_2) = \chi(\sigma_1)\chi(\sigma_3)\)</th><th>carried by</th></tr></thead>
+      <tbody>
+        <tr><th>\(\chi_{++}\)</th><td>+1</td><td>+1</td><td>+1</td><td>go, nogo, cue columns; the bias</td></tr>
+        <tr><th>\(\chi_{-+}\)</th><td>&minus;1</td><td>+1</td><td>&minus;1</td><td>\(\kappa_0\); \(m_0, n_0\); \(w_A - w_B\)</td></tr>
+        <tr><th>\(\chi_{+-}\)</th><td>+1</td><td>&minus;1</td><td>&minus;1</td><td>\(\kappa_1\); \(m_1, n_1\)</td></tr>
+        <tr><th>\(\chi_{--}\)</th><td>&minus;1</td><td>&minus;1</td><td>+1</td><td>\(w_C - w_D\)</td></tr>
+      </tbody></table></div>
+    <p>The sign matrices of the main note are these characters written as a \(2\times2\) representation on the \(\kappa\)-plane: \(D_\sigma = \diag(\chi_{-+}(\sigma), \chi_{+-}(\sigma))\), so \(D_1 = \diag(-1,+1)\), \(D_3 = \diag(+1,-1)\), \(D_2 = D_1D_3 = -I\).</p>
+  </div>
+  <div class="box def"><span class="tag">Definition 2.3 &mdash; isotypic components</span>
+    <p>For an orthogonal representation \(\rho\) of an abelian group of involutions on \(\R^N\), the <em>isotypic component</em> of the character \(\chi\) is \(U_\chi = \{v\in\R^N : \rho(g)v = \chi(g)\,v \ \forall g\}\): the vectors on which every group element acts as the sign \(\chi(g)\).</p>
+  </div>
+  <div class="box thm"><span class="tag">Theorem 2.4 &mdash; isotypic decomposition and orthogonality</span>
+    <p>\(\R^N = \bigoplus_\chi U_\chi\), the sum over all characters, and the components are mutually orthogonal: if \(v\in U_\chi\), \(w\in U_{\chi'}\) with \(\chi\ne\chi'\) then \(v^{\Tr}w = 0\). The orthogonal projection onto \(U_\chi\) is</p>
+    \[ P_\chi \;=\; \frac1{|G|}\sum_{g\in G}\chi(g)\,\rho(g). \tag{2.1} \]
+  </div>
+  <div class="proof">
+    <p>Orthogonality: \(\rho(g)\) is orthogonal, so \(v^{\Tr}w = (\rho(g)v)^{\Tr}(\rho(g)w) = \chi(g)\chi'(g)\,v^{\Tr}w\). Pick \(g\) with \(\chi(g)\ne\chi'(g)\); then \(\chi(g)\chi'(g) = -1\) and \(v^{\Tr}w = -v^{\Tr}w = 0\).</p>
+    <p>Projection: for \(h\in G\), \(\rho(h)P_\chi = \frac1{|G|}\sum_g \chi(g)\rho(hg) = \chi(h)\frac1{|G|}\sum_{g'}\chi(g')\rho(g') = \chi(h)P_\chi\) (substituting \(g' = hg\) and using \(\chi(h)^{-1} = \chi(h)\)), so the image of \(P_\chi\) lies in \(U_\chi\); on \(U_\chi\) itself \(P_\chi v = \frac1{|G|}\sum_g\chi(g)^2 v = v\). \(P_\chi\) is symmetric because \(\rho(g)^{\Tr} = \rho(g^{-1}) = \rho(g)\) for involutions, so it is the orthogonal projection. Completeness: \(\sum_\chi P_\chi = \frac1{|G|}\sum_g\big(\sum_\chi\chi(g)\big)\rho(g) = \rho(e) = I\), since \(\sum_\chi \chi(g)\) is \(|G|\) for \(g = e\) and \(0\) otherwise (the characters of an abelian group sum to zero on any non-identity element: pair \(\chi\) with \(\chi\chi_0\) for a \(\chi_0\) with \(\chi_0(g) = -1\)). <span class="qed">&#8718;</span></p>
+  </div>
+  <div class="box rem"><span class="tag">Remark</span>
+    <p>Equation (2.1) is exactly the &ldquo;signed average over the orbit&rdquo; implemented by <code>project_symmetry</code>: for the whole group with four blocks it reads \(P_\chi v = \tfrac14\sum_{a,b}\chi(\sigma_1)^a\chi(\sigma_3)^b\,(\text{block }(a,b)\text{ of }v)\), copied back to every block with the appropriate sign. For \(\{e,\sigma_1\}\) it is the half-sum \(\tfrac12(v \pm \rho(\sigma_1)v)\).</p>
+  </div>
+
+  <!-- ─────────────────────────── 3 ─────────────────────────── -->
+  <h2 id="s3">3. The task group from the truth table</h2>
+  <p>
+    Code the sample \(s\in\{A,B\}\) as \(s\in\{0,1\}\) and the test \(t\in\{C,D\}\) as \(t\in\{0,1\}\).
+    The correct response is
+  </p>
+  \[ r(s,t) = \neg(s\oplus t): \qquad r(0,0) = r(1,1) = 1 \ (\text{lick}), \qquad r(0,1) = r(1,0) = 0. \tag{3.1} \]
+  <div class="box thm"><span class="tag">Proposition 3.1 &mdash; the relabelings that preserve the task form \(V\)</span>
+    <p>Consider the relabelings \((s,t)\mapsto(s\oplus\alpha, t\oplus\beta)\), \(\alpha,\beta\in\{0,1\}\), with the response relabeled by \(r\mapsto r\oplus(\alpha\oplus\beta)\). Each maps the truth table (3.1) onto itself. They form a group under composition isomorphic to \(V\), with \(\sigma_1 = (1,1)\), \(\sigma_3 = (0,1)\), \(\sigma_2 = (1,0)\). The response is preserved by \(\sigma_1\) and inverted by \(\sigma_2\) and \(\sigma_3\).</p>
+  </div>
+  <div class="proof"><p>\(\neg\big((s\oplus\alpha)\oplus(t\oplus\beta)\big) = \neg(s\oplus t)\oplus(\alpha\oplus\beta) = r(s,t)\oplus(\alpha\oplus\beta)\), so relabeling the response by \(\alpha\oplus\beta\) restores the table. Composition adds the pairs \((\alpha,\beta)\) mod 2, which is \(\mathbb Z_2\times\mathbb Z_2\). The response flip is \(\alpha\oplus\beta\): \(0\) for \((1,1)\), \(1\) for the other two. <span class="qed">&#8718;</span></p></div>
+  <div class="box thm"><span class="tag">Proposition 3.2 &mdash; the induced action on the \(\kappa\)-plane</span>
+    <p>Suppose the network encodes the sample as the sign of \(\kappa_0\) (A positive, B negative) and the response as the sign of \(\kappa_1\) (lick positive). Then the relabeling \((\alpha,\beta)\) acts on the plane as \(D = \diag((-1)^\alpha, (-1)^{\alpha\oplus\beta})\), which is the table of Proposition 2.2: \(D_1 = \diag(-1,+1)\), \(D_3 = \diag(+1,-1)\), \(D_2 = -I\).</p>
+  </div>
+  <div class="proof"><p>Exchanging A and B (\(\alpha = 1\)) must send the state that encodes A to the state that encodes B, which is \(\kappa_0\mapsto-\kappa_0\). The response flips iff \(\alpha\oplus\beta = 1\), which is \(\kappa_1\mapsto-\kappa_1\). The two signs are independent because \(\alpha\) and \(\alpha\oplus\beta\) are independent bits. <span class="qed">&#8718;</span></p></div>
+  <p>
+    The channel permutations are read off the same way: \(S_{\sigma_1}\) swaps A with B and C with D,
+    \(S_{\sigma_3}\) swaps C with D only, \(S_{\sigma_2}\) swaps A with B only; go, nogo and the cue are
+    fixed by all three.
+  </p>
+
+  <!-- ─────────────────────────── 4 ─────────────────────────── -->
+  <h2 id="s4">4. Equivariance of the reduced field</h2>
+  <div class="box def"><span class="tag">Definition 4.1 &mdash; an equivariant network</span>
+    <p>The network is equivariant under \(\sigma\), with unit permutation \(\rho = \rho(\sigma)\), channel permutation \(S = S_\sigma\) and plane action \(D = D_\sigma\), if</p>
+    \[ \rho\, m = m D, \qquad \rho\, n = n D, \qquad \rho\, W_{\rm in} = W_{\rm in} S, \qquad \rho\, b = b. \tag{4.1} \]
+    <p>In the language of &sect;2: \(m_0, n_0\in U_{\chi_{-+}}\), \(m_1, n_1\in U_{\chi_{+-}}\), \(b\) and every unswapped input column in \(U_{\chi_{++}}\), and swapped column pairs are exchanged by \(\rho\).</p>
+  </div>
+  <div class="box thm"><span class="tag">Theorem 4.2 &mdash; equivariance of the field</span>
+    <p>If (4.1) holds then for every input \(x\) and every \(\kappa\),</p>
+    \[ F(D\kappa;\, Sx) \;=\; D\, F(\kappa;\, x). \tag{4.2} \]
+    <p>The same identity holds for the noise-averaged field \(\bar F\). In particular the autonomous field satisfies \(F(D\kappa) = DF(\kappa)\).</p>
+  </div>
+  <div class="proof">
+    <p>Write the drive \(u(\kappa, x) = g(m\kappa + W_{\rm in}x + b)\). Using (4.1),</p>
+    \[ \rho\,u(\kappa,x) = g(\rho m\,\kappa + \rho W_{\rm in}x + \rho b) = g(mD\kappa + W_{\rm in}Sx + b) = u(D\kappa, Sx). \]
+    <p>\(\varphi\) acts componentwise, so \(\varphi(\rho u) = \rho\,\varphi(u)\). Then</p>
+    \[ \Psi(D\kappa; Sx) = \tfrac1N n^{\Tr}\varphi\big(u(D\kappa,Sx)\big) = \tfrac1N n^{\Tr}\rho\,\varphi(u) = \tfrac1N(\rho^{\Tr}n)^{\Tr}\varphi(u). \]
+    <p>From \(\rho n = nD\) and \(\rho^{\Tr} = \rho^{-1}\), \(\rho^{\Tr}n = nD^{-1} = nD\), so \(\Psi(D\kappa;Sx) = \tfrac1N(nD)^{\Tr}\varphi(u) = D\,\Psi(\kappa;x)\). Subtracting \(D\kappa\) from both sides gives (4.2). For the noise: \(\xi\sim\mathcal N(0,\sigma^2 I)\) has the same law as \(S\xi\), so \(\E_\xi F(D\kappa; Sx + \xi) = \E_\xi F(D\kappa; S(x+\xi)) = D\,\E_\xi F(\kappa; x+\xi)\). <span class="qed">&#8718;</span></p>
+  </div>
+  <div class="box rem"><span class="tag">Remark &mdash; why the bias is a condition</span>
+    <p>If \(\rho b\ne b\) the second equality in the first display fails and the theorem does not hold, even when \(m, n, W_{\rm in}\) satisfy (4.1) exactly. This is the situation of the published tied runs, which tied everything but the bias and show a 1&ndash;5% residual in (4.2). With the bias tied the residual is \(10^{-15}\).</p>
+  </div>
+  <div class="box rem"><span class="tag">Remark &mdash; trajectories</span>
+    <p>The same substitution applied to the update equations shows that if \(r(t)\) is the trajectory under input \(x(t)\) and noise \(\xi(t)\), then \(\rho\,r(t)\) is the trajectory under \(Sx(t)\) and \(S\xi(t)\) from the permuted initial state. Hence \(\kappa(t)\mapsto D\kappa(t)\) along whole trials, which is what makes losses invariant in &sect;9.</p>
+  </div>
+
+  <!-- ─────────────────────────── 5 ─────────────────────────── -->
+  <h2 id="s5">5. Orbits of fixed points and the counting rule</h2>
+  <p>
+    By Theorem 1.5 the set of attractors of an equivariant autonomous field is a union of orbits under
+    the plane action. Orbit sizes follow from Theorem 1.4 with the stabilizers below.
+  </p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>point</th><th>stabilizer under \(V\)</th><th>orbit under \(V\)</th><th>orbit under \(\{e,\sigma_1\}\)</th></tr></thead>
+    <tbody>
+      <tr><td>\((a,w)\), \(a\ne0\), \(w\ne0\)</td><td>\(\{e\}\)</td><td class="num">4: \((\pm a,\pm w)\)</td><td class="num">2: \((\pm a, w)\)</td></tr>
+      <tr><td>\((a,0)\), \(a\ne0\)</td><td>\(\{e,\sigma_3\}\)</td><td class="num">2: \((\pm a, 0)\)</td><td class="num">2</td></tr>
+      <tr><td>\((0,w)\), \(w\ne0\)</td><td>\(\{e,\sigma_1\}\)</td><td class="num">2: \((0,\pm w)\)</td><td class="num">1</td></tr>
+      <tr><td>\((0,0)\)</td><td>\(V\)</td><td class="num">1</td><td class="num">1</td></tr>
+    </tbody></table></div>
+  <div class="box thm"><span class="tag">Corollary 5.1 &mdash; heights, pinning, parity</span>
+    <ol>
+      <li><em>Under \(\{e,\sigma_1\}\):</em> the two memory wells are \((\pm a, w)\) with a common height \(w\), unconstrained in value. An attractor on the \(\kappa_1\) axis may be alone, so the number of attractors can be odd.</li>
+      <li><em>Under \(V\):</em> if the memory consists of exactly two attractors with \(\kappa_0\ne0\), then \(w = 0\): they sit on the lick line. Any attractor off the line brings its reflection across it. Every orbit except the origin's has even size, so if the origin is not an attractor the number of attractors is even and the set is symmetric about both axes.</li>
+      <li><em>If the field is odd</em> (\(\sigma_2\) alone, Theorem 6.1): every attractor \((a,w)\) has the partner \((-a,-w)\). Two memory wells both strictly below the line are impossible unless they are half of a quadruple.</li>
+    </ol>
+  </div>
+  <div class="proof"><p>(1) is the third column. (2) A two-element invariant set containing \((a,w)\) with \(a\ne0\) must be the orbit of \((a,w)\), so the orbit has size 2, so the stabilizer has order 2 and contains an element fixing \((a,w)\); with \(a\ne0\) that element is \(\sigma_3\), which forces \(w = 0\). The parity statement is the second column. (3) is the definition of oddness. <span class="qed">&#8718;</span></p></div>
+
+  <!-- ─────────────────────────── 6 ─────────────────────────── -->
+  <h2 id="s6">6. The even part of the field: inversion</h2>
+  <div class="box thm"><span class="tag">Theorem 6.1 &mdash; the even part for a &ldquo;constant plus odd&rdquo; transfer function</span>
+    <p>Let \(\varphi = c + \psi\) with \(\psi\) odd. Write \(u_i = g\,m_i\cdot\kappa\) and \(\beta_i = g\,b_i\). Then the autonomous field satisfies, exactly,</p>
+    \[ \Psi(\kappa) + \Psi(-\kappa) \;=\; 2c\,\langle n\rangle \;+\; \frac1N\sum_i n_i\big[\psi(u_i+\beta_i) - \psi(u_i-\beta_i)\big]. \tag{6.1} \]
+    <p>For the Gaussian cumulative, \(c = \tfrac12\) and \(\psi = \Phi - \tfrac12\), so \(2c\langle n\rangle = \langle n\rangle\). Consequently \(F(-\kappa) = -F(\kappa)\) whenever \(\langle n\rangle = 0\) and \(b = 0\), for every \(m, n\) and every \(N\).</p>
+  </div>
+  <div class="proof"><p>\(\varphi(-u_i+\beta_i) = c + \psi(-(u_i - \beta_i)) = c - \psi(u_i-\beta_i)\). Adding \(\varphi(u_i+\beta_i) = c + \psi(u_i+\beta_i)\) and summing with weights \(n_i/N\) gives (6.1); \(F(\kappa)+F(-\kappa) = \Psi(\kappa)+\Psi(-\kappa)\) since the \(-\kappa\) terms cancel. <span class="qed">&#8718;</span></p></div>
+  <div class="box thm"><span class="tag">Lemma 6.2 &mdash; the identity survives input noise</span>
+    <p>For \(Z\sim\mathcal N(0,1)\) and any \(s\ge0\), \(\E\,\Phi(u + sZ) = \Phi\big(u/\sqrt{1+s^2}\big)\). Hence the noise-averaged field \(\bar\Psi\) has the form (0.1) with the per-unit gain \(g\) replaced by \(g/\sqrt{1+s_i^2}\), \(s_i^2 = g^2\sigma^2\|w_i\|^2\) with \(w_i\) the \(i\)-th row of \(W_{\rm in}\), and (6.1) holds for \(\bar\Psi\) with \(\beta_i\) rescaled the same way.</p>
+  </div>
+  <div class="proof"><p>Let \(Y\sim\mathcal N(0,1)\) be independent of \(Z\). \(\Phi(u+sZ) = \mathbb P(Y\le u+sZ \mid Z)\), so \(\E\,\Phi(u+sZ) = \mathbb P(Y - sZ\le u) = \Phi(u/\sqrt{1+s^2})\) because \(Y - sZ\sim\mathcal N(0, 1+s^2)\). The drive of unit \(i\) under noise is \(u_i + \beta_i + g\,w_i\cdot\xi\), and \(g\,w_i\cdot\xi\sim\mathcal N(0, s_i^2)\). <span class="qed">&#8718;</span></p></div>
+  <div class="box thm"><span class="tag">Theorem 6.3 &mdash; the ensemble condition, for any transfer function</span>
+    <p>If the multiset of unit triples \(\{(m_i, n_i, b_i)\}\) is invariant under \((m,n,b)\mapsto(-m,-n,b)\), then \(F(-\kappa) = -F(\kappa)\) for every \(\varphi\).</p>
+  </div>
+  <div class="proof"><p>\(\Psi(-\kappa) = \tfrac1N\sum_i n_i\varphi(g(-m_i\cdot\kappa + b_i)) = \tfrac1N\sum_i n_i\varphi(g((-m_i)\cdot\kappa + b_i))\). Relabel the sum by the involution \(i\mapsto i'\) with \((m_{i'}, n_{i'}, b_{i'}) = (-m_i, -n_i, b_i)\): the sum becomes \(\tfrac1N\sum_{i'}(-n_{i'})\varphi(g(m_{i'}\cdot\kappa + b_{i'})) = -\Psi(\kappa)\). <span class="qed">&#8718;</span></p></div>
+  <div class="box rem"><span class="tag">Remarks</span>
+    <p><em>Which theorem applies to us.</em> The initialization z-scores each column of \(n\) (\(\langle n\rangle = 0\), or \(\langle n_1\rangle\) = <code>decision_readout_mean</code> when that is set) and starts \(b = 0\), so Theorem 6.1 makes the initial field exactly odd; measured residual \(0.000\) in every seed. A finite Gaussian sample is not sign-symmetric, so Theorem 6.3 would give oddness only in the limit; it is the relevant statement for a rectifier.</p>
+    <p><em>What training can break it with.</em> By (6.1), only \(\langle n\rangle\) and \(b\). In the trained networks both contributions are of the same order.</p>
+    <p><em>Odd transfer functions.</em> For tanh, \(c = 0\): the readout mean cannot break the inversion and only the bias can. With \(b = 0\) a tanh memory is a quadruple or sits on the line, never two wells below it.</p>
+    <p><em>Under \(\sigma_1\) as well.</em> If \(\rho(\sigma_1)n_0 = -n_0\) then \(\langle n_0\rangle = 0\) identically, so under the pair exchange the only mean that can act is \(\langle n_1\rangle\).</p>
+  </div>
+
+  <!-- ─────────────────────────── 7 ─────────────────────────── -->
+  <h2 id="s7">7. Isotypic orthogonality: deafness and zero cross-overlap</h2>
+  <div class="box thm"><span class="tag">Theorem 7.1 &mdash; vanishing overlaps</span>
+    <p>Let the network be equivariant under a subgroup \(H\le V\). Then for any two of the vectors \(m_0, n_0, m_1, n_1, b, w_c\) lying in isotypic components of \(H\) with different characters, the overlap is identically zero. In particular:</p>
+    <ol>
+      <li>under \(\{e,\sigma_1\}\), \(\{e,\sigma_3\}\) or \(V\): \(\ n_0^{\Tr}m_1 = n_1^{\Tr}m_0 = 0\) (memory and decision decouple);</li>
+      <li>under \(\{e,\sigma_3\}\) or \(V\) (any element with \(D_{11} = -1\)): \(\ n_1^{\Tr}w_{\rm go} = n_1^{\Tr}w_{\rm nogo} = n_1^{\Tr}w_{\rm cue} = n_1^{\Tr}b = 0\) &mdash; the rule stimuli have no first-order drive on the decision axis; the network is <em>deaf</em> to the rule;</li>
+      <li>under \(\{e,\sigma_1\}\) or \(V\): \(\ n_0^{\Tr}w_{\rm go} = n_0^{\Tr}w_{\rm nogo} = n_0^{\Tr}w_{\rm cue} = n_0^{\Tr}b = 0\) &mdash; the rule cannot leak onto the memory readout; and \(n_0^{\Tr}(w_A + w_B) = 0\), \(n_1^{\Tr}(w_A - w_B) = 0\), i.e. \(n_0\cdot w_A = -\,n_0\cdot w_B\) and \(n_1\cdot w_A = n_1\cdot w_B\).</li>
+    </ol>
+  </div>
+  <div class="proof"><p>All are instances of Theorem 2.4 (orthogonality of distinct isotypic components), once each vector is placed. \(n_0\in U_{\chi_{-+}}\), \(m_1, n_1\in U_{\chi_{+-}}\) give (1). Unswapped columns and the bias are fixed by every element, so they lie in \(U_{\chi_{++}}\); \(n_1\) carries \(\chi_{+-}\), which differs from \(\chi_{++}\) exactly on the elements with \(D_{11} = -1\), giving (2); \(n_0\) carries \(\chi_{-+}\), giving the first half of (3). For the swapped pair, \(\rho(\sigma_1)w_A = w_B\) and \(\rho(\sigma_1)w_B = w_A\), so \(w_A + w_B\in U_{\chi(\sigma_1) = +1}\) and \(w_A - w_B\in U_{\chi(\sigma_1) = -1}\); \(n_0\) has \(\chi(\sigma_1) = -1\) and \(n_1\) has \(+1\). <span class="qed">&#8718;</span></p></div>
+  <div class="box rem"><span class="tag">Remark &mdash; what this proves about the curriculum</span>
+    <p>The rule stage has to drive \(\kappa_1\) with the go and nogo inputs. By (2), a network that respects \(\sigma_3\) or \(\sigma_2\) cannot do so to first order. Therefore the rule stage must break every element with a minus sign on \(\kappa_1\), regardless of the shape of its cost; the one-sided cost fixes the <em>direction</em> of the break, not the fact of it. Item (3) says the pair exchange costs the rule nothing, which is why it can survive all three stages. The exact zeros of (2) and the exact equalities of (3) are what <code>input_overlaps.py</code> reports at the tied checkpoints.</p>
+  </div>
+
+  <!-- ─────────────────────────── 8 ─────────────────────────── -->
+  <h2 id="s8">8. The equivariant subspace and the projection</h2>
+  <div class="box thm"><span class="tag">Proposition 8.1 &mdash; the four-block parametrization</span>
+    <p>Let \(N = 4Q\), index units by \((j, a, b)\) with \(j\in\{1..Q\}\), \(a,b\in\{0,1\}\), and let \(\rho(\sigma_1)\) flip \(a\), \(\rho(\sigma_3)\) flip \(b\). Then (4.1) for the whole group holds if and only if there are vectors \(\mu_0,\nu_0,\mu_1,\nu_1,\alpha,\beta,\gamma,\delta\in\R^Q\), shared vectors for the unswapped channels, and a shared bias \(\bar b\in\R^Q\), such that</p>
+    \[
+    \begin{aligned}
+      m_0(j,a,b) &= (-1)^a\mu_0(j), & n_0(j,a,b) &= (-1)^a\nu_0(j), & m_1(j,a,b) &= (-1)^b\mu_1(j), & n_1(j,a,b) &= (-1)^b\nu_1(j),\\
+      w_A(j,a,b) &= \begin{cases}\alpha(j) & a = 0\\ \beta(j) & a = 1\end{cases}, & w_B(j,a,b) &= w_A(j,\neg a,b), &
+      w_C(j,a,b) &= \begin{cases}\gamma(j) & a = b\\ \delta(j) & a\ne b\end{cases}, & w_D(j,a,b) &= w_C(j,a,\neg b),
+    \end{aligned}
+    \]
+    <p>with \(w_{\rm go}, w_{\rm nogo}, w_{\rm cue}, b\) constant over each orbit \(\{(j,a,b)\}_{a,b}\). The equivariant subspace has dimension \(Q\) per free vector.</p>
+  </div>
+  <div class="proof">
+    <p><em>Low-rank columns.</em> \(\rho m = mD\) says \(\rho(\sigma_1)m_0 = -m_0\), \(\rho(\sigma_1)m_1 = m_1\), \(\rho(\sigma_3)m_0 = m_0\), \(\rho(\sigma_3)m_1 = -m_1\): \(m_0\in U_{\chi_{-+}}\), i.e. \(m_0(j,\neg a,b) = -m_0(j,a,b)\) and \(m_0(j,a,\neg b) = m_0(j,a,b)\), whose general solution is \((-1)^a\mu_0(j)\). Likewise for the others.</p>
+    <p><em>Sample columns.</em> \(\rho W_{\rm in} = W_{\rm in}S\) column by column: for \(\sigma_3\), which fixes A, \(w_A(j,a,\neg b) = w_A(j,a,b)\), so \(w_A\) does not depend on \(b\); for \(\sigma_1\), which swaps A and B, \(w_A(j,\neg a,b) = w_B(j,a,b)\). Name \(w_A(j,0) = \alpha(j)\), \(w_A(j,1) = \beta(j)\); then \(w_B(j,a) = w_A(j,\neg a)\).</p>
+    <p><em>Test columns.</em> Both generators swap C and D: \(w_C(j,\neg a,b) = w_D(j,a,b)\) and \(w_C(j,a,\neg b) = w_D(j,a,b)\). Hence \(w_C(j,\neg a,b) = w_C(j,a,\neg b)\): \(w_C\) depends on \((a,b)\) only through \(a\oplus b\). Name the two values \(\gamma\) (\(a = b\)) and \(\delta\) (\(a\ne b\)); then \(w_D(j,a,b) = w_C(j,a,\neg b)\) is \(\delta\) when \(a = b\) and \(\gamma\) otherwise.</p>
+    <p><em>Fixed columns and bias.</em> \(\rho(\sigma)v = v\) for both generators means \(v\) is constant on each orbit. Sufficiency is checked by substituting back into (4.1). <span class="qed">&#8718;</span></p>
+  </div>
+  <div class="box thm"><span class="tag">Corollary 8.2 &mdash; overlaps in the block parametrization</span>
+    \[
+      \frac{n_0^{\Tr}m_0}{N} = \frac1Q\sum_j\nu_0(j)\mu_0(j), \qquad
+      \frac{n_1^{\Tr}m_1}{N} = \frac1Q\sum_j\nu_1(j)\mu_1(j), \qquad
+      \frac{n_0^{\Tr}m_1}{N} = \frac{n_1^{\Tr}m_0}{N} = 0, \qquad
+      \frac{n_1^{\Tr}w_{\rm go}}{N} = 0.
+    \]
+  </div>
+  <div class="proof"><p>\(n_0^{\Tr}m_0 = \sum_{j,a,b}(-1)^{2a}\nu_0(j)\mu_0(j) = 4\sum_j\nu_0\mu_0\) and \(N = 4Q\). \(n_0^{\Tr}m_1 = \sum_j\nu_0(j)\mu_1(j)\sum_{a,b}(-1)^{a+b} = 0\) since \(\sum_{a,b}(-1)^{a+b} = (1-1)(1-1)\). \(n_1^{\Tr}w_{\rm go} = \sum_j\nu_1(j)\,\bar w_{\rm go}(j)\sum_{a,b}(-1)^b = 0\). <span class="qed">&#8718;</span></p></div>
+  <div class="box thm"><span class="tag">Proposition 8.3 &mdash; the projection is the Reynolds operator, and it is orthogonal</span>
+    <p>Define the action of \(\sigma\) on the parameter tuple \(\theta = (m, n, W_{\rm in}, b)\) by \(\sigma\star\theta = (\rho^{\Tr} mD,\ \rho^{\Tr}nD,\ \rho^{\Tr}W_{\rm in}S,\ \rho^{\Tr}b)\), with \(\rho = \rho(\sigma)\), \(D = D_\sigma\), \(S = S_\sigma\). Then (4.1) is exactly \(\sigma\star\theta = \theta\); the map \(\theta\mapsto\sigma\star\theta\) is an orthogonal linear map of parameter space; and</p>
+    \[ R\theta = \frac1{|G|}\sum_{\sigma\in G}\sigma\star\theta \tag{8.1} \]
+    <p>is the orthogonal projection onto the equivariant subspace. On the low-rank columns it acts as \(P_\chi\) of (2.1) with the character the column carries.</p>
+  </div>
+  <div class="proof"><p>\(\sigma\star\theta = \theta\) rearranges to (4.1) using \(\rho^{\Tr} = \rho^{-1}\) and \(D^{-1} = D\). Each component map is a composition of permutation matrices and sign matrices, hence orthogonal, and \((\sigma\star)^{\Tr} = (\sigma\star)^{-1} = \sigma^{-1}\star = \sigma\star\) for involutions, so \(R\) is symmetric. \(R\) is idempotent and fixes exactly the common fixed points of the \(\sigma\star\) by the same argument as Theorem 2.4. On the column \(m_0\), \(\sigma\star\) acts as \(\chi_{-+}(\sigma)\rho(\sigma)^{\Tr}\), whose average over \(G\) is \(P_{\chi_{-+}}\). <span class="qed">&#8718;</span></p></div>
+  <div class="box rem"><span class="tag">Remark &mdash; copy versus project</span>
+    <p><code>symmetrize_init</code> does not apply \(R\); it copies block \((0,0)\) onto the orbit with the signs of Proposition 8.1. That keeps every per-unit magnitude but replaces each overlap by the overlap of the prototype block, e.g. \(5.8\) and \(7.3\) in one seed built for \(\lambda = 7\), and for the two-block case it can leave \(\langle n_1\rangle\ne0\) (the half-sample mean of a z-scored vector is not zero). During training \(R\) is applied after every optimizer step, so all blocks contribute to the update.</p>
+  </div>
+
+  <!-- ─────────────────────────── 9 ─────────────────────────── -->
+  <h2 id="s9">9. Invariant losses and what gradient descent preserves</h2>
+  <div class="box thm"><span class="tag">Theorem 9.1 &mdash; gradients of an invariant loss are equivariant</span>
+    <p>Let a finite group act on parameter space by orthogonal maps \(\sigma\star\), and let \(L\) be invariant: \(L(\sigma\star\theta) = L(\theta)\). Then \(\nabla L(\sigma\star\theta) = \sigma\star\nabla L(\theta)\). Consequently, if \(\theta\) is equivariant (\(\sigma\star\theta = \theta\) for all \(\sigma\)) so is \(\nabla L(\theta)\), and gradient descent, gradient descent with momentum, and any update rule that is itself equivariant under permutations and sign changes of coordinates (Adam included) keeps an equivariant \(\theta\) equivariant.</p>
+  </div>
+  <div class="proof"><p>Differentiate \(L(\sigma\star\theta) = L(\theta)\) along a direction \(\eta\): \(\nabla L(\sigma\star\theta)^{\Tr}(\sigma\star\eta) = \nabla L(\theta)^{\Tr}\eta\) for all \(\eta\), i.e. \((\sigma\star)^{\Tr}\nabla L(\sigma\star\theta) = \nabla L(\theta)\), and \((\sigma\star)^{\Tr} = (\sigma\star)^{-1}\). If \(\sigma\star\theta = \theta\) this reads \(\sigma\star\nabla L(\theta) = \nabla L(\theta)\). An update \(\theta\leftarrow\theta - \eta\,U(\nabla L, \text{history})\) with \(U\) commuting with the \(\sigma\star\) maps an equivariant state to an equivariant state; coordinatewise rules commute with permutations and with sign flips because they depend on each coordinate's history only through even functions of it (squares) and the coordinate itself. <span class="qed">&#8718;</span></p></div>
+  <div class="box thm"><span class="tag">Proposition 9.2 &mdash; which objectives are invariant under which elements</span>
+    <p>Use the trajectory remark of &sect;4: for an equivariant network, the relabeled trial produces the trajectory \(D\kappa(t)\). The stage losses are averages over trials drawn uniformly from the relabeled families, so \(L(\sigma\star\theta) = L(\theta)\) holds iff the per-trial loss is unchanged when the trial is relabeled and \(\kappa\) is replaced by \(D\kappa\). The forms below are schematic; in every shape used (quadratic pin, squared hinge, linear hinge, softplus) the \(+1\) and \(-1\) terms are mirror images of each other, which is all the argument needs.</p>
+    <div class="tbl-scroll"><table>
+      <thead><tr><th>term</th><th>form</th><th>\(\sigma_1\): A&harr;B, C&harr;D, \(\kappa\mapsto(-\kappa_0,\kappa_1)\)</th><th>\(\sigma_3\): C&harr;D, \(\kappa\mapsto(\kappa_0,-\kappa_1)\)</th></tr></thead>
+      <tbody>
+        <tr><td>DPA sample hold</td><td>\((\kappa_0 \mp 1)^2\) after A / B</td><td>invariant (A&harr;B with \(\kappa_0\mapsto-\kappa_0\))</td><td>invariant (untouched)</td></tr>
+        <tr><td>DPA pairing</td><td>\(\pm1\) target on \(\kappa_1\), match / nonmatch, two-sided</td><td>invariant (match stays match)</td><td>invariant (match&harr;nonmatch with \(\kappa_1\mapsto-\kappa_1\))</td></tr>
+        <tr><td>DPA pre-sample pin</td><td>\(\kappa_1^2\)</td><td>invariant</td><td>invariant</td></tr>
+        <tr><td>DPA delay</td><td>no term</td><td>&mdash;</td><td>&mdash;</td></tr>
+        <tr><td>GNG go</td><td>\(\mathrm{relu}(\theta_{\rm go} - \kappa_1)^2\)</td><td>invariant (go channel fixed, \(\kappa_1\) fixed)</td><td><b>not</b>: becomes \(\mathrm{relu}(\theta_{\rm go} + \kappa_1)^2\)</td></tr>
+        <tr><td>GNG nogo</td><td>\(\mathrm{relu}(\kappa_1)^2\), one-sided</td><td>invariant</td><td><b>not</b>: becomes \(\mathrm{relu}(-\kappa_1)^2\)</td></tr>
+        <tr><td>Dual delay no-lick</td><td>\(h(\kappa_1)\), one-sided, \(h = \mathrm{softplus}\)</td><td>invariant</td><td><b>not</b></td></tr>
+        <tr><td>Dual cue</td><td>go-channel input, upward target</td><td>invariant (cue shared)</td><td><b>not</b></td></tr>
+      </tbody></table></div>
+    <p>So the DPA objective is invariant under all of \(V\); the GNG and Dual objectives are invariant under \(\{e,\sigma_1\}\) only. (\(\sigma_2 = \sigma_1\sigma_3\) follows.) The rule exchange \(\tau\) (go&harr;nogo with \(\kappa_1\mapsto-\kappa_1\)) fails on the go and nogo rows for the same reason.</p>
+  </div>
+  <div class="box rem"><span class="tag">Remark &mdash; spontaneous breaking</span>
+    <p>Theorem 9.1 says the equivariant subspace is invariant under the training dynamics of an invariant loss; it does not say it is attracting. Two things move a free network off it: the mini-batch loss is only invariant in expectation (each batch has its own noise draws), and the finite-sample initialization sits a few percent off the subspace to begin with (3&ndash;12% for \(\sigma_1\), \(\sigma_3\)). If the symmetric solution has an unstable transverse direction, those seeds grow, in a direction the objective does not choose. That is the measured picture after DPA in the free networks: residuals of 0.1&ndash;0.95, differing from seed to seed, for an objective that is exactly invariant. The projection \(R\) after each step removes the seed and keeps the network on the subspace regardless of its stability.</p>
+  </div>
+
+  <!-- ─────────────────────────── 10 ─────────────────────────── -->
+  <h2 id="s10">10. The accidental \(O(2)\): ring, zero mode, corrugation</h2>
+  <div class="box thm"><span class="tag">Proposition 10.1 &mdash; rotational equivariance in the population limit</span>
+    <p>Let \(b = 0\) and let the units be i.i.d. draws \((m_i, n_i)\in\R^2\times\R^2\) from a law that is invariant under \((m,n)\mapsto(Rm, Rn)\) for every rotation \(R\in SO(2)\) and under \((m,n)\mapsto(D_1m, D_1n)\). Then in the limit \(N\to\infty\) the field satisfies \(F(R\kappa) = RF(\kappa)\) for all \(R\in O(2)\), and is therefore radial: \(F(\kappa) = f(|\kappa|)\,\kappa/|\kappa|\).</p>
+    <p>A zero-mean Gaussian law has this invariance iff its covariance commutes with \(R\oplus R\) for all \(R\): equal variance on the two modes for \(m\) and (separately) for \(n\), equal \(m\)&ndash;\(n\) correlation on the two modes, no cross-mode covariance. Our initialization with \(\rho = 1\) on both modes and <code>readout_scale</code> \(= \sqrt{\lambda}\) satisfies this exactly at the level of the empirical second moments.</p>
+  </div>
+  <div class="proof"><p>\(\Psi(R\kappa) = \E[n\,\varphi(g\,m\cdot R\kappa)] = \E[n\,\varphi(g\,(R^{\Tr}m)\cdot\kappa)]\). Substitute \(m' = R^{\Tr}m\), \(n' = R^{\Tr}n\), which have the same joint law: \(= \E[Rn'\,\varphi(g\,m'\cdot\kappa)] = R\Psi(\kappa)\). Adding the reflection gives all of \(O(2)\). An \(SO(2)\)-equivariant planar field has the form \(f(r)\hat\kappa + h(r)\hat\kappa^\perp\); equivariance under the reflection \(D_1\) forces \(h = 0\). <span class="qed">&#8718;</span></p></div>
+  <div class="box thm"><span class="tag">Proposition 10.2 &mdash; the ring and its zero mode</span>
+    <ol>
+      <li>Near the origin, with \(\langle n\rangle = 0\) and \(J = \lambda I\), \(\Psi(\kappa) = g\varphi'(0)\lambda\,\kappa + O(|\kappa|^3)\). The origin is unstable iff \(g\varphi'(0)\lambda > 1\); with \(\varphi = \Phi\) and \(g = 1\) the threshold is \(\lambda_c = \sqrt{2\pi} = 2.507\).</li>
+      <li>Above threshold, since \(\varphi\) saturates, \(f\) has a zero \(r^* > 0\) and the circle \(|\kappa| = r^*\) is a continuum of fixed points.</li>
+      <li>At every point of the ring the Jacobian has the tangent vector in its kernel: the tangential eigenvalue is exactly zero.</li>
+    </ol>
+  </div>
+  <div class="proof"><p>(1) Expand \(\varphi(g\,m_i\cdot\kappa) = \varphi(0) + \varphi'(0)g\,m_i\cdot\kappa + O(|\kappa|^2)\) and average: the constant gives \(\varphi(0)\langle n\rangle = 0\), the linear term gives \(\varphi'(0)\,g\,(n^{\Tr}m/N)\kappa\); the quadratic term vanishes by oddness (Theorem 6.1 with \(b = 0\)). So \(F(\kappa)\approx(g\varphi'(0)\lambda - 1)\kappa\). (2) \(f(r) = \psi(r) - r\) with \(\psi(r) = O(1)\) bounded as \(r\to\infty\) and \(\psi'(0) = g\varphi'(0)\lambda > 1\), so \(f\) changes sign. (3) Differentiate \(F(R_\theta\kappa^*) = R_\theta F(\kappa^*) = 0\) with respect to \(\theta\) at \(\theta = 0\): \(J(\kappa^*)\,G\kappa^* = 0\), where \(G = \frac{d}{d\theta}R_\theta|_0\) is the rotation generator and \(G\kappa^*\) the tangent to the ring. <span class="qed">&#8718;</span></p></div>
+  <div class="box thm"><span class="tag">Proposition 10.3 &mdash; corrugation at finite \(N\)</span>
+    <p>Let \(\delta F\) be the deviation of the finite-\(N\) field from its population limit, and \(F_\theta(\theta)\) its tangential component on the ring. Then (i) \(\delta F = O(1/\sqrt N)\); (ii) if \(\langle n\rangle = 0\) and \(b = 0\), \(F_\theta(\theta+\pi) = F_\theta(\theta)\), so only even angular harmonics appear; (iii) the zeros of \(F_\theta\) on the ring alternate between attractors and saddles, so a single harmonic \(\cos 2(\theta-\theta_0)\) gives two attractors and two saddles at right angles, and each additional harmonic that reaches the zero level adds an attractor&ndash;saddle pair.</p>
+  </div>
+  <div class="proof"><p>(i) \(\Psi\) is an average of \(N\) i.i.d. bounded terms. (ii) Oddness of \(F\) (Theorem 6.1) maps the point at angle \(\theta\) on the ring to the point at \(\theta+\pi\) with \(F\mapsto-F\); the tangent vector also reverses, so the tangential component is unchanged. (iii) On a closed curve on which the radial direction is stable, a zero of \(F_\theta\) with \(F_\theta' < 0\) is an attractor and one with \(F_\theta' > 0\) a saddle; zeros of a periodic function alternate in the sign of the derivative. <span class="qed">&#8718;</span></p></div>
+  <div class="box rem"><span class="tag">Remark</span>
+    <p>The lowest allowed harmonic is generically the largest for a smooth field, which is why the corrugated ring shows four critical points in the clean cases. The training inputs \(w_A = -w_B\propto u_{\rm mem}\) are not \(O(2)\)-invariant: they write along one axis, and the memory task selects that axis as soon as training starts. \(O(2)\) is a property of the initialization, never of the task.</p>
+  </div>
+
+  <!-- ─────────────────────────── 11 ─────────────────────────── -->
+  <h2 id="s11">11. What is measured</h2>
+  <p>Each theorem above is checked by one number in the main document; the definitions are collected here so the numbers are unambiguous.</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>quantity</th><th>definition</th><th>theorem it tests</th><th>tool</th></tr></thead>
+    <tbody>
+      <tr><td>equivariance residual \(v_\sigma\)</td><td>\(\big\|F(D_\sigma\kappa) - D_\sigma F(\kappa)\big\| \big/ \|F\|\), root-mean-square over a grid on the disk \(|\kappa|\le1.5\), noise-averaged field</td><td>4.2, 6.1, 9.1, 9.2</td><td><code>sym_violation2.py</code></td></tr>
+      <tr><td>orbit check</td><td>\(\max_{i,\sigma}\big|\theta_{\sigma(i)} - \chi(\sigma)\theta_i\big|\) over units of the prototype block and every column</td><td>8.1</td><td><code>mn_blocks.py</code></td></tr>
+      <tr><td>overlaps</td><td>\(n_j^{\Tr}w_c/N\) for every channel; \(J_{01}, J_{10}\)</td><td>7.1, 8.2</td><td><code>input_overlaps.py</code>, <code>mn_scatter.py</code></td></tr>
+      <tr><td>even part</td><td>\(E(\kappa) = \tfrac12(F(\kappa)+F(-\kappa))\), split into \(\tfrac12\langle n\rangle\) and the remainder</td><td>6.1</td><td><code>sym_violation2.py</code></td></tr>
+      <tr><td>attractor set</td><td>stable zeros of the noise-averaged field, with relaxation times</td><td>1.5, 5.1</td><td><code>find_wells</code></td></tr>
+      <tr><td>well depth</td><td>\(\kappa_1^*/\sigma_{\rm eff}\), \(\sigma_{\rm eff} = \sigma\sqrt{1 - e^{-2\alpha}}\)</td><td>&mdash;</td><td><code>readout_arm.py</code></td></tr>
+    </tbody></table></div>
+  <div class="box rem"><span class="tag">Why the disk and not the unit circle</span>
+    <p>On the ring the population field is close to zero by construction (Proposition 10.2), so a residual normalized by \(\|F\|\) on the unit circle divides a finite-\(N\) numerator by a vanishing denominator and reads 3&ndash;5 times larger than the same residual normalized over the disk. The disk normalization compares the violation with the typical strength of the field.</p>
+  </div>
+
+  <p class="foot">
+    Companion to <em>Three Tasks, Three Groups</em>. Model and notation as in <code>docs/architecture.md</code>;
+    the measurements this document is checked against are in <code>docs/ring_lowerplane_log.md</code>
+    &sect;35&ndash;&sect;37 and <code>docs/theory_landscape.md</code> &sect;9. Group-theoretic material is
+    standard (any first course: Artin, <em>Algebra</em>, chapters 2 and 10, or Serre, <em>Linear
+    Representations of Finite Groups</em>, chapters 1&ndash;2); it is restated here in the form used.
+  </p>
+</div>

@@ -2762,3 +2762,93 @@ here is scaffolding: it selects which solution the later stages are pushed away 
 Figures: gallery `rnn/lif_symdpa` — `summary_symmetry_flow_grid_dpa/expert.png` (4 seeds × pair/klein,
 lick line dashed), `summary_orbit_block_check.png` (unit-by-unit identity check, held vs released),
 `s0_mn_pairs_symdpa_*_dpa.png`. Artifact: https://claude.ai/artifact/ANVVa4bWp1bzB4fByKJFwW
+
+---
+
+## §37 — The symmetry artifact reviewed from scratch: the bias condition, the exact oddness, and the ledger (2026-09-21)
+
+Leon: "review from scratch the group theory artefact ... make sure the document is coherent, the math
+make sense the figures too." Four things were wrong or missing; all are fixed in v2 of the artifact
+(https://claude.ai/artifact/ANVVa4bWp1bzB4fByKJFwW) and recorded here.
+
+### §37a — The bias is a fourth equivariance condition, and the projection had left it free
+`W_in` has a trainable per-unit bias `wi.bias` (rms 0.5–1.6 after training). Equivariance needs
+**P b = b** alongside P m = m D, P n = n D, P W_in = W_in S. `project_symmetry` / `symmetrize_init` tied
+the first three only. Consequence for `sweep_lif_symdpa` and `sweep_lif_mirror_dpa`: the low-rank
+structure is exact (max |actual − D_σ·pred| = 0, cross-overlaps 0.000) but the FIELD carries a residual
+from the bias — measured ‖F(Dκ) − D F(κ)‖/‖F‖ on the disk |κ| ≤ 1.5 at the DPA checkpoint: pair σ₁
+0.011–0.035; klein 0.002–0.054. **Fixed 2026-09-21**: both functions now tie the bias (block average /
+copy). Verified on the trained klein checkpoint: projecting the bias takes all three residuals from
+0.04–0.05 to 6e-15. Runs before this date are unaffected in their conclusions (the residual is a few
+percent) but are not exactly equivariant; a definitive rerun should use the fixed projection.
+
+### §37b — Why the inversion is EXACT at init: φ − ½ is odd, ⟨n⟩ = 0, b = 0 (not the ensemble theorem)
+lif is the Gaussian CDF, φ(u) = ½ + ½ erf(u/√2). For the autonomous field, exactly,
+  Ψ(κ) + Ψ(−κ) = ⟨n⟩ + (1/N) Σᵢ nᵢ [Φ(g(mᵢ·κ + bᵢ)) − Φ(g(mᵢ·κ − bᵢ))].
+The even part of the field is a constant, the unit-mean of n, plus a term odd in the bias. The structured
+init z-scores n (⟨n⟩ = 0, or = `decision_readout_mean`) and zeroes the bias ⇒ **F(−κ) = −F(κ) for any
+draw of (m, n), any N** — which is why the measured violation at init is 0.000 in all 8 recipe7 seeds.
+The §35a ensemble theorem (population symmetric under (m,n) → (−m,−n)) is the general-φ statement and
+is NOT what makes it exact here (a finite Gaussian sample is not sign-symmetric). Corollary: for an odd φ
+(tanh, erf) the constant vanishes, so ⟨n⟩ cannot break the inversion and ONLY the bias can — with b = 0
+a tanh memory is a quadruple, never two wells below the line (§3 of theory_landscape); with a trained
+bias it is odd only to the extent the bias term is small (Ψ(0) ≈ 0 was checked then). Training breaks σ₂ through exactly the two parameters named: ⟨n⟩ and b; both
+contributions are comparable in the trained nets (E_const vs E_rest in `symviol2.tsv`).
+
+### §37c — The deafness lemma: a σ₃- (or σ₂-) equivariant net cannot hear go/nogo
+Under σ₃ the go/nogo/cue columns are block-shared (P w = w) while n₁ flips sign between blocks, so
+n₁ᵀw_go = n₁ᵀw_nogo = n₁ᵀw_cue = 0 identically; under σ₁ it is n₀ that flips, so n₀ᵀw_go = 0 (the
+leak a tied net sets to zero). Measured (`scratchpad/input_overlaps.py`, channel 4 = go+cue, 5 = nogo):
+klein DPA ckpt n₁·w_go/N = n₁·w_nogo/N = **0.000** in 4/4; after GNG +0.93…+1.22 / −1.37…−1.60; after
+Dual +1.82…+2.99 / −1.95…−2.61. So GNG MUST break σ₃ (and σ₂) in the parameters to learn the rule —
+independently of the one-sided cost. n₀·w_nogo leaks of +0.9/+1.1 appear after release in klein s2/s3
+(forbidden under σ₁; s2's σ₁ residual jumps to 0.39 after GNG). Free nets show the same leak (s0 +1.66).
+
+### §37d — The symmetry ledger (`scratchpad/sym_violation2.py`, `sym_ledger_fig.py`)
+v_σ = ‖F(Dκ) − D F(κ)‖/‖F‖ over the disk |κ| ≤ 1.5 (NOT the unit circle: there the field is ≈ 0 on the
+ring and the ratio is inflated), at init (rebuilt from config+seed), DPA, GNG, Dual:
+
+| nets | init σ₁ / σ₂ | DPA σ₁ / σ₂ | GNG σ₁ / σ₂ | Dual σ₁ / σ₂ |
+|---|---|---|---|---|
+| free recipe7 (8) | 0.03–0.12 / **0.000** | 0.09–0.70 / 0.11–0.95 | 0.15–0.73 / 0.14–0.90 | 0.20–0.42 / 0.40–1.06 |
+| σ₁ tied in DPA (4) | 0.000 / 0.15–0.58 ⁽¹⁾ | 0.01–0.04 / 0.52–0.96 | 0.01–0.11 / 0.47–1.01 | 0.14–0.29 / 0.51–1.09 |
+| V tied in DPA (4) | 0.000 / 0.000 | 0.02–0.05 / 0.02–0.05 | 0.05–0.39 / 0.07–0.13 | 0.17–0.40 / 0.60–0.75 |
+
+⁽¹⁾ `symmetrize_init("pair")` copies the first half of n₁ onto the second, so ⟨n₁⟩ ≠ 0 (−0.04…−0.17)
+and σ₂ is broken by the pair init itself. Readings: (i) the DPA objective is V-invariant, yet the free
+nets break V during DPA in a seed-dependent way (spontaneous, from a 3–12% finite-N seed); (ii) GNG
+barely moves the autonomous field — the rule lives in the input columns, which the autonomous field does
+not see, so the wells stay on the line; (iii) Dual breaks σ₂/σ₃ hard (0.4–1.1) while σ₁ only drifts
+(0.14–0.42). (iv) ★ **The two recipe7 seeds that end one-up-one-down (s0, s3) are the two that left DPA
+with the inversion most intact relative to the pair exchange**: v_σ₂/v_σ₁ after DPA = 0.22, 0.30 (fails)
+< 0.49 (s4, the most lopsided success, 0.39σ) < 1.06 < 2.2 < 2.5 < 4.4 < 9.0. n = 8; the ordering among
+successes is not clean. Pattern, not law.
+
+### §37e — Verified premises (recorded so the next reader need not re-derive them)
+- DPA delay decision target is NaN in all runs used (`dpa_prelick_free=True`, `dpa_nolick_weight=0`):
+  generated trials show zero pre-sample, NaN sample→test, ±1 in the response window; memory ±1 for 0.5 s
+  after the sample then NaN. The DPA objective is invariant under the whole Klein group.
+- Channels: 0 A, 1 B, 2 C, 3 D, **4 go (+cue)**, 5 nogo (`go_on_rwd_input=False`).
+- Lineage of the target net: s1_dualscan_7 = DPA of s1_lamscan_7 (identical to s1_recipe7's DPA — same
+  seed and config) → GNG of s1_gngscan_7 → Dual. σ(n₁) 3.58 (DPA) → 5.04 (Dual); the artifact's 3.68 was
+  a typo.
+- `sweep_lif_mirror_dpa` had ⟨n₁⟩ = −0.1 built into the init: its depths are the bias, not the tie; it
+  is a control for the tie (tied 4/4 level pairs, untied 3/4 asymmetric or missing a well).
+- Dropped from the artifact: the `mn_mirror` pairs plot (its mixture fit found a cross, not the lattice,
+  and it added nothing the block check does not show).
+
+### §37f — Companion artifact: the derivations (2026-09-21)
+"Klein Group Derivations", https://claude.ai/artifact/TVnuduX42gSBzCWvxDeSyd — group/action/orbit/
+character definitions recalled; the four characters of V as the sign matrices; Theorem 4.2 (field
+equivariance incl. bias and noise); orbit–stabilizer → the counting rule and pinning; Theorem 6.1 (even
+part of the field for φ = c + odd: 2c⟨n⟩ + bias term; c = ½ for lif, 0 for tanh) + Lemma 6.2 (Gaussian
+averaging keeps the form) + Theorem 6.3 (ensemble condition, any φ); Theorem 7.1 (isotypic
+orthogonality ⇒ zero cross-overlaps AND deafness, one theorem); the 4-block parametrization derived from
+(4.1) and the Reynolds projection (2.1) = `project_symmetry`; Theorem 9.1 (gradients of an invariant loss
+are equivariant; Adam preserves it) + the per-term invariance table of the three objectives; O(2) in the
+population limit → radial field, λ_c = 1/(gφ'(0)) = √(2π) = 2.507 for lif, exact zero tangential
+eigenvalue (differentiate the equivariance along the orbit), even-harmonic corrugation with alternating
+attractor/saddle zeros. Source: `docs/artifacts/symmetry/derivations.html` (MathJax SVG from cdnjs); the main note's source and
+figures are in `docs/artifacts/symmetry/` too (`symmetry.src.html` + `fig/` → `python build.py` → publish).
+Also fixed today: `symmetrize_init` does NOT preserve λ exactly — the copy gives the prototype block's
+overlap (5.8/7.3 for λ = 7 in one seed); docstring, architecture.md and the artifact corrected.

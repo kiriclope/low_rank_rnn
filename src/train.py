@@ -31,6 +31,9 @@ def project_symmetry(model, kind):
            "test"  (σ₃: C↔D;          κ ↦ (+κ₀, −κ₁))  — 2 unit blocks
            "klein" (the full group ⟨σ₁, σ₃⟩)            — 4 unit blocks, one orbit per prototype
     Exact at finite N: n₀ᵀm₁ = n₁ᵀm₀ = 0 identically for "pair" and "klein".
+    Ties m, n, W_in AND the per-unit input bias (P b = b). Runs before 2026-09-21 (sweep_lif_symdpa,
+    sweep_lif_mirror_dpa) left the bias free, which leaves a few-percent equivariance residual in the
+    field even though the low-rank structure is exact (ring_lowerplane_log §37).
     """
     kind = kind.lower()
     with torch.no_grad():
@@ -51,6 +54,8 @@ def project_symmetry(model, kind):
             for c in range(C):
                 if c in swapped: continue
                 u = 0.5 * (wi[:h, c] + wi[h:2 * h, c]); wi[:h, c] = u; wi[h:2 * h, c] = u
+            if model.wi.bias is not None:                                  # P b = b: the bias is block-shared
+                bi = model.wi.bias; u = 0.5 * (bi[:h] + bi[h:2 * h]); bi[:h] = u; bi[h:2 * h] = u
         elif kind == "klein":
             Q = N // 4
             B = [slice(k * Q, (k + 1) * Q) for k in range(4)]             # block k ↔ (a, b) = (k>>1, k&1)
@@ -76,6 +81,9 @@ def project_symmetry(model, kind):
             for c in range(4, C):
                 u = sum(wi[B[k], c] for k in range(4)) / 4.0
                 for k in range(4): wi[B[k], c] = u
+            if model.wi.bias is not None:                                  # P b = b
+                bi = model.wi.bias; u = sum(bi[B[k]] for k in range(4)) / 4.0
+                for k in range(4): bi[B[k]] = u
         elif kind:
             raise ValueError(f"unknown symmetry {kind!r} (use '', 'pair', 'test' or 'klein')")
 
@@ -83,7 +91,8 @@ def project_symmetry(model, kind):
 def symmetrize_init(model, kind):
     """Make an init exactly symmetric by COPYING the first block onto its group orbit (with the right
     signs / channel swaps). Unlike project_symmetry (a signed average, used after every training step),
-    this preserves the per-unit magnitudes and therefore the init overlaps λ₀, λ₁ exactly."""
+    this preserves the per-unit magnitudes; the overlaps become those of the PROTOTYPE block (e.g. 5.8 / 7.3
+    for λ = 7 in one seed), not the whole-sample values."""
     kind = kind.lower()
     if not kind:
         return
@@ -101,6 +110,7 @@ def symmetrize_init(model, kind):
                 wi[h:2 * h, c1] = wi[:h, c2].clone(); wi[h:2 * h, c2] = wi[:h, c1].clone()
             for c in range(C):
                 if c not in swapped: wi[h:2 * h, c] = wi[:h, c]
+            if model.wi.bias is not None: model.wi.bias[h:2 * h] = model.wi.bias[:h]
         elif kind == "klein":
             Q = N // 4
             B = [slice(k * Q, (k + 1) * Q) for k in range(4)]
@@ -119,6 +129,9 @@ def symmetrize_init(model, kind):
                 wi[B[k], 2] = gam if same else dlt
                 wi[B[k], 3] = dlt if same else gam
                 for c in range(4, C): wi[B[k], c] = rest[c]
+            if model.wi.bias is not None:
+                b0 = model.wi.bias[B[0]].clone()
+                for k in range(4): model.wi.bias[B[k]] = b0
         else:
             raise ValueError(f"unknown symmetry {kind!r}")
 

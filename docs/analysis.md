@@ -436,6 +436,13 @@ network OCCUPIES. Each rule below names the error that motivated it.
   on the held checkpoint AND the released one; the residual scatter is the symmetry breaking.
 - `scratchpad/n_vs_input_scatter.py` — m, n against each input weight column with Pearson r, i.e. where
   each stimulus writes.
+- `scratchpad/sym_violation2.py <out.tsv> <sweep>:<rid>:<stage>...` (stage may be `init`, rebuilt from
+  config + seed) — the symmetry ledger: ‖F(D_σκ) − D_σF(κ)‖/‖F‖ over the DISK |κ| ≤ 1.5 for σ₁, σ₂, σ₃,
+  plus ⟨n₀⟩, ⟨n₁⟩, the even-part split (constant ⟨n⟩/2 vs the bias-driven rest), bias rms, J off-diagonals.
+  Do not normalize on the unit circle: the field is ≈ 0 on the ring there and the ratio inflates 3–5×.
+  `sym_ledger_fig.py <tsv> <out.png>` draws it (free gray, fails ember dashed, pair teal, klein plum).
+- `scratchpad/input_overlaps.py <sweep>:<rid>:<stage>...` — (1/N) n_jᵀw_c per channel (0 A, 1 B, 2 C, 3 D,
+  4 go+cue, 5 nogo): the deafness check (σ₃/V-equivariant ⇒ n₁·w_go = n₁·w_nogo = 0 exactly).
 - `scratchpad/isotropy_readout.py <sweep>` (`STAGE=dpa|naive|expert`) — J, the per-mode factor scales
   σ(m_i)/σ(n_i) with an isotropy ratio, the angular anisotropy of the field against the 1/√N floor, and
   every attractor with τ_slow/τ_fast.

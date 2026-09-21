@@ -355,3 +355,30 @@ size (8 seeds each, expert checkpoint): both states below the line **8/8 vs 6/8*
 $-1.49\sigma$ vs $-1.43\sigma$ (unchanged), mean left–right imbalance $0.077\sigma$ vs $0.231\sigma$.
 The symmetry does not do the pushing — it removes the residual $\sigma_2$ that otherwise sends one
 well up while the other goes down.
+
+### 9.7 Corrections from the 2026-09-21 review
+**The bias.** Equivariance needs a fourth condition, $Pb=b$, on the per-unit input bias. Without it
+the low-rank structure can be exact while the field is not: the runs of 9.6 carry a $1$–$5\%$ residual
+in $\lVert F(D\kappa)-DF(\kappa)\rVert/\lVert F\rVert$ from the untied bias. `project_symmetry` and
+`symmetrize_init` now tie it; the residual is then $\sim10^{-15}$.
+
+**Why $\sigma_2$ is exact at initialization.** For $\varphi=\Phi$ (the Gaussian cumulative,
+$\Phi(u)=\tfrac12+\tfrac12\,\mathrm{erf}(u/\sqrt2)$) the even part of the autonomous field is, exactly,
+$$
+\Psi(\kappa)+\Psi(-\kappa)=\langle n\rangle+\frac1N\sum_i n_i\Big[\Phi\big(g(m_i\!\cdot\!\kappa+b_i)\big)-\Phi\big(g(m_i\!\cdot\!\kappa-b_i)\big)\Big],
+$$
+a constant (the unit mean of $n$) plus a term odd in the bias. The initialization has $\langle n\rangle=0$
+and $b=0$, so $F(-\kappa)=-F(\kappa)$ for every draw and every $N$ — measured $0.000$ in all seeds. This
+supersedes the ensemble argument of 9.3 as the *mechanism* (a finite Gaussian sample is not
+sign-symmetric); the ensemble statement remains the general-$\varphi$ sufficient condition. Training
+breaks $\sigma_2$ through exactly $\langle n\rangle$ and $b$. For odd $\varphi$ (tanh, erf) the constant is
+zero, so $\langle n\rangle$ cannot break the inversion and only the bias can: §3's result with its
+mechanism — with $b=0$ a tanh memory can only be a quadruple, never two wells below the line, and with
+a trained bias the field is odd only to the extent that $\tfrac1N\sum_i n_i[\tanh(u_i+\beta_i)-\tanh(u_i-\beta_i)]$ is small.
+
+**Deafness.** If $Pw_{\rm go}=w_{\rm go}$ (go is exchanged with nothing) and $Pn=nD$ with $D_{11}=-1$,
+then $n_1^{\!\top}w_{\rm go}=0$ identically; likewise nogo and the cue. A $\sigma_3$- or
+$\sigma_2$-equivariant network has no first-order rule drive on the decision axis, so the rule stage
+must break them regardless of the cost's shape. Under $\sigma_1$ it is $n_0^{\!\top}w_{\rm go}=0$: the
+rule cannot leak onto the memory readout. Measured as exact zeros at the tied DPA checkpoint
+(ring_lowerplane_log §37c).
