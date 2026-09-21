@@ -95,6 +95,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
     <li><a href="#s9">Invariant losses and what gradient descent preserves</a></li>
     <li><a href="#s10">The accidental \(O(2)\): ring, zero mode, corrugation</a></li>
     <li><a href="#s11">What is measured</a></li>
+    <li><a href="#s12">The wells, case by case</a></li>
   </ol>
 
   <!-- ─────────────────────────── 0 ─────────────────────────── -->
@@ -264,7 +265,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
       <li><em>If the field is odd</em> (\(\sigma_2\) alone, Theorem 6.1): every attractor \((a,w)\) has the partner \((-a,-w)\). Two memory wells both strictly below the line are impossible unless they are half of a quadruple.</li>
     </ol>
   </div>
-  <div class="proof"><p>(1) is the third column. (2) A two-element invariant set containing \((a,w)\) with \(a\ne0\) must be the orbit of \((a,w)\), so the orbit has size 2, so the stabilizer has order 2 and contains an element fixing \((a,w)\); with \(a\ne0\) that element is \(\sigma_3\), which forces \(w = 0\). The parity statement is the second column. (3) is the definition of oddness. <span class="qed">&#8718;</span></p></div>
+  <div class="proof"><p>(1) is the third column, together with the identification of the B memory as the \(\sigma_1\)-image of the A memory, which is Lemma 12.1. (2) A two-element invariant set containing \((a,w)\) with \(a\ne0\) must be the orbit of \((a,w)\), so the orbit has size 2, so the stabilizer has order 2 and contains an element fixing \((a,w)\); with \(a\ne0\) that element is \(\sigma_3\), which forces \(w = 0\). The parity statement is the second column. (3) is the definition of oddness. <span class="qed">&#8718;</span></p></div>
 
   <!-- ─────────────────────────── 6 ─────────────────────────── -->
   <h2 id="s6">6. The even part of the field: inversion</h2>
@@ -287,6 +288,19 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
     <p><em>What training can break it with.</em> By (6.1), only \(\langle n\rangle\) and \(b\). In the trained networks both contributions are of the same order.</p>
     <p><em>Odd transfer functions.</em> For tanh, \(c = 0\): the readout mean cannot break the inversion and only the bias can. With \(b = 0\) a tanh memory is a quadruple or sits on the line, never two wells below it.</p>
     <p><em>Under \(\sigma_1\) as well.</em> If \(\rho(\sigma_1)n_0 = -n_0\) then \(\langle n_0\rangle = 0\) identically, so under the pair exchange the only mean that can act is \(\langle n_1\rangle\).</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Corollary 6.4 &mdash; invariant axes under a tie</span>
+    <p>Let the network be equivariant under a single element that acts as \(D = \diag(\epsilon_0, \epsilon_1)\) with \(\epsilon_j = -1\) for the flipped mode \(j\) and \(\epsilon_i = +1\) for the copied mode \(i\) (so \(\rho\) pairs each unit with an image whose column \(j\) of \(m, n\) is negated and whose column \(i\) and bias are equal). Then, for \(\varphi = c + \psi\) with \(\psi\) odd:</p>
+    <ol>
+      <li>\(F_j = 0\) on the \(\kappa_i\) axis, identically: the axis of the copied mode is an invariant line.</li>
+      <li>On the \(\kappa_j\) axis, \(F_i(0\text{ on }i,\ \kappa_j) = 2c\,\langle n_i\rangle + \frac1N\sum_k n_{ik}\big[\psi(u_k+\beta_k) - \psi(u_k-\beta_k)\big]\) with \(u_k = g\,m_{jk}\kappa_j\): the axis of the flipped mode is invariant exactly when \(\langle n_i\rangle = 0\) and \(b = 0\), and nearly so when both are small.</li>
+      <li>Under \(D = -I\) no axis is invariant in general: the pair sums give \(\psi(u+\beta)+\psi(u-\beta)\), which does not vanish.</li>
+    </ol>
+  </div>
+  <div class="proof"><p>(1) On the \(\kappa_i\) axis the drive of a unit and of its image are equal, since only column \(j\) differs and \(\kappa_j = 0\); their \(n_j\) are opposite, so their contributions to \(\Psi_j\) cancel pairwise, and \(F_j = \Psi_j - \kappa_j = 0\). (2) On the \(\kappa_j\) axis the drives of a unit and its image are \(u_k+\beta_k\) and \(-u_k+\beta_k\) while their \(n_i\) are equal; \(\varphi(u+\beta)+\varphi(-u+\beta) = 2c + \psi(u+\beta) - \psi(u-\beta)\), which is (6.1) restricted to the pair; the \(-\kappa_i\) term vanishes on this axis. (3) Under \(-I\) the image of a unit has both columns and \(n\) negated, so the pair sum for \(\Psi_i\) on the \(\kappa_j\) axis is \(n_i[\varphi(u+\beta) - \varphi(-u+\beta)] = n_i[\psi(u+\beta)+\psi(u-\beta)]\). <span class="qed">&#8718;</span></p></div>
+  <div class="box rem"><span class="tag">Remark &mdash; what this adds to the orbit rule</span>
+    <p>The group says a mirror pair under \(\diag(+1,-1)\) has the form \((a, \pm w)\); it does not say what \(a\) is. The corollary says the \(\kappa_1\) axis is invariant up to \(\langle n_0\rangle\) and \(b\), which is where the trained networks put the pair (\(a = 0.00\) in every seed). Under the whole group both axes are exactly invariant and each carries a pair: the memory pair on \(\kappa_1\) and the unused mode's own pair on \(\kappa_0\). Under \(-I\) the antipodes sit at a free angle. Measured on the rule-task networks: the field's \(\kappa_1\) component on the \(\kappa_0\) axis is \(0.000\) under \(\diag(+1,-1)\) and under the group, and \(0.26\)&ndash;\(0.50\) under \(-I\).</p>
   </div>
 
   <!-- ─────────────────────────── 7 ─────────────────────────── -->
@@ -401,11 +415,123 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
       <tr><td>orbit check</td><td>\(\max_{i,\sigma}\big|\theta_{\sigma(i)} - \chi(\sigma)\theta_i\big|\) over units of the prototype block and every column</td><td>8.1</td><td><code>mn_blocks.py</code></td></tr>
       <tr><td>overlaps</td><td>\(n_j^{\Tr}w_c/N\) for every channel; \(J_{01}, J_{10}\)</td><td>7.1, 8.2</td><td><code>input_overlaps.py</code>, <code>mn_scatter.py</code></td></tr>
       <tr><td>even part</td><td>\(E(\kappa) = \tfrac12(F(\kappa)+F(-\kappa))\), split into \(\tfrac12\langle n\rangle\) and the remainder</td><td>6.1</td><td><code>sym_violation2.py</code></td></tr>
-      <tr><td>attractor set</td><td>stable zeros of the noise-averaged field, with relaxation times</td><td>1.5, 5.1</td><td><code>find_wells</code></td></tr>
+      <tr><td>attractor set</td><td>stable zeros of the noise-averaged field, with relaxation times</td><td>1.5, 5.1, 6.4</td><td><code>find_wells</code></td></tr>
       <tr><td>well depth</td><td>\(\kappa_1^*/\sigma_{\rm eff}\), \(\sigma_{\rm eff} = \sigma\sqrt{1 - e^{-2\alpha}}\)</td><td>&mdash;</td><td><code>readout_arm.py</code></td></tr>
     </tbody></table></div>
   <div class="box rem"><span class="tag">Why the disk and not the unit circle</span>
     <p>On the ring the population field is close to zero by construction (Proposition 10.2), so a residual normalized by \(\|F\|\) on the unit circle divides a finite-\(N\) numerator by a vanishing denominator and reads 3&ndash;5 times larger than the same residual normalized over the disk. The disk normalization compares the violation with the typical strength of the field.</p>
+  </div>
+
+
+  <!-- ─────────────────────────── 12 ─────────────────────────── -->
+  <h2 id="s12">12. The wells, case by case</h2>
+  <p>
+    The schemes in the main document (Figures 1, 10 and 13) are read off three facts: the memory state
+    reached after a stimulus is the image of the memory state reached after the relabeled stimulus
+    (Lemma 12.1); a line fixed by the plane action is invariant under the flow (Lemma 12.2); and images of
+    attractors are attractors with the same spectrum (Theorem 1.5). This section states the first two,
+    then derives the possible wells for each element, for the four-group, and for the three
+    \(\mathbb Z_2\) representations of the rule task and the 2AFC. The point most often asked about, the
+    common height of the two memory wells under \(\sigma_1\), is (12.3): it is not a property of the
+    attractor set, it is a property of which attractor each stimulus selects.
+  </p>
+
+  <div class="box def"><span class="tag">Definition &mdash; the memory state of a stimulus</span>
+    <p>For an input protocol \(x(\cdot)\) (a stimulus, then silence) let \(\bar\kappa_x(t) = \E\,\kappa(t)\) be the trajectory averaged over the input noise, started from rest, \(\kappa(0) = 0\), \(r(0) = 0\). The <em>memory state</em> of the stimulus is \(\kappa_x = \bar\kappa_x(t_{\rm end})\) at the end of the delay; in a trained network it is the attractor the mean trajectory has settled into.</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Lemma 12.1 &mdash; trajectory equivariance</span>
+    <p>If the network is equivariant under \(\sigma\) in the sense of (4.1), then for every protocol and every \(t\),</p>
+    \[ \bar\kappa_{Sx}(t) \;=\; D\,\bar\kappa_x(t), \qquad\text{hence}\qquad \kappa_{Sx} = D\,\kappa_x. \tag{12.1} \]
+  </div>
+  <div class="proof"><p>By the trajectory remark after Theorem 4.2, if \(r(t)\) is the population trajectory under inputs \(x(t)\) and noise \(\xi(t)\), then \(\rho\,r(t)\) is the trajectory under \(Sx(t)\) and \(S\xi(t)\) from the initial state \(\rho\,r(0)\). The rest state \(r(0) = 0\) is fixed by \(\rho\). The input noise is i.i.d. across channels, so \(S\xi\) has the law of \(\xi\); taking expectations, the mean population trajectory under \(Sx\) is \(\rho\) applied to the mean trajectory under \(x\). Project with \(\tfrac1N n^{\Tr}\): \(\tfrac1N n^{\Tr}\rho\,r = \tfrac1N(\rho^{\Tr}n)^{\Tr}r = \tfrac1N(nD)^{\Tr}r = D\,\kappa\), using \(\rho^{\Tr}n = nD^{-1} = nD\) as in the proof of Theorem 4.2. <span class="qed">&#8718;</span></p></div>
+
+  <div class="box thm"><span class="tag">Lemma 12.2 &mdash; fixed lines are invariant</span>
+    <p>Let \(\mathrm{Fix}(D) = \{\kappa : D\kappa = \kappa\}\). If \(Sx = x\) then \(F(\kappa; x)\in\mathrm{Fix}(D)\) for every \(\kappa\in\mathrm{Fix}(D)\). Consequently \(\mathrm{Fix}(D)\) is invariant under the flow driven by any \(S\)-fixed input, and a noise-averaged trajectory that starts in \(\mathrm{Fix}(D)\) and receives only \(S\)-fixed inputs stays in it. Explicitly:</p>
+    <div class="tbl-scroll"><table>
+      <thead><tr><th>\(D\)</th><th>\(\mathrm{Fix}(D)\)</th><th>what it says</th><th>\(S\)-fixed inputs (DPA)</th></tr></thead>
+      <tbody>
+        <tr><td>\(\diag(-1,+1)\)</td><td>the \(\kappa_1\) axis</td><td>\(F_0(0,\kappa_1;x) = 0\)</td><td>silence, go, nogo, cue</td></tr>
+        <tr><td>\(\diag(+1,-1)\)</td><td>the \(\kappa_0\) axis</td><td>\(F_1(\kappa_0,0;x) = 0\)</td><td>silence, A, B, go, nogo, cue</td></tr>
+        <tr><td>\(-I\)</td><td>the origin</td><td>\(F(0;x) = 0\)</td><td>silence, C, D, go, nogo, cue</td></tr>
+      </tbody></table></div>
+  </div>
+  <div class="proof"><p>For \(\kappa\in\mathrm{Fix}(D)\) and \(Sx = x\), Theorem 4.2 gives \(F(\kappa;x) = F(D\kappa;Sx) = D\,F(\kappa;x)\), so \(F(\kappa;x)\) is fixed by \(D\). The flow statement follows because the vector field is tangent to the fixed line on the line; the trajectory statement is Lemma 12.1 applied with \(Sx = x\): \(\bar\kappa_x = D\bar\kappa_x\). The first two rows are Corollary 6.4(1) again; the third row says the origin is an exact rest state under \(-I\), and that an unrelabeled input cannot move the network away from it. <span class="qed">&#8718;</span></p></div>
+
+  <div class="box rem"><span class="tag">Remark &mdash; mean versus single trial</span>
+    <p>Lemma 12.2 constrains the noise-averaged trajectory. A single trial leaves the fixed line as soon as the noise has a component across it. If the point the mean trajectory rests at is stable across the line, the trials stay close to it; if it is a saddle across the line, the trials fall to one of its two images on either side, which are attractors by Theorem 1.5, and only their average sits on the line. This is the pair-versus-split alternative drawn faint in the schemes. When every input column, the noise included, is fixed by \(S\), the argument holds trial by trial: the population state stays \(\rho\)-even exactly, and the coordinate along the flipped mode is identically zero (the whole-group 2AFC networks, main document Figure 14).</p>
+  </div>
+
+  <h3>12.1 The four-group of the memory task</h3>
+  <p>Write the A memory state as \(\kappa_A = (a, w)\). Each element identifies \(\kappa_B\), the decision wells, the rest state, and the invariant lines. Throughout, "well" means an attractor of the autonomous field; "memory well" means one that is a memory state.</p>
+
+  <div class="box thm"><span class="tag">Proposition 12.3 &mdash; \(\sigma_1\) alone: a mirror pair at one height</span>
+    <p>\(D_1 = \diag(-1,+1)\), \(S_1\) swaps A with B and C with D. Then</p>
+    \[ \kappa_B \;=\; D_1\kappa_A \;=\; (-a,\; w). \tag{12.2} \]
+    <p><em>One height.</em> The reflection across the \(\kappa_1\) axis leaves \(\kappa_1\) unchanged, so the B memory has the same height \(w\) as the A memory. This is Lemma 12.1, not the orbit rule: the orbit rule says \((-a,w)\) is an attractor whenever \((a,w)\) is; the lemma says it is the one the B stimulus goes to.</p>
+    <p><em>The value of \(w\).</em> Not constrained. The partner \((a,-w)\) that would put a second pair symmetrically above or below would need \(\sigma_3\), and by Theorem 6.1 with \(\sigma_3 = \sigma_1\sigma_2\), a \(\sigma_1\)-tied network has \(\sigma_3\) exactly when its field is odd. Quantitatively, at a well \(F(a,w)=0\), using \(F(-\kappa) = 2E(\kappa) - F(\kappa)\) with the even part \(E\) of (6.1),</p>
+    \[ F_1(a,-w) \;=\; \big[D_1F(-a,-w)\big]_1 \;=\; 2E_1(a,w) \;=\; 2c\,\langle n_1\rangle + \frac1N\sum_i n_{1i}\big[\psi(u_i+\beta_i)-\psi(u_i-\beta_i)\big]. \tag{12.3} \]
+    <p>The point mirrored across the line is a zero of \(F_1\) exactly when the even part vanishes there; the readout mean \(\langle n_1\rangle\) and the bias are what push the pair's height off zero and off symmetry. (\(\langle n_0\rangle = 0\) identically under \(\sigma_1\), by the last remark of &sect;6.)</p>
+    <p><em>Decision wells.</em> An attractor on the \(\kappa_1\) axis is its own image (stabilizer \(\{e,\sigma_1\}\)), so it can stand alone, and the axis is invariant (Lemma 12.2). Attractor counts may be odd.</p>
+    <p><em>Rest state.</em> \(F_0(0,\kappa_1) = 0\), so the rest state lies on the \(\kappa_1\) axis, at the \(\kappa_1\) where \(F_1(0,\kappa_1) = 0\); this is the origin only if \(\Psi_1(0) = 0\).</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Proposition 12.4 &mdash; \(\sigma_2\) alone: antipodes, no axis, rotation allowed</span>
+    <p>\(D_2 = -I\), \(S_2\) swaps A with B. Then</p>
+    \[ \kappa_B = -\kappa_A = (-a,\,-w). \tag{12.4} \]
+    <p><em>Straddling or on the line.</em> \(w\ne0\) gives one memory above and one below; \(w = 0\) gives both on the line; nothing in the tie chooses. \(\mathrm{Fix}(-I)\) is the origin, so there is no invariant axis, and the rest state is exactly the origin, which the test odors cannot leave (row 3 of Lemma 12.2, the nonlinear form of the deafness \(n_j^{\Tr}w_C = 0\) of &sect;7).</p>
+    <p><em>Rotation.</em> Both modes carry the character \(\chi_{--}\) restricted to \(\{e,\sigma_2\}\), so the cross-overlaps \(J_{01}, J_{10}\) are unconstrained (&sect;7) and the linearization at the origin, \(gJ - I\), may have complex eigenvalues: a rotation or a limit cycle is compatible with the tie. It is the only element that allows one.</p>
+    <p><em>Decision wells.</em> An attractor \((u, w_d)\) has the partner \((-u,-w_d)\); nothing pins it to an axis.</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Proposition 12.5 &mdash; \(\sigma_3\) alone: memory on the line, unmatched</span>
+    <p>\(D_3 = \diag(+1,-1)\), \(S_3\) swaps C with D and fixes A and B. Then, since \(S_3\mathrm A = \mathrm A\), Lemma 12.1 gives \(\bar\kappa_A(t) = D_3\bar\kappa_A(t)\) for all \(t\), that is</p>
+    \[ \bar\kappa_{A,1}(t) \equiv 0, \qquad \kappa_A = (a,\,0), \qquad \kappa_B = (a',\,0). \tag{12.5} \]
+    <p><em>Unmatched.</em> No element of \(\{e,\sigma_3\}\) sends A to B, so \(a\) and \(a'\) are unrelated; in particular \(a' \ne -a\) is allowed.</p>
+    <p><em>Pair or split.</em> (12.5) is a statement about the mean. If \(\partial_1F_1(a,0) > 0\) the point is a saddle across the line and the trials fall to \((a,\pm w)\), each other's \(D_3\)-images (the remark after Lemma 12.2).</p>
+    <p><em>Decision wells.</em> Any attractor off the line brings its reflection: \((u,w_d)\) and \((u,-w_d)\), a vertical pair. \(J_{01} = J_{10} = 0\) and \(n_1^{\Tr}w_A = n_1^{\Tr}w_B = 0\) (&sect;7): the samples write on the memory readout only.</p>
+  </div>
+
+  <div class="box rem"><span class="tag">Remark &mdash; for the memory objective, \(\sigma_3\) is nearly the whole group</span>
+    <p>The elements \(\sigma_3\) lacks, \(\sigma_1\) and \(\sigma_2\), differ from it by the relabeling A \(\leftrightarrow\) B. By Theorem 6.1 the inversion can only be broken through \(\langle n\rangle\) and \(b\); the \(\sigma_3\) pairing flips \(n_1\), so \(\langle n_1\rangle = 0\) identically, and &sect;7 gives \(J_{01} = J_{10} = 0\) and \(n_1^{\Tr}w_A = n_1^{\Tr}w_B = 0\). These are the quantities the free networks move when they break \(\sigma_1\) and \(\sigma_2\) during the memory stage. What \(\sigma_3\) leaves open and \(V\) closes is \(\langle n_0\rangle\) and the asymmetry \(a' \ne -a\), and neither is driven by an objective and an initialization that are A \(\leftrightarrow\) B symmetric on average. Measured after DPA (2026-09-21): under \(\sigma_3\), \(\langle n_1\rangle = 0\), \(J_{01} = J_{10} = 0\), \(|\langle n_0\rangle| \le 0.015\), wells at \((\pm1.0, 0)\) with \(|a'| - |a| \le 0.01\); indistinguishable from the whole-group networks except for the exact zero of \(\langle n_0\rangle\).</p>
+  </div>
+  <div class="box thm"><span class="tag">Proposition 12.6 &mdash; the whole group: a pinned pair, or the quadruple</span>
+    <p>Combine (12.5) and (12.2): \(\kappa_A = (a,0)\) by \(\sigma_3\), \(\kappa_B = D_1\kappa_A = (-a,0)\) by \(\sigma_1\),</p>
+    \[ \{\kappa_A,\kappa_B\} = \{(a,0),\,(-a,0)\}. \tag{12.6} \]
+    <p>Both axes are invariant, the rest state is the origin, \(J\) is diagonal. If \((a,0)\) is a saddle across the line, the trials realize the full generic orbit \((\pm a,\pm w)\), the quadruple; the pair of means is still (12.6). A decision well comes as the pair \((0,\pm w_d)\) if on the \(\kappa_1\) axis, or as a quadruple otherwise. The counting statements are Corollary 5.1(2).</p>
+  </div>
+
+  <div class="box rem"><span class="tag">The free network</span>
+    <p>No tie, no constraint. The initialization is exactly \(\sigma_2\)-equivariant (Theorem 6.1) and approximately \(V\)-equivariant (main document, supplement), so the free network starts near the picture of Proposition 12.6 and leaves it in a seed-dependent direction, which is what the residual ledger measures.</p>
+  </div>
+
+  <h3>12.2 One relabeling, three representations: the rule task and the 2AFC</h3>
+  <p>
+    Both simpler tasks have a single relabeling, go \(\leftrightarrow\) nogo or L \(\leftrightarrow\) R, with the response flipped, and an objective that reads \(\kappa_1\) only. Nothing reads \(\kappa_0\), so the relabeling may act on the plane as \(-I\) or as \(\diag(+1,-1)\); their product \(\diag(-1,+1)\) is then a symmetry with no relabeling at all. Write the go (or R) memory state as \(\kappa_{\rm go} = (a,w)\), with \(w\) the quantity the response reads.
+  </p>
+  <div class="box thm"><span class="tag">Proposition 12.7 &mdash; the three \(\mathbb Z_2\) ties</span>
+    <ol>
+      <li><em>\(D = -I\) with the swap.</em> \(\kappa_{\rm nogo} = (-a,-w)\): antipodes at a free angle, cross-overlaps free, rotation allowed, rest state the origin (Proposition 12.4 verbatim).</li>
+      <li><em>\(D = \diag(+1,-1)\) with the swap.</em> \(\kappa_{\rm nogo} = (a,-w)\): a mirror pair across the line with a common abscissa \(a\); the \(\kappa_0\) axis is invariant and carries the rest state; \(J_{01} = J_{10} = 0\); \(n_1^{\Tr}w_{\rm go} = -n_1^{\Tr}w_{\rm nogo}\) and \(n_0^{\Tr}w_{\rm go} = n_0^{\Tr}w_{\rm nogo}\) (&sect;7). By Corollary 6.4(2) the \(\kappa_1\) axis is invariant up to \(\langle n_0\rangle\) and the bias, which is why \(a\) is small in the trained networks.</li>
+      <li><em>\(D = \diag(-1,+1)\) with the swap: not a symmetry.</em> The tie is still a consistent constraint on the parameters, and Lemma 12.1 still holds for it, giving \(\kappa_{\rm L} = (-a,\,w)\): the two memory states have the <em>same</em> \(\kappa_1\). The response reads \(\kappa_1\) alone, so along the mean trajectories the response to L equals the response to R at every time, and \(n_1^{\Tr}w_{\rm L} = n_1^{\Tr}w_{\rm R}\) exactly. No parameter setting inside the tied subspace separates the two trial types: the accuracy is \(\tfrac12\) whatever the training does. The network may still build a bistable memory on \(\kappa_0\), at \((\pm a, 0)\); which side a trial takes is decided by the noise, not the stimulus.</li>
+      <li><em>The whole group.</em> \(\kappa_{\rm R}\) is fixed by the unrelabeled element \(\diag(-1,+1)\), so \(\bar\kappa_{{\rm R},0}(t)\equiv0\) and \(\kappa_{\rm R} = (0,w)\); the swap then gives \(\kappa_{\rm L} = (0,-w)\). Every input column, the noise included, is fixed by \(S\) for this element, so by the remark after Lemma 12.2 the statement is exact trial by trial: \(\kappa_0(t) = 0\) on every trial, and the memory is held on the \(\kappa_1\) axis whether or not the axis is stable across \(\kappa_0\). Any attractor on the \(\kappa_0\) axis, \((\pm a', 0)\), is unreachable from rest.</li>
+    </ol>
+  </div>
+  <div class="proof"><p>(1), (2) and (4) are Lemma 12.1 and Lemma 12.2 with the appropriate \(D\) and \(S\); the overlap statements are Proposition 7.1 with the characters of the two modes. For (3), equivariance of the parameters is a linear constraint that does not require the objective to be invariant, so Theorem 4.2 and Lemma 12.1 apply to any network in the tied subspace; the conclusion \(\kappa_{{\rm L},1}(t) = \kappa_{{\rm R},1}(t)\) for the means then follows from \(D = \diag(-1,+1)\) fixing the second coordinate. For (4), with \(\rho\) the pairing of the unrelabeled element, the population state starts \(\rho\)-even (\(r = 0\)), every input column and the noise are \(\rho\)-even, and the update map sends \(\rho\)-even states to \(\rho\)-even states; \(n_0\) is \(\rho\)-odd, so \(\kappa_0 = \tfrac1N n_0^{\Tr}r = 0\) at every step. <span class="qed">&#8718;</span></p></div>
+
+  <div class="box rem"><span class="tag">Summary table</span>
+    <div class="tbl-scroll"><table>
+      <thead><tr><th>tie</th><th>memory states</th><th>invariant set</th><th>rest state</th><th>decision wells</th><th>\(J_{01}, J_{10}\)</th></tr></thead>
+      <tbody>
+        <tr><td>\(\sigma_1\): \(\diag(-1,+1)\), A&harr;B, C&harr;D</td><td>\((a,w),\ (-a,w)\): one height, \(w\) free</td><td>\(\kappa_1\) axis</td><td>on the \(\kappa_1\) axis</td><td>alone on the axis, or a mirror pair</td><td>0</td></tr>
+        <tr><td>\(\sigma_2\): \(-I\), A&harr;B</td><td>\((a,w),\ (-a,-w)\): straddling or on the line</td><td>origin</td><td>origin, exactly</td><td>antipodal pair, any angle; rotation allowed</td><td>free</td></tr>
+        <tr><td>\(\sigma_3\): \(\diag(+1,-1)\), C&harr;D</td><td>\((a,0),\ (a',0)\) in mean; each may split to \((a,\pm w)\)</td><td>\(\kappa_0\) axis</td><td>on the \(\kappa_0\) axis</td><td>vertical pair \((u,\pm w_d)\)</td><td>0</td></tr>
+        <tr><td>\(V\)</td><td>\((\pm a,0)\) in mean; or the quadruple \((\pm a,\pm w)\)</td><td>both axes</td><td>origin, exactly</td><td>\((0,\pm w_d)\) or a quadruple</td><td>0</td></tr>
+        <tr><td>rule task / 2AFC, \(-I\)</td><td>\((a,w),\ (-a,-w)\)</td><td>origin</td><td>origin</td><td>&mdash;</td><td>free</td></tr>
+        <tr><td>rule task / 2AFC, \(\diag(+1,-1)\)</td><td>\((a,w),\ (a,-w)\), \(a\) small</td><td>\(\kappa_0\) axis</td><td>on the \(\kappa_0\) axis</td><td>&mdash;</td><td>0</td></tr>
+        <tr><td>2AFC, \(\diag(-1,+1)\) with swap</td><td>\((a,w),\ (-a,w)\): same \(\kappa_1\), chance</td><td>\(\kappa_1\) axis</td><td>on the \(\kappa_1\) axis</td><td>&mdash;</td><td>0</td></tr>
+        <tr><td>2AFC, whole group</td><td>\((0,w),\ (0,-w)\), exact per trial</td><td>both axes</td><td>origin</td><td>&mdash;</td><td>0</td></tr>
+      </tbody></table></div>
   </div>
 
   <p class="foot">

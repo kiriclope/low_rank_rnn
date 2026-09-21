@@ -107,6 +107,9 @@ class RunConfig:
     rwd_input_scale:    float = 1.0   # scale of reward input alignment with u_read (structured init only)
     rwd_align_weight:   float = 0.0   # weight of reward-input ↔ n1 cosine alignment loss during DPA
     freeze_rank0_dual:  bool  = False  # also freeze rank-0 of m/n during the Dual stage
+    rule_timing:        str   = "gng"  # timing of the rule stage: "gng" (stim 2-3, cue 4-4.5, 6 s) or "2afc" (stim 2-3, cue 6-7, 8 s; §39)
+    afc_response_to_end: bool = False  # 2AFC (§39): score the response from cue-off to trial end (Leon's 2AFC), not the 0.5 s window
+    freeze_rank0_gng:   bool  = True   # freeze rank-0 of m/n during GNG (the curriculum default). False = a stand-alone rule task from scratch with both modes free (rulesym validation, §38)
     project_go_on_n1:    bool  = False  # project go input column onto n₁ direction before GNG
     project_gng_orth_n0: bool  = False  # project go+nogo input columns orthogonal to n₀ before GNG
     use_fixed_weights:          bool  = False  # add frozen random W_fixed to recurrent dynamics
@@ -466,7 +469,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     # Task timings live in src/tasks.make_timings (single source shared with plot_sweep.py)
     _timings    = make_timings(DT)
     dpa_timing  = _timings["dpa"]
-    gng_timing  = _timings["gng"]
+    gng_timing  = _timings[config.rule_timing]
     dual_timing = _timings["dual"]
     if config.cue_duration != 0.5:      # widen the cue window (onset fixed, offset moves)
         def _recue(t: TaskTiming, idx: int) -> TaskTiming:
@@ -716,7 +719,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     # 0-targets fell into the gng group's two-sided PIN and rwd_nogo_weight was inert.)
     _co_g = int(gng_timing.n_stim_off[1])
     _ric_g = config.response_in_cue and not config.gng_rwd_after_cue
-    _rw_g = (_co_g - _half_steps, _co_g) if _ric_g else (_co_g, _co_g + _half_steps)
+    _rw_g = (_co_g - _half_steps, _co_g) if _ric_g else ((_co_g, int(gng_timing.n_steps)) if config.afc_response_to_end else (_co_g, _co_g + _half_steps))
     # nolick_late_delay: restrict the nolick term to the after-cue span — the late-delay
     # DON'T-LICK imposition. Dual: (cue-off, test-onset). GNG stage (no test): (cue-off, trial
     # end) — needed once nogo_target=None drops the nogo response target, so "nogo = don't lick
@@ -933,13 +936,13 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                  + ([config.input_size - 1] if (config.rwd or config.attention_input) else []))
         if config.freeze_attention_input and config.attention_input:
             gng_freeze_input = sorted(set(gng_freeze_input) | {config.input_size - 1})
-        _stage_header("GNG", config.epochs_gng, gng_freeze_input, [0])
+        _stage_header("GNG", config.epochs_gng, gng_freeze_input, [0] if config.freeze_rank0_gng else [])
         t0 = time.time()
         X, y   = generate_gng_trials(config.n_batch, gng_timing, config.input_size, noise=noise, target_rank=config.target_rank,
                                       cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                       nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                       input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
-                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero or config.gng_decay_to_zero, decay_to_end=config.gng_decay_to_zero, gng_response=config.gng_response, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue, hold_full_delay=config.gng_hold_full_delay, attention_through_cue=config.attention_through_cue)
+                                      ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero or config.gng_decay_to_zero, decay_to_end=config.gng_decay_to_zero, gng_response=config.gng_response, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue, hold_full_delay=config.gng_hold_full_delay, attention_through_cue=config.attention_through_cue, response_to_end=config.afc_response_to_end)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -956,7 +959,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
             print(f"[{rid}]  decoupling (GNG): project n[:,{_orth[0]}] ⟂ m[:,0] after each step", flush=True)
         trainer    = Optimization(model, tl, vl, gng_criterion, opt, sched,
                                   config.grad_clip_norm, num_epochs=config.epochs_gng,
-                                  freeze_low_rank_cols=[0],
+                                  freeze_low_rank_cols=([0] if config.freeze_rank0_gng else None),
                                   freeze_input_dims=gng_freeze_input,
                                   stop_loss=config.stop_loss,
                                   regularizer=gng_regularizer,
@@ -1013,6 +1016,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                config.grad_clip_norm, num_epochs=config.epochs_dual_paired,
                                freeze_low_rank_cols=dual_mem_freeze,
                                freeze_input_dims=paired_freeze_input,
+                               symmetry=(_sym if "dual" in config.symmetry_stages else ""),   # review 2026-09-21: the paired stage honours symmetry_stages too
                                stop_loss=config.stop_loss,
                                regularizer=_kappa1_regularizer(config, model),
                                kappa1_clamp=config.kappa1_clamp,
@@ -3304,7 +3308,9 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     # with NO κ₁ term, GNG with no hold + cue-time go lick, Dual = bowl + softplus tail + no hold, w 1.
     # Readouts: DPA-ckpt wells (how many, at what κ₁, occupied?), then naive/expert — does releasing the
     # symmetry let the pair descend, and does the degeneracy resolve. --run_filter symdpa
-    for tag, sym in (("symdpa_pair", "pair"), ("symdpa_klein", "klein")):
+    # symdpa_inv (σ₂ alone, A↔B, κ ↦ −κ) and symdpa_test (σ₃ alone, C↔D, κ₁ ↦ −κ₁) added 2026-09-21 for the DPA
+    # summary figure (§36e): every element of the Klein group tied on its own, plus the whole group.
+    for tag, sym in (("symdpa_pair", "pair"), ("symdpa_klein", "klein"), ("symdpa_inv", "inv"), ("symdpa_test", "test")):
         for seed in range(4):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
                                      dt_base=0.020,
@@ -3326,6 +3332,53 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                         "nolick_nogo_in_cue": True,
                                         "nolick_full_delay": True, "nolick_late_delay": False,
                                         "nolick_thresh": 0.0}))
+
+    # ═══ rulesym (Leon 2026-09-21, §38): validate the group-theory approach on a SIMPLER task ═══
+    # A stand-alone delayed rule task from scratch (epochs_dpa = 0, epochs_dual = 0, rank-0 FREE in
+    # GNG, cue on its OWN channel so the go↔nogo relabeling is a clean channel swap; input_size 7).
+    #   rulesym_afc      : two-alternative version — go → +1, nogo → −1 (two-sided hinge, no nolick).
+    #                      The objective is invariant under go↔nogo with κ₁ ↦ −κ₁: a Z₂.
+    #   rulesym_gng      : the real go/nogo — go ≥ θ, nogo ≤ 0 one-sided (nolick from cue on). No symmetry.
+    #   rulesym_*_tied   : the same with the Z₂ (D = −I, go↔nogo swapped, bias shared) TIED throughout.
+    # Predictions are written in ring_lowerplane_log §38 BEFORE the runs. --run_filter rulesym
+    _rule_base = {**emergent, **shared_unfrozen, **nocue_common,
+                  "tau": 0.2, "noise": 1.0, "attention_input": False, "response_in_cue": True,
+                  "memory_lambda": 7.0, "decision_lambda": 7.0,
+                  "target_mn_corr": 1.0, "target_out_mn_corr": 1.0, "readout_scale": 7.0 ** 0.5,
+                  "cue_scale": 2.0, "cue_on_go_input": False,
+                  "epochs_dpa": 0, "epochs_gng": 150, "epochs_dual": 0,
+                  "freeze_rank0_gng": False,
+                  "gng_weight": 0.0, "gng_response": True, "go_target": 1.0,
+                  "nolick_weight": 1.0, "nolick_thresh": 0.0, "nolick_late_delay": False,
+                  "dpa_prelick_free": True, "dpa_nolick_weight": 0.0, "pair_pin": True}
+    _afc = {"nogo_target": -1.0, "nolick_nogo_in_cue": False}; _gng = {"nogo_target": None, "nolick_nogo_in_cue": True}
+    for tag, over in (("rulesym_afc",       _afc),
+                      ("rulesym_afc_tied",  {**_afc, "symmetry": "gng", "symmetry_stages": ["gng"]}),        # −I
+                      ("rulesym_gng",       _gng),
+                      ("rulesym_gng_tied",  {**_gng, "symmetry": "gng", "symmetry_stages": ["gng"]}),
+                      # §38c: the other representation of the same relabeling, and the group generated by both
+                      ("rulesym_afc_dec",   {**_afc, "symmetry": "gng_dec", "symmetry_stages": ["gng"]}),    # diag(+1, −1)
+                      ("rulesym_afc_klein", {**_afc, "symmetry": "gng_klein", "symmetry_stages": ["gng"]}),  # whole group
+                      ("rulesym_gng_dec",   {**_gng, "symmetry": "gng_dec", "symmetry_stages": ["gng"]}),
+                      ("rulesym_gng_klein", {**_gng, "symmetry": "gng_klein", "symmetry_stages": ["gng"]})):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, dt_base=0.020, **{**_rule_base, **over}))
+
+    # ═══ afc2 (Leon 2026-09-21, §39): his delayed 2AFC (NeuroFlame/org/2AFC/2AFC.org) on the recipe base ═══
+    # Stimulus L or R (channels 5 / 4) 2-3 s, 3 s delay, response cue 6-7 s (channel 6), lick-left / lick-right
+    # = κ₁ → −1 / +1 from cue-off to the end (two-sided hinge, no nolick). No target on κ₀: the objective reads
+    # the decision readout only, so the L↔R relabeling again has two plane representations (−I and
+    # diag(+1,−1)) and their product (memory flip, no relabeling) — a Klein four-group of parameter symmetries.
+    # Ties: −I (gng) · diag(+1,−1) (gng_dec) · diag(−1,+1) (gng_mem: decision COPIED → cannot answer L/R;
+    # predicted to FAIL) · the whole group (gng_klein). Predictions in ring_lowerplane_log §39a. --run_filter afc2
+    _afc2 = {**_afc, "rule_timing": "2afc", "response_in_cue": False, "afc_response_to_end": True, "cue_scale": 1.0}
+    for tag, over in (("afc2_free",  _afc2),
+                      ("afc2_inv",   {**_afc2, "symmetry": "gng", "symmetry_stages": ["gng"]}),
+                      ("afc2_dec",   {**_afc2, "symmetry": "gng_dec", "symmetry_stages": ["gng"]}),
+                      ("afc2_mem",   {**_afc2, "symmetry": "gng_mem", "symmetry_stages": ["gng"]}),
+                      ("afc2_klein", {**_afc2, "symmetry": "gng_klein", "symmetry_stages": ["gng"]})):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed, dt_base=0.020, **{**_rule_base, **over}))
 
     return configs
 

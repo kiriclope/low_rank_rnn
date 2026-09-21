@@ -443,6 +443,33 @@ network OCCUPIES. Each rule below names the error that motivated it.
   `sym_ledger_fig.py <tsv> <out.png>` draws it (free gray, fails ember dashed, pair teal, klein plum).
 - `scratchpad/input_overlaps.py <sweep>:<rid>:<stage>...` — (1/N) n_jᵀw_c per channel (0 A, 1 B, 2 C, 3 D,
   4 go+cue, 5 nogo): the deafness check (σ₃/V-equivariant ⇒ n₁·w_go = n₁·w_nogo = 0 exactly).
+- `scratchpad/symtools.py` — shared helpers: `build_init(sweep, rid, N=, seed=, **init_overrides)` rebuilds a
+  run's structured init from config+seed (optionally at another N or with e.g. `readout_scale=1.0`),
+  `swap_phi(model, cfg, 'tanh', zero_bias=)` swaps the transfer function on trained parameters,
+  `field_fn` / `residuals` (disk equivariance residuals), `raw_field` for arbitrary numpy (m, n, b).
+- `scratchpad/o2_init_fig.py <sweep> <rid> <out>` — the accidental O(2): covariance heatmaps (isotropic vs
+  readout_scale=1), both flows, radial/tangential field on the ring, angular harmonics (odd ones ≈ 0).
+- `scratchpad/init_scaling_fig.py <sweep> <rid> <out>` — init residual v_σ vs N (256…8192, 4 seeds) with the
+  N^(−1/2) guide, plus ‖F‖ and ‖F(D₁κ) − D₁F(κ)‖ maps for one init.
+- `scratchpad/inversion_breaking_fig.py <symviol2.tsv> <sweep> <rid_pattern> <out>` — ‖⟨n⟩‖, bias rms, the
+  even-part split per stage, and the point-by-point check of Ψ(κ)+Ψ(−κ) = ⟨n⟩ + bias term (noise-free).
+- `scratchpad/tanh_odd_fig.py <sweep> <rid> <out>` — inversion residual for random asymmetric (m, n) under
+  tanh / lif / tanh+bias, and the trained net's field with φ swapped to tanh (b = 0 and trained b).
+- `scratchpad/tf_landscape_fig.py <sweep> <rid> <out>` — UNTRAINED: the recipe init under lif and tanh ×
+  {nothing, ⟨n₁⟩ = −0.3, random bias, both} (artifact Fig. 2); relu in the random-law strip only.
+- `scratchpad/rulesym_readout.py <sweep> [out.tsv]` — the §38 readout (three Z₂ residuals, attractors + orbit
+  check, J, go/nogo/cue overlaps, GMM k, accuracy) for every `s*_rulesym_*` run at the naive checkpoint.
+- `scratchpad/dpa_summary_fig.py <out>` — artifact Fig. 1: the DPA symmetries → predicted wells per tie (scheme) →
+  free (recipe7, 8 seeds) / σ₁ / σ₂ / σ₃ / whole group at the DPA and expert checkpoints. `afc2_summary_fig.py`
+  is the same for Leon's 2AFC (§39).
+- `scratchpad/afc2_traj.py <sweep> <out> run_id...` — κ(t) on L and R trials (twelve traces + mean) and the κ-plane path
+  for 2AFC runs (artifact Fig. 13). Input noise must be η = noise·√(1−e^{−2α}), not the raw `noise` field.
+- `scratchpad/mn_grid_fig.py <out> <stage> <title> 'label|sweep|arm|scheme|seed'...` — artifact Fig. 2: rows = conditions,
+  first column the predicted cluster lattice in (m₀, m₁) incl. the decision-axis pair, then m₀–m₁, m₀–n₀, m₁–n₁ colored
+  by sign quadrant. `tie_grid_fig.py` — Figs S7/S8 (scheme column + one flow panel per seed, rows = conditions).
+- `scratchpad/rulesym_summary_fig.py <sweep> <out>` — the one-figure validation (artifact Fig. 18): row 1 the
+  predicted wells per tie as a scheme; rows 2–3 seed-0 flows per arm (free / −I / diag(+1,−1) / whole group)
+  for the two-sided and one-sided objectives, with seeds 1–3's attractors overlaid and median residuals.
 - `scratchpad/isotropy_readout.py <sweep>` (`STAGE=dpa|naive|expert`) — J, the per-mode factor scales
   σ(m_i)/σ(n_i) with an isotropy ratio, the angular anisotropy of the field against the 1/√N floor, and
   every attractor with τ_slow/τ_fast.

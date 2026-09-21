@@ -128,6 +128,9 @@ All generators return `(inputs, targets[, trial_type, condition_names])` with sh
 
 `TaskTiming(stim_on, stim_off, t_steps, dt)`. Dual uses 4 epochs:
 `[sample, gng, cue, test]` at times `[2, 4, 6, 8]` s (on/off).
+`"2afc"` (2026-09-21, `rule_timing="2afc"`): Leon's delayed two-alternative choice — stimulus L/R 2–3 s
+(channels 5/4), 3 s delay, response cue 6–7 s (channel 6), trial 8 s; with `afc_response_to_end=True` the
+response target κ₁ → ±1 runs from cue-off to trial end (`generate_gng_trials(response_to_end=True)`).
 
 ---
 
@@ -253,7 +256,8 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
   zero-mean Gaussian ensemble, which forces one well up for every well down (§35a).
   `symmetry` / `symmetry_stages` (2026-09-18, §36) — the general form of the same idea, and what
   `mirror_tying` is now an alias for. `symmetry="pair"` is σ₁, the A↔B pair exchange, two unit blocks;
-  `"test"` is σ₃, the C↔D test exchange; `"klein"` is the whole four-group V, four blocks indexed by
+  `"test"` is σ₃, the C↔D test exchange; `"inv"` is σ₂ = −I, the A↔B exchange alone (both modes flip,
+  channels 0,1 swapped); `"klein"` is the whole four-group V, four blocks indexed by
   (a, b) with m₀, n₀ ∝ (−1)^a and m₁, n₁ ∝ (−1)^b. `symmetrize_init` builds the orbit by copying the
   first block with the right signs and channel swaps (per-unit magnitudes kept; the overlaps become the
   prototype block's, e.g. 5.8/7.3 for λ = 7 — not exactly λ);
@@ -262,6 +266,15 @@ Added 2026-09-02 (foundation-era; see `ring_lowerplane_log` §27):
   Since 2026-09-21 both also tie the per-unit input bias (`wi.bias`, P b = b) — the fourth equivariance
   condition; runs before that date (`symdpa`, `mirror_dpa`) have exact low-rank structure but a 1–5% field
   residual from the free bias (`ring_lowerplane_log` §37a).
+  Also since 2026-09-21 (code review, §37h): `hidden_size` must be a multiple of the block count (2 or 4;
+  enforced), the optional paired-Dual stage honors `symmetry_stages`, and **freezing all input dims now
+  freezes `wi.bias` too** — before, the bias kept training through the Dual stage (rms 0.9 → 1.4) although
+  that stage is documented as "inputs frozen". Partial freezes (GNG's DPA channels) leave the bias free.
+  Every Dual result before 2026-09-21 was trained with the bias free.
+  Rule-task kinds (§38–§39, one relabeling go↔nogo or L↔R on channels 4,5): `"gng"` = −I (both modes flip),
+  `"gng_dec"` = diag(+1,−1) (decision flips), `"gng_mem"` = diag(−1,+1) (memory flips; with the swap this is NOT a
+  symmetry of the 2AFC and trains to chance), `"gng_klein"` = the product group (4 blocks, go/nogo columns by b
+  only, other columns shared). `_check_blocks` asserts N divisible by the block count.
   `symmetry_stages` picks which stages hold it; **DPA only, then released, is the useful setting**: σ₁
   leaves the common well height free while V pins the pair on the lick line, and after release the
   Dual breaking field drives both wells down together (8/8 vs 6/8 free, §36c).

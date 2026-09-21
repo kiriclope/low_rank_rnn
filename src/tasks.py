@@ -40,6 +40,7 @@ def make_timings(dt: float) -> dict:
         "dpa":  TaskTiming([2.0, 8.0],             [3.0, 9.0],            11.0, dt),
         "gng":  TaskTiming([2.0, 4.0],             [3.0, 4.5],             6.0, dt),
         "dual": TaskTiming([2.0, 4.0, 6.0, 8.0],   [3.0, 5.0, 6.5, 9.0],  11.0, dt),
+        "2afc": TaskTiming([2.0, 6.0],             [3.0, 7.0],             8.0, dt),   # Leon's delayed 2AFC (NeuroFlame/org/2AFC): stimulus, 3 s delay, 1 s cue, respond after it
     }
 
 
@@ -192,6 +193,7 @@ def generate_gng_trials(
     decay_to_end: bool = False,   # decay pin runs to TRIAL END instead of 1 s (GNG-stage gng_decay_to_zero)
     hold_full_delay: bool = False,  # windowed hold spans stim-off → cue-on (symmetric with A/B supervision)
     attention_through_cue: bool = False,  # gated attention stays ON through the cue (off at cue-off, as in Dual)
+    response_to_end: bool = False,  # 2AFC (§39): the response target runs from cue-off to trial END (Leon's 2AFC), not 0.5 s
 ):
     n_steps = timing.n_steps
     n_on = timing.n_stim_on
@@ -241,7 +243,7 @@ def generate_gng_trials(
         # gng_rwd_after_cue: response targets POST-cue (nogo pressure lands on the relaxing state
         # near the well — a nolick-like push) even when response_in_cue times everything else in-cue.
         _in_cue = response_in_cue and not gng_rwd_after_cue
-        r0, r1 = (co - half, co) if _in_cue else (co, co + half)
+        r0, r1 = (co - half, co) if _in_cue else ((co, n_steps) if response_to_end else (co, co + half))
         if gng_response:
             # go→go_target, nogo→nogo_target(=0). Scored by the UnifiedLoss rwd group (separately weighted).
             # RESPONSE = readout/lick → dim [-1] (κ₁ in rank-2, κ₂ in rank-3). The RULE stays held on [1].

@@ -2852,3 +2852,349 @@ attractor/saddle zeros. Source: `docs/artifacts/symmetry/derivations.html` (Math
 figures are in `docs/artifacts/symmetry/` too (`symmetry.src.html` + `fig/` → `python build.py` → publish).
 Also fixed today: `symmetrize_init` does NOT preserve λ exactly — the copy gives the prototype block's
 overlap (5.8/7.3 for λ = 7 in one seed); docstring, architecture.md and the artifact corrected.
+
+### §37g — Leon's nine comments on the artifact, answered with five new figures (2026-09-21, afternoon)
+Comments on v2 (all "show that in a figure" / clarity). Answered in v2.2 of the note; every figure is
+untrained unless stated, so the claims are checked on the model, not on a training outcome.
+- **The accidental O(2)** (`scratchpad/o2_init_fig.py`, gallery `summary_o2_init.png`): the recipe init's
+  empirical 4×4 covariance of (m₀,m₁,n₀,n₁) is exactly isotropic (7.00 on both modes, 7.01 m–n, 0.00
+  cross); with `readout_scale=1` it is not (49.1 / 1.0). Flows: ring vs ellipse. On the ring (r* = 0.92)
+  the radial and tangential components are within ±0.035 of zero; the tangential component's angular
+  harmonics: odd ones ≤ 3e-9 (field exactly odd), k = 2 leads, k = 4 half as large — hence FOUR slow
+  attractors on the ring in this seed rather than two (the 2+2 statement is the k = 2-only idealization).
+- **Finite-N residuals at init** (`init_scaling_fig.py`, `summary_init_residual_vs_N.png`): 4 seeds ×
+  N ∈ {256…8192}: v_σ₂ ≈ 1e-7 (float32 floor) at every N; v_σ₁ = v_σ₃ fall 0.12 → 0.03 along N^(−1/2).
+  Residual map ‖F(D₁κ) − D₁F(κ)‖ is 40× smaller than ‖F‖ and quadrupolar (the k = 2 corrugation).
+- **How training breaks the inversion** (`inversion_breaking_fig.py`, `summary_inversion_breaking.png`):
+  ‖⟨n⟩‖ and rms(b) vs stage for recipe7 (both 0 at init; the two failing seeds have the SMALLEST bias and
+  small ⟨n⟩); the even part split into ½⟨n⟩ and the bias term (same order); and the identity
+  Ψ(κ)+Ψ(−κ) = ⟨n⟩ + bias term checked point by point on s1_recipe7 expert: max error 2e-15.
+- **tanh, no training** (`tanh_odd_fig.py`, `summary_tanh_odd.png`): random (m,n) from four asymmetric
+  laws (Gaussian mean 1, uniform[0,4], lognormal, 1:3 two-cluster), N = 1024: tanh + b = 0 → residual
+  1e-17 for EVERY draw; lif → 0.1–0.5; tanh + random b → 0.003–0.05. Trained s1_dualscan_7 parameters
+  with φ swapped to tanh, b = 0: residual 3e-16, two antipodal attractors (∓2.48, ∓0.57) — one up one
+  down; with the trained b restored: 0.24, no antipode. σ₁-tied parameters (s0_symdpa_pair DPA,
+  bias-projected) + tanh + b = 0: the whole group ⇒ memory QUADRUPLE (±2.56, ±0.32) + decision pair
+  (0, ±3.21). (With tanh the field scale is ~2.5× larger: φ' = 1 vs 0.4, and rates ±1 vs [0,1].)
+- **Ledger redesigned** as 3×3 small multiples (rows σ, cols curriculum, thin seeds + thick median).
+- **Text**: "tying" defined at first use (blocks + copy at init + projection after every step; free
+  within the subspace); the **decision wells** introduced before the DPA flow figure (J₁₁ = 6.3–6.8 > λ_c
+  ⇒ the decision mode is bistable on its own: attractors at (0, ±1.1–1.3), never visited in DPA, counted
+  by the group); the noise unit renamed **η** (σ reserved for group elements), "spread of n₁" for the
+  std. Artifact sources refreshed in `docs/artifacts/symmetry/`.
+- **v2.3 (structure pass, Leon's request)**: 17 numbered figures (the two schematic panel groups are now
+  Figures 1 and 14 with lettered panels), `id="fig-N"` anchors, every figure referred to from the text by
+  number and panel letter (18 references), captions prefixed "Figure N." with a bold title sentence,
+  subsections numbered 2.1–2.7, 3.1–3.2, 4.1–4.4, 6.1. Build pipeline unchanged (`symmetry.body.html` →
+  `build.py`); numbering is done in the body source, so a new figure means renumbering by hand or
+  rerunning the numbering pass in the session transcript.
+
+---
+
+## §38 — Validating the group-theory approach on a simpler task: the delayed rule task, two-sided vs one-sided (2026-09-21)
+
+Leon: "validate our approach (group theory) … on a simpler task (gng or a 2AFC or both)." Design and
+**predictions written before any run**; results go in §38b.
+
+### §38a — Design
+A stand-alone delayed rule task, trained from scratch on the rank-2 lif net (the recipe base: ρ = 1,
+λ = 7 on both modes, readout_scale √λ, gain 1, τ 0.2, noise 1.0), `epochs_dpa = 0`, `epochs_dual = 0`,
+**rank-0 free in GNG** (new `freeze_rank0_gng=False`), cue on its own channel (`cue_on_go_input=False`,
+input_size 7) so that go↔nogo is a clean channel swap. Trial: go or nogo stimulus 2–3 s, delay, cue
+4–4.5 s, response scored in the cue. No pre-cue hold (`gng_weight 0`). Two objectives, each free and tied:
+- **rulesym_afc** (two-alternative): go → κ₁ ≥ +θ, nogo → κ₁ ≤ −θ (two-sided hinge, no nolick).
+  Invariant under the relabeling go↔nogo with the response flipped.
+- **rulesym_gng** (the real go/nogo): go → κ₁ ≥ θ, nogo → κ₁ ≤ 0 one-sided (`nolick_nogo_in_cue`).
+  Not invariant under any relabeling.
+- **\*_tied**: the Z₂ imposed throughout GNG with `symmetry="gng"`: two blocks, D = −I (both modes flip),
+  go↔nogo columns swapped, cue/DPA columns and bias shared (new kind in `project_symmetry`).
+4 seeds × 4 arms = 16 runs, two waves of 8. Readouts: field residuals for D = −I, diag(−1,+1),
+diag(+1,−1); attractors and their orbit structure; J (all four entries); GMM populations; input overlaps
+(n·w_go vs n·w_nogo); accuracies.
+
+### §38a′ — Predictions (the theorems of the derivations doc applied to this task)
+P1 *Objective.* The two-sided objective is invariant under the parameter action of D = −I (go↔nogo
+   swapped) AND under D = diag(+1,−1) (κ₀ untouched) — two different Z₂ realizations of the same task
+   symmetry, because the loss never looks at κ₀. The one-sided objective is invariant under neither.
+P2 *Init.* Exactly odd (Theorem 6.1): residual for −I = 0.000 in every seed; diag(±1,∓1) at 0.03–0.12.
+P3 *Free two-sided nets* keep a Z₂: at least one of the three residuals stays small (spontaneous
+   breaking may pick which). Attractors come in orbits of that Z₂ — under −I antipodal pairs (a, w),
+   (−a, −w), one above the line and one below with |w| EQUAL; under diag(+1,−1) mirror pairs across the
+   line at the same κ₀. Even count of attractors off the fixed set. Populations: 2 clusters related by
+   the surviving sign action (not the 4-lattice of DPA).
+P4 *Free one-sided nets* keep no Z₂: all three residuals large; the two memory states have UNEQUAL
+   |κ₁| (the one-sided cost prices go and nogo differently); the count is unconstrained.
+P5 *Tied nets* learn both tasks (a −I-equivariant net answers nogo with exactly minus its go answer,
+   which satisfies nogo ≤ 0), with exact antipodal orbits, residual ≈ 0 for −I, and n·w_go = −n·w_nogo
+   exactly (Theorem 7.1 with a swapped pair). For the one-sided objective the tie removes the asymmetry
+   the loss would otherwise produce: tied-gng wells symmetric, free-gng wells not.
+P6 *Overlaps.* Under −I both modes carry the same character, so J₀₁, J₁₀ are NOT forced to zero
+   (contrast DPA, where V forces them to 0.000): expect nonzero cross-overlaps in the tied nets.
+P7 *Counting.* Free two-sided: even number of attractors (orbits of size 2; the origin is a repeller
+   above threshold). One-sided: no parity constraint.
+Falsifiers: a free two-sided net with all three residuals ≥ 0.3 and unequal |w| (P3); a tied net that
+fails the task (P5); zero cross-overlaps forced in the tied nets (P6 would be a coincidence, not a
+falsification, but ≥ 3/4 exact zeros would mean the analysis missed a symmetry).
+
+### §37h — Code review of the symmetry runs (2026-09-21, Leon's request) and three fixes
+Reviewed `project_symmetry` / `symmetrize_init`, the per-step order (step → restore frozen → project →
+orthogonalize → clamps: correct), the stage gating, and the four-block formulas against the derivation
+(correct). Findings: (1) no divisibility check — N not a multiple of the block count would leave units
+untied (N = 1024 everywhere, so no effect) → now asserted; (2) the optional paired-Dual stage did not
+receive `symmetry` → fixed (never enabled); (3) `use_unit_bias` would add an unprojected per-unit bias
+(off everywhere); (4) **freezing input dims froze only the weight columns: the input bias kept training
+in Dual** (rms 0.9 → 1.4), the stage documented as "inputs frozen" — Leon: freeze it → done (all-dims
+freeze now freezes `wi.bias`; partial freezes don't); (5) trials are drawn ONCE per stage (516, fixed
+noise, ~258±11 per class, fixed 80/20 split), so the loss a free net minimizes is only approximately
+relabeling-invariant — a small explicit breaking on top of the finite-N init; "spontaneous" in §37d
+should be read with that caveat. (6) Adam moments are not projected (harmless: the parameters are).
+Impact on the artifact: fixes 1–2 none. Fix 4 changes every FUTURE Dual stage; all Dual-stage figures
+(Fig. 3 B/C after Dual, Fig. 13 Dual column, Figs. 15–17, the 6/8 and 8/8 counts) were made with the
+bias free in Dual. The theorem Ψ(κ)+Ψ(−κ) = ⟨n⟩ + bias term is unchanged; with b frozen at its post-GNG
+value the Dual stage can break σ₂ only through ⟨n⟩ → whether the wells still descend, and how far, is an
+empirical question → rerun recipe7 (8 seeds) with the fix = `sweep_lif_recipe7_bfix` (queued after
+rulesym; parameters shown to Leon first).
+- **v2.4 (Leon's 2nd comment round)**: Figure 2 is now UNTRAINED only (`scratchpad/tf_landscape_fig.py`,
+  gallery `summary_tf_landscape_untrained.png`): the recipe init under lif / tanh / relu × {nothing,
+  ⟨n₁⟩ = −0.3, random bias rms 1, both}. lif: ⟨n₁⟩ shifts the field by ½⟨n⟩ (residual 0.99, the upper
+  well lost, one attractor at (−0.05, −1.13)); bias 0.09. tanh: ⟨n₁⟩ leaves it odd to 3e-16 with the same
+  antipodal pair (∓0.16, ∓2.08); bias 0.04 and a third attractor with no antipode. relu: 0.08 with nothing
+  on (finite sample), 0.31 with ⟨n₁⟩, no attractors at λ = 7. Text: ⊕/¬ defined; "pairing survives" is a
+  consequence (σ₁ is a symmetry of all three objectives), not an assumption; the tanh count made precise
+  (memory quadruple + one antipode per axis well).
+
+### §38b — Results (`sweep_lif_rulesym`, 16 runs, naive ckpt = after the rule stage; gallery `lif_rulesym`)
+All 16 learn the task: two-sided 0.979–1.000, one-sided 0.895–0.998 (tied one-sided 0.990–0.999).
+Readout `scratchpad/rulesym_readout.py` (residuals on the disk, attractors, J, overlaps):
+
+| arm | v(−I) | v(diag(−1,+1)) | v(diag(+1,−1)) | attractors (κ₀, κ₁) | J₀₁ / J₁₀ | n₁·w_go / n₁·w_nogo | n₁·w_cue |
+|---|---|---|---|---|---|---|---|
+| two-sided, free | 0.07–0.19 | 0.12–0.25 | 0.09–0.17 | (≈0, ±0.93): ON the κ₁ axis, antipodal, \|Δκ₁\| ≤ 0.02 | ≈ 0 (\|·\| ≤ 0.15) | +1.6…+1.7 / −1.6…−1.8 | ≈ 0 |
+| two-sided, −I tied | **0.000** | 0.87–1.39 | 0.87–1.39 | (±a, ±w) exact antipodes, a = 0.14–0.38 | **large: ±2.0…±2.9** | exactly opposite (±0.02…±0.55) | 0.00 |
+| one-sided, free | 0.05–0.09 | 0.10–0.37 | 0.13–0.37 | antipodal-ish pairs, \|Δ\|κ₁\|\| = 0.05–0.07 | small (\|·\| ≤ 0.41) | +0.9…+1.4 / −0.5…−1.3 (unequal) | **+0.54…+0.88** |
+| one-sided, −I tied | **0.000** | 0.78–1.26 | 0.78–1.26 | s0, s1: exact antipodes; **s2, s3: no fixed point — a slow rotation on the ring** (limit cycle) | large: ±1.7…±2.4 | exactly opposite | 0.00 |
+
+Populations (`mn_scatter`, s0): tied nets = two EXACT antipodal cluster pairs, e.g. (−2.77,−0.17,−2.93,+0.09) ↔
+(+2.77,+0.17,+2.93,−0.09) and (+1.73,+2.55,+0.24,+2.54) ↔ (−1.73,−2.55,−0.24,−2.54) — mixed modes; free
+two-sided = the bit on the decision mode as an antipodal pair (m₁,n₁ ≈ ∓2.3) plus a memory-mode mirror
+pair with no decision loading; free one-sided ≈ antipodal pairs.
+
+**Verdict on the predictions (§38a′):**
+- P1, P2 ✓ (init residual for −I 0.000 in all 16; the others 0.03–0.12 — same init as recipe7).
+- P3 ✓ **in the realization the loss never looks at**: the free two-sided nets keep the WHOLE group
+  approximately (all three residuals ≤ 0.25) by putting the memory on the κ₁ axis, κ₀ unused (its
+  saddles sit at (±0.3, 0)); antipodal AND mirror pair at once; count 2 (even, P7 ✓).
+- P5 ✓ tied nets learn both tasks, residual 0.000, exact antipodal orbits (parameters AND fixed points),
+  n₁·w_go = −n₁·w_nogo exactly, n₀·w_go = −n₀·w_nogo exactly.
+- P6 ✓ under −I the cross-overlaps are NOT forced to zero and are large (±1.7…±2.9) in every tied net,
+  vs 0.000 under V — the isotypic-orthogonality theorem discriminates the two groups. Bonus: the
+  antisymmetric part of J (a rotation) is −I-equivariant, and 2/4 tied one-sided nets actually use it —
+  a slow LIMIT CYCLE on the ring instead of fixed points (task still 0.999: the delay is 1 s). Under V a
+  rotation is forbidden (J₀₁ = J₁₀ = 0). Free two-sided nets never rotate (J₀₁ ≈ 0).
+- P4 ✗ in its strong form: the one-sided objective leaves the AUTONOMOUS field nearly odd (0.05–0.09,
+  no worse than the two-sided nets). The explicit breaking lands where the DPA→GNG ledger said it does:
+  in the INPUT columns — unequal go/nogo overlaps, and a cue→κ₁ overlap of +0.5…+0.9 that the two-sided
+  nets do not build (the cue as an upward push: the mechanism of the Dual descent, seen here in
+  isolation) — and only weakly in the wells (\|κ₁\| differs by 0.05–0.07 vs ≤ 0.02 two-sided). Refined
+  statement: an explicit break enters through the parameters the cost touches directly (the input
+  columns); the autonomous field inherits it slowly. Consistent with §37d(ii).
+Conclusion: the framework's exact claims (equivariance ⇒ orbits, isotypic orthogonality ⇒ which overlaps
+vanish, invariant loss ⇒ the symmetric subspace is preserved) all hold on the simpler task, including the
+one that distinguishes V from Z₂ (cross-overlaps). The soft claim "an explicit break shows up in the
+autonomous field" is the one that needed refining — same lesson as §37d.
+
+### §38c — Second round: tie EACH representation and the whole group (predictions before the runs)
+Leon wants one figure: the task's symmetries → predicted wells as a scheme → simulations for free nets
+and nets tied to each symmetry or the whole group. The two-sided rule task's relabeling (go↔nogo with the
+response flipped) has TWO plane representations, since the loss never reads κ₀: (i) −I (both modes flip,
+`gng`, done); (ii) diag(+1,−1) (the decision flips, the memory mode is copied, go↔nogo swapped: new kind
+`gng_dec`). Their product diag(−1,+1) flips the memory mode with NO relabeling — a symmetry of the
+objective only because κ₀ is unread. The group generated is a Klein four-group again; tying it = 4 blocks
+(`gng_klein`: m₀,n₀ ∝ (−1)^a with no swap, m₁,n₁ ∝ (−1)^b with go↔nogo). New arms (4 seeds each, both
+objectives): `rulesym_afc_dec`, `rulesym_afc_klein`, `rulesym_gng_dec`, `rulesym_gng_klein`.
+Predictions:
+- **tied diag(+1,−1)**: wells are mirror images ACROSS the lick line at the same κ₀, (a, ±w), a free
+  (possibly 0). Characters differ between the modes ⇒ J₀₁ = J₁₀ = 0 exactly ⇒ no rotation possible.
+  n₁·w_go = −n₁·w_nogo exactly; n₀·w_go = +n₀·w_nogo exactly (equal, not opposite). Learns both tasks.
+- **tied whole group**: a two-well memory must be an orbit of size 2 ⇒ on the κ₁ axis, (0, ±w) —
+  exactly the solution the FREE two-sided nets found. J off-diagonals 0; n₀·w_go = n₀·w_nogo = 0 (memory
+  mode deaf to the rule); n₁ overlaps exactly opposite. Learns both tasks.
+- **free two-sided** = the whole-group solution (already observed); **free one-sided**: weakly broken.
+- **tied −I** (done): antipodes (±a, ±w), J off-diagonals free (large), rotation allowed (seen in 2/4).
+Falsifiers: a diag(+1,−1)-tied net with unequal-|κ₁| wells or nonzero J₀₁; a whole-group-tied net with
+wells off the κ₁ axis; a tie that fails the task.
+
+### §38d — Second-round results: every tie gives its orbit (`sweep_lif_rulesym`, 32 runs; gallery `lif_rulesym/misc/summary_symmetries_predictions_simulations.png`, artifact Fig. 18)
+| tie | two-sided: wells (4 seeds) | one-sided: wells | residual of its own element | J₀₁, J₁₀ | n₀·go vs n₀·nogo | task |
+|---|---|---|---|---|---|---|
+| none (free) | (0, ±0.93) ×4 — the whole-group solution | near-antipodes, one up one down | — (all three 0.07–0.25) | ≈ 0 | unequal (one-sided) | 0.90–1.00 |
+| −I | antipodes (±a, ±w), seed-dependent angle, rotation visible | antipodes ×2, slow rotation ×2 | 0.000 | ±1.7…±2.9 | exactly opposite | 0.98–1.00 |
+| diag(+1,−1) | mirror pair (0, ±0.93) ×4 | (0, ±0.9) ×4 | 0.000 | **0.000** | **exactly equal** | 0.98–0.99 |
+| whole group | (0, ±0.93) + the unused memory mode's own pair (±0.93, 0) ×4 | (0, ±0.9); κ₀ pair in 2/4 | 0.000 (all three) | **0.000** | **exactly 0** | 0.99–1.00 |
+
+All §38c predictions hold: mirror pair across the line under diag(+1,−1) (a = 0 in every seed), forced
+zero cross-overlaps and equal n₀ overlaps under it; the whole group pins the memory on the κ₁ axis with
+the memory readout deaf to the rule (n₀·go = n₀·nogo = 0.000, J₀₀ = 6.4–7.4 untouched → its own pair of
+wells on κ₀ survives, which is why the count is 4: the analog of the DPA decision wells); every tie learns
+both objectives. The free two-sided nets = the whole-group solution. Figure: `rulesym_summary_fig.py`
+(row 1 scheme of predictions, rows 2–3 seed-0 flows with seeds 1–3's attractors overlaid).
+- **Leon: "the simulation and the theoretical prediction disagree."** Right — the SCHEME over-specified:
+  it drew the diag(+1,−1) mirror pair off the κ₁ axis and the whole-group solution with 2 wells; the sims
+  give the pair ON the axis (a = 0.00 in 4/4) and 4 wells. Resolution (derivable, now in the artifact and
+  derivations Cor. 6.4): under a tie that copies mode i and flips mode j, F_j ≡ 0 on the κ_i axis (exactly
+  invariant) and F_i on the κ_j axis = ⟨n_i⟩ + bias term (Theorem 6.1 per unit pair) — invariant when
+  both are small; under −I no axis is invariant. Measured: diag(+1,−1): max|F₁| on the κ₀ axis 0.000,
+  max|F₀| on the κ₁ axis 0.005–0.074 (⟨n₀⟩ = −0.012…+0.023, rms b 0.05–0.23); whole group: 0.000 / 0.000;
+  −I: 0.26–0.50 / 0.05–0.25 (typical |F| ≈ 0.4). Hence antipodes at a free angle (−I), the mirror pair on
+  the axis (diag), pairs on BOTH axes (group: the κ₀ pair = the unused memory mode's own orbit, J₀₀ =
+  6.4–7.4). Scheme redrawn accordingly (v2.8).
+
+---
+
+## §39 — Third check: Leon's delayed 2AFC (2026-09-21)
+
+### §39a — Design and predictions (before the runs)
+Leon's task (`~/models/NeuroFlame/org/2AFC/2AFC.org`): stimulus L or R 2–3 s, 3 s delay, response cue
+6–7 s, respond lick-left / lick-right after the cue. Implemented on the recipe base as `rule_timing="2afc"`
+(new `TaskTiming([2,6],[3,7],8)`), L on channel 5, R on 4, cue on 6 (cue_scale 1.0 as in his org),
+response κ₁ → +1 (R) / −1 (L) from cue-off to trial END (`afc_response_to_end`, two-sided hinge, loss
+window = the whole post-cue span), no nolick, NO target on κ₀ (as in his org; the delay is free). Both modes
+free, noise 1.0 (recipe), 150 epochs. Arms (4 seeds): `afc2_free`, `afc2_inv` (−I), `afc2_dec`
+(diag(+1,−1)), `afc2_mem` (diag(−1,+1): memory flips, decision COPIED, L↔R swapped — new kind `gng_mem`),
+`afc2_klein` (whole group). 20 runs, waves 8+8+4.
+**Symmetry analysis.** The objective reads κ₁ only ⇒ the L↔R relabeling has two plane representations,
+τ_I = −I and τ_D = diag(+1,−1), and their product τ_M = diag(−1,+1) is a symmetry with no relabeling;
+group = Klein. τ_M with the L↔R swap ("gng_mem") is NOT a symmetry: it forces κ₁(L) = κ₁(R).
+**Predictions.**
+- P1 free: the whole-group solution — memory on the κ₁ AXIS at (0, ±w), κ₀ unused (n₀·w_L ≈ n₀·w_R ≈ 0),
+  even though Leon's description puts the stimulus on κ₀: nothing reads κ₀, so nothing puts it there. With
+  a 3 s delay the wells must be genuine (τ_slow ≪ 3 s) or a slow rotation (allowed under −I only; the
+  free nets keep J₀₁ ≈ 0, so no rotation).
+- P2 tied −I: exact antipodes (±a, ±w), free angle, J off-diagonals free; task learned.
+- P3 tied diag(+1,−1): mirror pair on the κ₁ axis (Cor. 6.4), J off-diagonals 0, n₀·w_L = n₀·w_R; learned.
+- P4 tied diag(−1,+1) with L↔R swapped: κ₁ identical on L and R trials ⇒ **accuracy 0.5** (the tie to a
+  non-symmetry fails the task); n₁·w_L = n₁·w_R exactly; the memory mode may still hold L/R (n₀ opposite).
+- P5 tied whole group: pairs on both axes, memory (0, ±w), unused mode (±a, 0); learned.
+Falsifiers: a free net that encodes on κ₀ (|n₀·w_L| large, wells at κ₀ ≠ 0); a diag(−1,+1)-tied net above
+chance; a −I-tied net with J₀₁ = 0 in all seeds.
+
+### §39b — Results (2026-09-21): four of five predictions as written, the fifth better than written
+All 20 runs done (`results/dual/sweep_lif_rulesym/*_afc2_*`, naive ckpt = after the rule stage;
+readout `afc2_readout.tsv` in the sweep dir, `scratchpad/rulesym_readout.py` with `PAT=afc2`; figures
+`scratchpad/afc2_summary_fig.py` → `results/figures/afc2_summary_fig.png` and `scratchpad/afc2_traj.py`
+→ `afc2_traj_fig.png`; gallery `lif_rulesym/misc/summary_afc2_*`). Columns "go/nogo" in the readout are
+channels 4/5 = R/L. Task accuracy (sign of κ₁ from cue-off to the end):
+
+| arm | tie | accuracy (s0–s3) | residuals v_σ1 / v_σ2 / v_σ3 | J₀₁, J₁₀ | attractors (autonomous) |
+|---|---|---|---|---|---|
+| free | — | 0.998, 1.000, 1.000, 0.998 | 0.19–0.20 / 0.10–0.17 / 0.09–0.18 | ≤ 0.2 | (0, ±0.9) on the κ₁ axis, all seeds |
+| inv | −I | 0.996, 0.993, 0.999, 0.982 | 0.44–1.03 / **0.000** / 0.44–1.03 | free: −0.7…+0.8, −0.3…+1.6 | antipodes (±0.2–0.4, ±0.85), s2: none (limit cycle) |
+| dec | diag(+1,−1) | 0.990, 0.984, 0.994, 0.991 | 0.10–0.32 / same / **0.000** | **0.00, 0.00** | mirror pair (x, ±0.95), x ≤ 0.15 |
+| mem | diag(−1,+1) + L↔R | **0.482, 0.496, 0.504, 0.532** | **0.000** / 0.01–0.16 / same | 0.00 | (±0.9, 0) on the κ₀ axis |
+| klein | whole group | 0.426, 0.962, 0.975, 0.994 | **0.000 / 0.000 / 0.000** | 0.00 | (±0.9, 0) on the κ₀ axis — unreachable, see below |
+
+- **P1 free — confirmed.** Memory on the κ₁ axis at (0, ±0.9) in 4/4; the three residuals 0.09–0.20, i.e.
+  the free solution is approximately whole-group symmetric; J off-diagonals ≤ 0.2 (no rotation). The
+  κ₀ mode is not silent: n₀·w_R, n₀·w_L reach ±0.5–1.0, mostly with the SAME sign for R and L (s0 −0.47/
+  −0.68, s2 +0.96/+0.52): a transient "stimulus on" dip of κ₀ during the stimulus (both trial types),
+  not the identity. Falsifier (wells at κ₀ ≠ 0) did not occur.
+- **P2 −I — confirmed, with the rotation.** v_σ2 = 0.000 exactly; antipodal wells at a free angle
+  (75° in s0, 68° in s1, 65° in s3); J₀₁, J₁₀ free and large (up to 1.56). Seed 2 has NO fixed-point
+  attractor: |κ| ≈ 0.85 with the angle advancing ≈ 12°/s — a **limit cycle of period ≈ 30 s** (continued
+  autonomously 30 s from the end of the delay: 73° → 95° at +5 s → 271° at +20 s → 427° at +30 s), which
+  keeps the sign of κ₁ for the 5 s that matter and scores 0.999. The rotation predicted as "allowed under
+  −I only" is realized in 1 of 4 seeds.
+- **P3 diag(+1,−1) — confirmed.** v_σ3 = 0.000; J₀₁ = J₁₀ = 0.00; n₁·w_R = −n₁·w_L, n₀·w_R = n₀·w_L
+  exactly; mirror pair (x, ±0.95) with the small common offset x the tie allows.
+- **P4 diag(−1,+1) with L↔R — confirmed: chance in 4/4** (0.48–0.53). n₁·w_R = n₁·w_L exactly (+0.33,
+  +0.19, +0.19, +0.03) and the κ₁ traces of L and R trials are identical. The network still builds a
+  bistable memory, at (±0.9, 0) on κ₀, but the side is chosen by the noise, uncorrelated with the
+  stimulus (n₀·w_R = −n₀·w_L only ±0.1–0.2). The tie to a non-symmetry does not destroy the attractors;
+  it makes them useless.
+- **P5 whole group — confirmed, and sharper than written.** All three residuals 0.000; J = diag; n₀·w_R =
+  n₀·w_L = n₀·w_cue = 0 exactly (every input column is shared across the τ_M blocks). Consequence, exact:
+  the κ₁ axis is invariant under the field for EVERY input and for the input noise, so **κ₀ ≡ 0 on every
+  trial** (to plotting precision over the 8 s trial). The autonomous wells at (±0.9, 0) are the "unused
+  mode (±a, 0)" of P5 and are unreachable; the memory is the pair (0, ±0.4) on the κ₁ axis, which is a
+  SADDLE of the autonomous field (unstable across κ₀) and is held by exactness alone — continued
+  autonomously, the state leaves the axis only by floating-point roundoff after ≈ 10 s. The group tie
+  learns slowly (loss at epoch 150: 0.51, 0.88, 2.83 vs 0.05–0.16 for the dec tie); s0 (0.43) is the
+  slow learner, still descending at 150 — its bistable pair on the axis is there but the stimulus push
+  (n₁·w_R = 0.13) loses to the noise, so the side is random.
+- **Falsifiers:** none occurred (no free net with κ₀ wells; no mem-tied net above chance; the −I nets
+  have J₀₁ ≠ 0 in all seeds).
+**Scorecard:** every exact statement (residual zeros, forbidden overlaps, orbit structure, invariant
+axes) holds to 1e-3 in every seed; the soft statements (which orbit the training picks, heights) are as
+drawn except that −I produced a rotation in one seed, which the prediction allowed. Artifact §5.3
+(Figures 13–14) added in v3.6.
+
+### §36e — The two missing DPA ties, for the DPA summary figure (predictions before the runs, 2026-09-21)
+Leon wants Figure 1 of the note to be, for DPA, what Fig. 18 is for the rule task: symmetries → predicted
+wells per tie → free / each element tied / whole group, at the DPA checkpoint and after release. Two ties
+were never run: **σ₂ alone** (A↔B, κ ↦ −κ: new kind `inv`, swaps channels 0,1) and **σ₃ alone** (C↔D,
+κ₁ ↦ −κ₁: kind `test`). Arms `symdpa_inv`, `symdpa_test`, 4 seeds, tied in DPA only, recipe base, queued
+after the 2AFC waves (before the bias-fix rerun). Predictions:
+- **σ₂ alone**: antipodes (a, w), (−a, −w) — the memory pair straddles the line with |w| equal (w free,
+  possibly 0), no invariant axis, J₀₁, J₁₀ free (rotation allowed). Isotypic: A−B carries −1 on both
+  readouts... more striking: C and D are NOT swapped by σ₂, so w_C, w_D are block-shared while BOTH n₀ and
+  n₁ flip ⇒ **n₀·w_C = n₁·w_C = 0 exactly** (deaf to the test odors on both readouts; the pairing must be
+  a conjunction). Verified at init: 0.000. Prediction: learns DPA anyway (the klein tie has n₁·w_C = 0 too
+  and reached 0.998–1.000). After release (GNG/Dual): the Dual stage breaks σ₂ hard → expect the
+  one-up-one-down start to end either both-below (if σ₁ is restored) or lopsided — the interesting case.
+- **σ₃ alone**: the κ₀ axis is EXACTLY invariant (F₁ = 0 on it, Cor. 6.4): a two-well memory sits ON the
+  line at (a, 0), (−a′, 0) with a ≠ a′ allowed (no σ₁ relates them); any well off the line brings its
+  mirror image (a, −w) — for DPA that is the DECISION-well pair (0, ±w) on the κ₁ axis, not a split of the
+  memory well (Leon's review 2026-09-21: the first scheme drew it wrongly); J₀₁ = J₁₀ = 0; n₁·w_A = n₁·w_B
+  = 0 (samples cannot drive the decision), n₀·w_C = n₀·w_D. Learns DPA. After release: starts on the line;
+  whether both descend depends on the σ₁ residual, as in recipe7.
+- **whole group** (scheme corrected): a two-well memory is pinned at (±a, 0); a memory OFF the line must
+  be the quadruple (±a, ±w) — the "4-well case" of §36c (unoccupied upper pair); decision wells come as
+  the pair (0, ±w); J = 0. **σ₁**: the decision well may stand alone on the (invariant) κ₁ axis; **σ₂**:
+  decision wells antipodal (0, ±w).
+- **free (recipe7, 8 seeds, DPA ckpt)**: near the line, seed-dependent breaking (§37d).
+- **DPA checkpoints of `symdpa_inv`/`symdpa_test` (2026-09-21, curricula still running)**: σ₂ tied → residual
+  σ₂ = 0.00, two attractors per seed, the antipodal pair ON the line (±1, 0) (the w = 0 case), σ₁ residual 0.39.
+  σ₃ tied → residual σ₃ = 0.00, memory pair on the κ₀ axis (±1.0, 0) plus a vertical decision pair (0, ±1),
+  4 attractors in 3/4 seeds. **σ₃ ≈ whole group at the DPA stage** (Leon's observation): the σ₃ pairing flips
+  n₁ ⇒ ⟨n₁⟩ ≡ 0, J₀₁ = J₁₀ = 0, n₁·w_A = n₁·w_B = 0 exactly — the channels the free seeds use to break
+  σ₁/σ₂ (free: ⟨n₁⟩ −0.01…−0.18, J₀₁ up to 0.73, n₁·w_B up to 0.78); what σ₃ leaves open (⟨n₀⟩: ±0.015; a′ ≠ −a:
+  ≤ 0.01) the A/B-symmetric objective does not drive. Prediction: the σ₃ column tracks the whole-group column
+  after release. Derivations §12 (remark after Prop. 12.5) and the Fig. 1 caption updated (v3.9).
+- **Six populations, not four (Leon, 2026-09-21, v3.12)**: every trained DPA network (free, σ₁, σ₃, V) has the four
+  lattice clusters (±2.5, ±1.2; ~200 units each) PLUS a pair on the decision axis (0, ±4.5) in (m₀, m₁), ~50 units
+  each (6–11% of units), m₀ ≈ 0, n₁ ≈ ±4–5: the units of the decision wells. A BIC-free GMM finds 6–8 components;
+  the note's table had asked for 4. Made by training: the init is one isotropic Gaussian and corr(init m, trained
+  m) ≈ 0 per unit — the axis units are not the units that started near the axis. Group reading: under σ₁ each axis
+  cluster is its own image (m₀ = 0), under σ₃ the pair is exchanged, under V it is one orbit (0, ±w). Lattice
+  sharpness is seed-dependent: σ₂ seeds are tilted by the free cross-overlaps (J₁₀ up to −0.95) with clusters
+  trailing along the tilt; σ₃ seeds 1–3 show the memory clusters split only weakly along m₁. Schemes in
+  `mn_grid_fig.py` now draw the axis pair (gray). Interpretation (note §2.3 callout, v3.13): the ensemble
+  decomposes into the two orbit types of V — one generic orbit of size 4 (the lattice: mixed units, two-bit sign
+  code (a, b), the regular representation) and one special orbit of size 2 on the σ₁-fixed line (the axis pair:
+  pure decision units, ≈ half of J₁₁ with a tenth of the units, the decision attractor). No special orbit on the
+  σ₃-fixed line (pure memory units) in any condition: the pairing is computed on the memory units (read κ₀ + test
+  → write n₁), so memory units must be mixed; the decision attractor needs no memory, so decision units may be pure.
+- **σ₁ (pair)**: common height, near the line (−0.3η), κ₁ axis exactly invariant; **whole group**:
+  pinned on the line, J = 0 (§36c).
+- **Artifact v3.1 (Leon's reorganization)**: order is now §2 the memory task (Fig. 1 = the DPA summary
+  figure: symmetries → predicted wells per tie → free / σ₁ / σ₂ / σ₃ / whole group at the DPA and expert
+  checkpoints; then the constrained-training, m/n, free-network and control subsections) → §3 GNG → §4
+  Dual (the training story) → §5 the two simpler tasks (rule task; 2AFC to be added) → §6 worked example →
+  §7 what the group explains → **Supplement** (what the initialization provides: the exact inversion
+  identity, Figs S1–S3 = the untrained transfer-function landscapes, inversion breaking, residual vs N;
+  the accidental O(2), Figs S4–S5). Main figures renumbered 1–15 in document order; all in-text
+  references remapped (no dangling anchors). Fig. 1's σ₃ and whole-group schemes corrected per Leon:
+  σ₃ = memory on the invariant κ₀ axis, unmatched a/a′, decision wells as a vertical pair; whole group =
+  pinned pair OR the quadruple (faint), decision pair. Sources refreshed in docs/artifacts/symmetry/.
+- **Artifact v3.2**: Figures 2 (DPA ckpt), 5 (the λ = 14 tie control) and 10 (expert ckpt) redrawn with one
+  shared layout (`scratchpad/tie_grid_fig.py`: first column = the predicted wells as a scheme, then one flow
+  panel per seed, rows = free / σ₁ / σ₂ / σ₃ / whole group; residual of the tied element in each title); the
+  unit-by-unit block check moved to the supplement as Fig. S6. σ₂/σ₃ rows fill in when `symdpa_inv`/`_test`
+  land. Gallery: `lif_symdpa/misc/summary_grid_*.png`.
+- **Artifact v3.3**: old Figs 3 (klein pairs plot) and 4 (free pairs plot) merged into one grid-layout
+  figure (`scratchpad/mn_grid_fig.py`, new Fig. 3): rows = free / σ₁ / σ₂ / σ₃ / whole group; first column
+  the predicted cluster lattice in the (m₀, m₁) plane (a generic cluster and the images the element
+  demands); then the three panels that carry the argument — m₀–m₁ (the lattice), m₀–n₀ and m₁–n₁ (n
+  follows m within a mode) — colored by the sign quadrant of (m₀, m₁) (coloring by block is useless for a
+  tied net: the blocks are exact sign copies of one cloud). Main figures now 1–13. Gallery
+  `lif_symdpa/misc/summary_grid_mn_dpa_ckpt.png`.

@@ -143,5 +143,11 @@ figcaption .look { font-family: var(--f-mono); font-size: 0.74rem; letter-spacin
 .foot { margin-top: 4.5rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); font-size: 0.86rem; color: var(--muted); max-width: var(--measure); }
 :focus-visible { outline: 2px solid var(--plum); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+.fignum { font-family: var(--f-mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--plum); display: block; margin-bottom: 0.3rem; }
+.sec-body a[href^="#fig-"] { color: var(--plum); text-decoration: none; border-bottom: 1px dotted var(--plum); white-space: nowrap; }
+figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outline-offset: 5px; border-radius: 3px; }
+.plab { font-family: var(--f-mono); font-size: 0.72rem; color: var(--plum); margin-right: 0.45rem; font-weight: 500; }
+.h3num { font-family: var(--f-mono); font-size: 0.78rem; color: var(--muted); margin-right: 0.55rem; font-weight: 500; }
+.fig .panels { margin: 0.4rem 0 0.8rem; }
 </style>
 

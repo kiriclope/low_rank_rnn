@@ -24,11 +24,24 @@ def train_val_split(X, y, batch_size=32, frac=0.8):
     return train_loader, val_loader
 
 
+def _check_blocks(kind, N):
+    """The block construction covers every unit only if N is a multiple of the block count; otherwise the
+    remainder units are silently left untied and the network is NOT equivariant (review 2026-09-21)."""
+    nb = {"pair": 2, "test": 2, "inv": 2, "gng": 2, "gng_dec": 2, "gng_mem": 2, "klein": 4, "gng_klein": 4}.get(kind)
+    if nb is not None and N % nb:
+        raise ValueError(f"symmetry {kind!r} needs hidden_size divisible by {nb}, got {N}")
+
+
 def project_symmetry(model, kind):
     """Project m, n and W_in onto the subspace equivariant under a DPA task symmetry (§36).
 
     kind = "pair"  (σ₁: A↔B and C↔D; κ ↦ (−κ₀, +κ₁))  — 2 unit blocks
            "test"  (σ₃: C↔D;          κ ↦ (+κ₀, −κ₁))  — 2 unit blocks
+           "inv"   (σ₂: A↔B alone;     κ ↦ −κ)          — 2 unit blocks (the inversion the init has for free)
+           "gng"   (the rule task's Z₂ as −I: go↔nogo (channels 4, 5); κ ↦ −κ; other channels and bias shared) — 2 blocks
+           "gng_dec"   (the same relabeling as diag(+1, −1): decision mode flips, memory mode copied, go↔nogo swapped)
+           "gng_mem"   (diag(−1, +1) with go↔nogo swapped: memory flips, decision copied — NOT a symmetry of an objective that reads κ₁)
+           "gng_klein" (both: 4 blocks, (a, b) ↦ m₀,n₀ ∝ (−1)^a with NO relabeling, m₁,n₁ ∝ (−1)^b with go↔nogo) — §38c
            "klein" (the full group ⟨σ₁, σ₃⟩)            — 4 unit blocks, one orbit per prototype
     Exact at finite N: n₀ᵀm₁ = n₁ᵀm₀ = 0 identically for "pair" and "klein".
     Ties m, n, W_in AND the per-unit input bias (P b = b). Runs before 2026-09-21 (sweep_lif_symdpa,
@@ -39,13 +52,14 @@ def project_symmetry(model, kind):
     with torch.no_grad():
         m, n, wi = model.m, model.n, model.wi.weight
         N, C = m.shape[0], wi.shape[1]
-        if kind in ("pair", "test"):
+        _check_blocks(kind, N)
+        if kind in ("pair", "test", "inv", "gng", "gng_dec", "gng_mem"):
             h = N // 2
-            s0, s1 = (-1.0, +1.0) if kind == "pair" else (+1.0, -1.0)    # signs of (κ₀, κ₁) under σ
+            s0, s1 = {"pair": (-1.0, +1.0), "test": (+1.0, -1.0), "inv": (-1.0, -1.0), "gng": (-1.0, -1.0), "gng_dec": (+1.0, -1.0), "gng_mem": (-1.0, +1.0)}[kind]    # signs of (κ₀, κ₁) under σ
             for P in (m, n):
                 a = 0.5 * (P[:h, 0] + s0 * P[h:2 * h, 0]); P[:h, 0] = a; P[h:2 * h, 0] = s0 * a
                 b = 0.5 * (P[:h, 1] + s1 * P[h:2 * h, 1]); P[:h, 1] = b; P[h:2 * h, 1] = s1 * b
-            swaps = ((0, 1), (2, 3)) if kind == "pair" else ((2, 3),)
+            swaps = {"pair": ((0, 1), (2, 3)), "test": ((2, 3),), "inv": ((0, 1),), "gng": ((4, 5),), "gng_dec": ((4, 5),), "gng_mem": ((4, 5),)}[kind]
             swapped = {c for pr in swaps for c in pr}
             for (c1, c2) in swaps:
                 u = 0.5 * (wi[:h, c1] + wi[h:2 * h, c2]); v = 0.5 * (wi[:h, c2] + wi[h:2 * h, c1])
@@ -56,6 +70,28 @@ def project_symmetry(model, kind):
                 u = 0.5 * (wi[:h, c] + wi[h:2 * h, c]); wi[:h, c] = u; wi[h:2 * h, c] = u
             if model.wi.bias is not None:                                  # P b = b: the bias is block-shared
                 bi = model.wi.bias; u = 0.5 * (bi[:h] + bi[h:2 * h]); bi[:h] = u; bi[h:2 * h] = u
+        elif kind == "gng_klein":
+            Q = N // 4
+            B = [slice(k * Q, (k + 1) * Q) for k in range(4)]             # block k ↔ (a, b) = (k>>1, k&1)
+            sa = (+1.0, +1.0, -1.0, -1.0); sb = (+1.0, -1.0, +1.0, -1.0)
+            for P in (m, n):
+                mu0 = sum(sa[k] * P[B[k], 0] for k in range(4)) / 4.0
+                mu1 = sum(sb[k] * P[B[k], 1] for k in range(4)) / 4.0
+                for k in range(4):
+                    P[B[k], 0] = sa[k] * mu0; P[B[k], 1] = sb[k] * mu1
+            # go/nogo depend on b only and are exchanged by it: w_go = α (b=0) / β (b=1), w_nogo = β / α
+            alpha = (wi[B[0], 4] + wi[B[2], 4] + wi[B[1], 5] + wi[B[3], 5]) / 4.0
+            beta  = (wi[B[1], 4] + wi[B[3], 4] + wi[B[0], 5] + wi[B[2], 5]) / 4.0
+            for k in range(4):
+                b0 = (k & 1) == 0
+                wi[B[k], 4] = alpha if b0 else beta
+                wi[B[k], 5] = beta if b0 else alpha
+            for c in list(range(4)) + list(range(6, C)):                  # A–D, cue, …: shared by all blocks
+                u = sum(wi[B[k], c] for k in range(4)) / 4.0
+                for k in range(4): wi[B[k], c] = u
+            if model.wi.bias is not None:
+                bi = model.wi.bias; u = sum(bi[B[k]] for k in range(4)) / 4.0
+                for k in range(4): bi[B[k]] = u
         elif kind == "klein":
             Q = N // 4
             B = [slice(k * Q, (k + 1) * Q) for k in range(4)]             # block k ↔ (a, b) = (k>>1, k&1)
@@ -85,7 +121,7 @@ def project_symmetry(model, kind):
                 bi = model.wi.bias; u = sum(bi[B[k]] for k in range(4)) / 4.0
                 for k in range(4): bi[B[k]] = u
         elif kind:
-            raise ValueError(f"unknown symmetry {kind!r} (use '', 'pair', 'test' or 'klein')")
+            raise ValueError(f"unknown symmetry {kind!r} (use '', 'pair', 'test', 'inv', 'gng', 'gng_dec', 'gng_mem', 'klein' or 'gng_klein')")
 
 
 def symmetrize_init(model, kind):
@@ -99,18 +135,37 @@ def symmetrize_init(model, kind):
     with torch.no_grad():
         m, n, wi = model.m, model.n, model.wi.weight
         N, C = m.shape[0], wi.shape[1]
-        if kind in ("pair", "test"):
+        _check_blocks(kind, N)
+        if kind in ("pair", "test", "inv", "gng", "gng_dec", "gng_mem"):
             h = N // 2
-            s0, s1 = (-1.0, +1.0) if kind == "pair" else (+1.0, -1.0)
+            s0, s1 = {"pair": (-1.0, +1.0), "test": (+1.0, -1.0), "inv": (-1.0, -1.0), "gng": (-1.0, -1.0), "gng_dec": (+1.0, -1.0), "gng_mem": (-1.0, +1.0)}[kind]
             m[h:2 * h, 0] = s0 * m[:h, 0]; m[h:2 * h, 1] = s1 * m[:h, 1]
             n[h:2 * h, 0] = s0 * n[:h, 0]; n[h:2 * h, 1] = s1 * n[:h, 1]
-            swaps = ((0, 1), (2, 3)) if kind == "pair" else ((2, 3),)
+            swaps = {"pair": ((0, 1), (2, 3)), "test": ((2, 3),), "inv": ((0, 1),), "gng": ((4, 5),), "gng_dec": ((4, 5),), "gng_mem": ((4, 5),)}[kind]
             swapped = {c for pr in swaps for c in pr}
             for (c1, c2) in swaps:
                 wi[h:2 * h, c1] = wi[:h, c2].clone(); wi[h:2 * h, c2] = wi[:h, c1].clone()
             for c in range(C):
                 if c not in swapped: wi[h:2 * h, c] = wi[:h, c]
             if model.wi.bias is not None: model.wi.bias[h:2 * h] = model.wi.bias[:h]
+        elif kind == "gng_klein":
+            Q = N // 4
+            B = [slice(k * Q, (k + 1) * Q) for k in range(4)]
+            sa = (+1.0, +1.0, -1.0, -1.0); sb = (+1.0, -1.0, +1.0, -1.0)
+            m0, m1 = m[B[0], 0].clone(), m[B[0], 1].clone()
+            n0, n1 = n[B[0], 0].clone(), n[B[0], 1].clone()
+            alpha, beta = wi[B[0], 4].clone(), wi[B[0], 5].clone()
+            rest = {c: wi[B[0], c].clone() for c in list(range(4)) + list(range(6, C))}
+            for k in range(4):
+                m[B[k], 0] = sa[k] * m0; m[B[k], 1] = sb[k] * m1
+                n[B[k], 0] = sa[k] * n0; n[B[k], 1] = sb[k] * n1
+                b0 = (k & 1) == 0
+                wi[B[k], 4] = alpha if b0 else beta
+                wi[B[k], 5] = beta if b0 else alpha
+                for c, v in rest.items(): wi[B[k], c] = v
+            if model.wi.bias is not None:
+                bb = model.wi.bias[B[0]].clone()
+                for k in range(4): model.wi.bias[B[k]] = bb
         elif kind == "klein":
             Q = N // 4
             B = [slice(k * Q, (k + 1) * Q) for k in range(4)]
@@ -236,6 +291,7 @@ class Optimization:
         self._frozen_m  = None
         self._frozen_n  = None
         self._frozen_wi = None
+        self._frozen_bias = None
 
         if self.freeze_low_rank_cols is not None:
             if not (hasattr(model, "m") and hasattr(model, "n")):
@@ -247,6 +303,13 @@ class Optimization:
             if not (hasattr(model, "wi") and model.wi is not None):
                 raise AttributeError("freeze_input_dims requires model.wi.")
             self._frozen_wi = model.wi.weight.detach().clone()
+            # Freezing "all input dims" now freezes the per-unit input bias too (review 2026-09-21): before
+            # this the bias kept training in the Dual stage although the stage is documented as
+            # "inputs frozen" (its rms grew 0.9 → 1.4 there). Partial freezes (GNG: the DPA channels)
+            # leave the bias free, since it belongs to no channel.
+            _all = (model.wi is not None and model.wi.bias is not None
+                    and len(set(int(i) for i in freeze_input_dims)) == model.wi.weight.shape[1])
+            self._frozen_bias = model.wi.bias.detach().clone() if _all else None
 
     # ------------------------------------------------------------------
 
@@ -281,6 +344,8 @@ class Optimization:
             return
         if self.model.wi.weight.grad is not None:
             self.model.wi.weight.grad[:, self.freeze_input_dims] = 0.0
+        if self._frozen_bias is not None and self.model.wi.bias.grad is not None:
+            self.model.wi.bias.grad.zero_()
 
     def _restore_frozen_weights(self):
         if self.freeze_low_rank_cols is not None:
@@ -297,6 +362,8 @@ class Optimization:
                 self.model.wi.weight[:, self.freeze_input_dims] = (
                     self._frozen_wi[:, self.freeze_input_dims]
                 )
+                if self._frozen_bias is not None:
+                    self.model.wi.bias.copy_(self._frozen_bias)
 
     def _mirror_tie(self):
         if self.symmetry:
