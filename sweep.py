@@ -999,7 +999,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                             cue_scale=config.cue_scale, nogo_target=config.nogo_target,
                                             go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                             input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
-                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue, hold_full_delay=config.gng_hold_full_delay)
+                                            paired_only=True, ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue, hold_full_delay=config.gng_hold_full_delay, post_response_window=config.dpa_post_response_window)
         print(f"[{rid}]  data(paired): {list(Xp.shape)} → {list(yp.shape)}", flush=True)
         tlp, vlp     = train_val_split(Xp.to(device), yp.to(device), config.batch_size)
         optp, schedp = _opt_and_sched()
@@ -1042,7 +1042,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                                        cue_on_go_input=config.cue_on_go_input, cue_scale=config.cue_scale,
                                        nogo_target=config.nogo_target, go_target=config.go_target, go_on_rwd_input=config.go_on_rwd_input,
                                        input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale,
-                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue, hold_full_delay=config.gng_hold_full_delay)
+                                       ramping_gng=config.ramping_gng, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, gng_response=config.gng_response, gng_memory=config.dual_gng_memory, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, gng_rwd_after_cue=config.gng_rwd_after_cue, hold_full_delay=config.gng_hold_full_delay, post_response_window=config.dpa_post_response_window)
     print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
     tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
     opt, sched = _opt_and_sched()
@@ -3388,11 +3388,11 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                         "nolick_nogo_in_cue": True,
                                         "nolick_full_delay": True, "nolick_late_delay": False,
                                         "nolick_thresh": 0.0}))
-    # postresp_* (2026-09-22, Leon): DPA with the choice scored in the 0.5 s AFTER test offset (response_in_cue False,
-    # dpa_post_response_window 0.5) instead of the last 0.5 s of the test: the decision must be HELD with the odor
-    # gone. Does a held choice change where the memory sits (axis vs quadruple) and which decision wells form?
-    # DPA only, whole-group / σ₃ tie / free. --run_filter postresp
-    for tag, sym in (("postresp_klein", "klein"), ("postresp_test", "test"), ("postresp_free", "")):
+    # postresp_* (2026-09-22, Leon): the FULL curriculum with every choice read after its stimulus — the DPA/Dual pairing
+    # in the 0.5 s after test offset (response_in_cue False, dpa_post_response_window 0.5), the GNG response 0.5 s after
+    # cue-off — for every tie (σ₁, σ₂, σ₃, V, in DPA only) and free, to compare against the in-test/in-cue set
+    # (symdpa_bfix + symdpa_inv/test + recipe7_bfix). --run_filter postresp_<tie>
+    for tag, sym in (("postresp_pair", "pair"), ("postresp_inv", "inv"), ("postresp_test", "test"), ("postresp_klein", "klein"), ("postresp_free", "")):
         for seed in range(4):
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
                                      dt_base=0.020,
@@ -3406,7 +3406,7 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                         "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
                                         "readout_scale": 7.0 ** 0.5,
                                         "cue_scale": 2.0,
-                                        "epochs_dpa": 250, "epochs_gng": 0, "epochs_dual": 0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,
                                         "gng_weight": 0.0, "gng_response": True,
                                         "pair_pin": True, "dual_nolick_shape": "softplus",
                                         "nolick_weight": 1.0, "nolick_split_sample": True,

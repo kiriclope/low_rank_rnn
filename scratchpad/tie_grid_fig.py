@@ -10,31 +10,46 @@ sns.set_context("notebook"); sns.set_style("ticks"); plt.rc("axes.spines", top=F
 plt.rcParams.update({"font.size": 11, "mathtext.fontset": "cm", "axes.linewidth": 0.9})
 out, stage, title = sys.argv[1:4]; rows = [r.split("|") for r in sys.argv[4:]]; XL = (-1.5, 1.5)
 teal, plum, ember = "#0d818b", "#6b2f74", "#b0460e"
-def scheme(ax, kind):
+def scheme(ax, kind, stage="dpa"):
+    """the wells the tie allows, per STAGE: 'dpa' = the tie held (V or one element); 'naive' = after GNG, tie released — the
+    one-sided GNG objective keeps σ₁ (equivariant gradient flow) and breaks σ₂, σ₃ (they flip the response), rank-0 frozen so
+    the κ₀ positions stay; 'expert' = after Dual — σ₁ kept, the no-lick cost pushes both wells below (derivations §3–4)."""
     ax.set_xlim(-1.4, 1.4); ax.set_ylim(-1.4, 1.4); ax.set_aspect("equal"); ax.axhline(0, color=ember, lw=1.1, ls=(0, (4, 3))); ax.axvline(0, color="0.8", lw=0.8)
     ax.set_xticks([]); ax.set_yticks([]); ax.text(0.97, 0.03, "κ₀", transform=ax.transAxes, ha="right", va="bottom", fontsize=8, color="0.4"); ax.set_ylabel("κ₁", fontsize=8)
     F = lambda x, y: ax.plot(x, y, "o", color=teal, ms=8, zorder=4); O = lambda x, y, al=1.0: ax.plot(x, y, "o", ms=8, mfc="none", mec=teal, mew=1.4, alpha=al, zorder=4)
     A = lambda p, q: ax.add_patch(FancyArrowPatch(p, q, arrowstyle="<->", color=plum, lw=0.9, mutation_scale=9, linestyle=":"))
-    a, w = 0.95, 1.1
+    X = lambda p, q: ax.add_patch(FancyArrowPatch(p, q, arrowstyle="<->", color="0.6", lw=0.9, mutation_scale=9, linestyle=":", alpha=0.5))   # a broken relation
+    a, w = 0.95, 1.1; note = ""
     if kind in ("free", "untied"): ax.text(0.5, 0.5, "?", transform=ax.transAxes, ha="center", va="center", fontsize=24, color="0.6"); note = "no constraint" if kind == "free" else "same init statistics, no tie"
-    elif kind == "pair": F(a, -0.22); F(-a, -0.22); A((a, -0.22), (-a, -0.22)); O(0, w); note = "σ₁: mirror pair, one height"
-    elif kind == "inv": F(a, 0.35); F(-a, -0.35); A((a, 0.35), (-a, -0.35)); O(0, w); O(0, -w); A((0, w), (0, -w)); note = "σ₂: antipodes"
-    elif kind == "test": F(a, 0); F(-0.7, 0); O(0, w); O(0, -w); A((0, w), (0, -w)); note = "σ₃: on the line, unmatched"
-    elif kind == "klein":
-        F(a, 0); F(-a, 0); A((a, 0), (-a, 0)); O(0, w); O(0, -w); A((0, w), (0, -w))
-        for x in (a, -a):
-            for y in (0.45, -0.45): O(x, y, 0.45)
-        note = "whole group: pinned, or a quadruple"
-    elif kind == "gng_inv": F(0.35, 0.85); F(-0.35, -0.85); A((0.35, 0.85), (-0.35, -0.85)); note = "−I: antipodes, angle free"
-    elif kind == "gng_dec": F(0, 0.85); F(0, -0.85); A((0, 0.85), (0, -0.85)); note = "diag(+1,−1): mirror pair on the κ₁ axis"
-    elif kind == "gng_klein": F(0, 0.85); F(0, -0.85); A((0, 0.85), (0, -0.85)); O(0.85, 0); O(-0.85, 0); note = "whole group: pairs on both axes"
-    else: note = ""
-    ax.set_title("predicted", fontsize=8.5, color="0.35"); ax.text(0.5, -0.05, note, transform=ax.transAxes, ha="center", va="top", fontsize=8, color="0.35")
+    elif stage == "dpa":
+        if kind == "pair": F(a, -0.22); F(-a, -0.22); A((a, -0.22), (-a, -0.22)); O(0, w); note = "σ₁: mirror pair, one height"
+        elif kind == "inv": F(a, 0.35); F(-a, -0.35); A((a, 0.35), (-a, -0.35)); O(0, w); O(0, -w); A((0, w), (0, -w)); note = "σ₂: antipodes"
+        elif kind == "test": F(a, 0); F(-0.7, 0); O(0, w); O(0, -w); A((0, w), (0, -w)); note = "σ₃: on the line, unmatched"
+        elif kind == "klein":
+            F(a, 0); F(-a, 0); A((a, 0), (-a, 0)); O(0, w); O(0, -w); A((0, w), (0, -w))
+            for x in (a, -a):
+                for y in (0.45, -0.45): O(x, y, 0.45)
+            note = "whole group: pinned, or a quadruple"
+        elif kind == "gng_inv": F(0.35, 0.85); F(-0.35, -0.85); A((0.35, 0.85), (-0.35, -0.85)); note = "−I: antipodes, angle free"
+        elif kind == "gng_dec": F(0, 0.85); F(0, -0.85); A((0, 0.85), (0, -0.85)); note = "diag(+1,−1): mirror pair on the κ₁ axis"
+        elif kind == "gng_klein": F(0, 0.85); F(0, -0.85); A((0, 0.85), (0, -0.85)); O(0.85, 0); O(-0.85, 0); note = "whole group: pairs on both axes"
+    elif stage == "naive":   # after GNG, tie released: σ₁ survives, σ₂/σ₃ broken; κ₀ positions frozen with rank 0
+        if kind == "pair": F(a, -0.22); F(-a, -0.22); A((a, -0.22), (-a, -0.22)); O(0, w); note = "σ₁ survives GNG: one height (free)"
+        elif kind == "inv": F(a, 0.35); F(-a, -0.1); X((a, 0.35), (-a, -0.1)); O(0, w); O(0, -w, 0.45); note = "σ₂ broken by GNG: heights unrelated"
+        elif kind == "test": F(a, 0.25); F(-0.7, -0.15); O(0, w); O(0, -w, 0.45); note = "σ₃ broken by GNG: off the axis, unmatched"
+        elif kind == "klein": F(a, -0.15); F(-a, -0.15); A((a, -0.15), (-a, -0.15)); O(0, w); O(0, -w, 0.45); note = "V → {e, σ₁}: one height (free)"
+    elif stage == "expert":  # after Dual: σ₁ kept, the no-lick cost pushes both wells below the line
+        if kind == "pair": F(a, -0.6); F(-a, -0.6); A((a, -0.6), (-a, -0.6)); O(0, w); note = "σ₁ kept + push: one height, below"
+        elif kind == "inv": F(a, -0.45); F(-a, -0.8); X((a, -0.45), (-a, -0.8)); O(0, w); note = "σ₂ broken + push: both below, unrelated"
+        elif kind == "test": F(a, -0.5); F(-0.7, -0.85); O(0, w); note = "σ₃ broken + push: both below, unmatched"
+        elif kind == "klein": F(a, -0.6); F(-a, -0.6); A((a, -0.6), (-a, -0.6)); O(0, w); note = "σ₁ kept + push: one height, below"
+    ax.set_title({"dpa": "predicted (tie held)", "naive": "predicted after GNG", "expert": "predicted after Dual"}.get(stage, "predicted"), fontsize=8.5, color="0.35")
+    ax.text(0.5, -0.05, note, transform=ax.transAxes, ha="center", va="top", fontsize=8, color="0.35")
 EL = {"pair": "s1", "inv": "s2", "test": "s3", "gng_inv": "s2", "gng_dec": "s3"}
 nseed = max(len(r[4].split(",")) for r in rows)
 fig, axes = plt.subplots(len(rows), nseed + 1, figsize=(3.0 * (nseed + 1) + 0.6, 3.05 * len(rows)), dpi=140, squeeze=False, gridspec_kw=dict(width_ratios=[0.9] + [1] * nseed))
 for r, (label, sw, arm, kind, seeds) in enumerate(rows):
-    scheme(axes[r][0], kind); axes[r][0].text(-0.32, 0.5, label, transform=axes[r][0].transAxes, rotation=90, ha="center", va="center", fontsize=9.5)
+    scheme(axes[r][0], kind, stage); axes[r][0].text(-0.32, 0.5, label, transform=axes[r][0].transAxes, rotation=90, ha="center", va="center", fontsize=9.5)
     seeds = [int(x) for x in seeds.split(",")]
     for c, s_ in enumerate(seeds):
         ax = axes[r][c + 1]; rid = f"s{s_}_{arm}"

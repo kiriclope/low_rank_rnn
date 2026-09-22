@@ -477,7 +477,13 @@ network OCCUPIES. Each rule below names the error that motivated it.
   for 2AFC runs (artifact Fig. 13). Input noise must be η = noise·√(1−e^{−2α}), not the raw `noise` field.
 - `scratchpad/mn_grid_fig.py <out> <stage> <title> 'label|sweep|arm|scheme|seed'...` — artifact Fig. 2: rows = conditions,
   first column the predicted cluster lattice in (m₀, m₁) incl. the decision-axis pair, then m₀–m₁, m₀–n₀, m₁–n₁ colored
-  by sign quadrant. `tie_grid_fig.py` — Figs S7/S8 (scheme column + one flow panel per seed, rows = conditions).
+  by sign quadrant. `tie_grid_fig.py` — Figs S7/S8 (scheme column + one flow panel per seed, rows = conditions). The scheme column is
+  STAGE-SPECIFIC (2026-09-22, Leon): `dpa` = the wells the tie allows while held; `naive` = after GNG with the tie released — σ₁ survives
+  (the one-sided GNG objective is σ₁-invariant, so the gradient flow stays in the σ₁-symmetric subspace) while σ₂ and σ₃ are broken
+  (they flip the response), and rank 0 is frozen so only the heights can change; `expert` = after Dual — σ₁ kept, the no-lick push
+  puts both wells below. Grids for both `sweep_lif_symdpa` (free = recipe7_bfix, σ₁/V = symdpa_bfix, σ₂/σ₃ = symdpa) and
+  `sweep_lif_postresp` at all three stages: `results/figures/<sweep>/summary/grid_{dpa,naive,expert}_ckpt.png` → gallery
+  `lif_symdpa/misc`, `lif_postresp/misc` (copied by hand; `publish_gallery.sh` would wipe the hand-copied grids).
 - `scratchpad/rulesym_summary_fig.py <sweep> <out>` — the one-figure validation (artifact Fig. 18): row 1 the
   predicted wells per tie as a scheme; rows 2–3 seed-0 flows per arm (free / −I / diag(+1,−1) / whole group)
   for the two-sided and one-sided objectives, with seeds 1–3's attractors overlaid and median residuals.
@@ -488,3 +494,22 @@ network OCCUPIES. Each rule below names the error that motivated it.
   the ⟨n₁⟩ dose at `ROW_RHO`).
 - ⚠ A Dual run given only `gng_ckpt` has no `dpa_*.pth`: copy it from the originating sweep before
   plotting or the DPA row of every figure is missing.
+
+## Paper figures (`paper/`, 2026-09-22)
+
+House-style figures for the modelling part of the mPFC dual-task paper (`~/dual/docs/paper/modelling_draft.md`,
+built by `~/dual/build_modelling_artifact.py`; ED figures embedded by number `ed11–ed17.png`). `paper/style.py` holds
+the rcParams (Arial, 8/7 pt, thin rules, lowercase bold letters, A `#332288` / B `#44AA99`, per-seed tab10, `save()` →
+PNG+SVG at 400 dpi under `~/dual/figures/paper_share/modelling/`). Axes are named sample (κ₀) and choice (κ₁).
+
+- `paper/fig5_model.py` → Fig. 5 a–j. Reads `perturb_depth.json` (h–j), `overlaps_bfix.json` and
+  `/home/leon/.claude/jobs/ec0810d6/tmp/symviol_bfix.tsv` (f; regenerate the tsv with `scratchpad/sym_violation2.py
+  <out.tsv> results/dual/sweep_lif_recipe7_bfix:s<k>_recipe7:<dpa|naive|expert> ...` if the tmp dir is gone). The
+  well finder is cached in `.wells_cache.pkl` next to the outputs (`NOCACHE=1` to recompute); a render takes ~3 min.
+  Matrices in e use mathtext `\left[\genfrac{}{}{0}{}{a}{c}\ \genfrac{}{}{0}{}{b}{d}\right]`.
+- `paper/perturb_depth.py` → the well-position perturbation (delay drive along m₁, n₁-mean control). Env: `SEEDS`
+  (comma list), `DEV` (cuda:k), `NDELTA` (81), `NTR` (2048), `OUT` (partial JSON; merge parts into `perturb_depth.json`),
+  `PLOT_ONLY=1` (re-plot from the JSON → `perturb_depth.png` = ED 17). Four parallel GPU jobs finish in ~10 min.
+- `paper/render_ed.py` → ED 11–16 from the note's source scripts under the paper rcParams.
+
+Run all with LD_PRELOAD and the base `python` (the dual env has no torch).

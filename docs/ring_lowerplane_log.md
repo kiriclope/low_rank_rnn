@@ -3351,6 +3351,127 @@ after the 2AFC waves (before the bias-fix rerun). Predictions:
   memory (3.3), τ-tied mirror fields and trajectories (3.4)); §4.1 (Fig. 5: consistent elements and V′ (4.1), the
   no-lick cost and its one-signed gradient (4.2), Z₂ = {e, σ₁} (4.3), common height w_A = w_B (4.4)). Old
   subsections shifted (2.2→2.3 … 4.4→4.5). `head.part` carries the MathJax config (same macros as the companion).
+- **v3.35 (Leon): §2.3 now covers all four ties** — predictions for σ₂ (antipodes, straddling or on the line, J free)
+  and σ₃ (on the line at unrelated distances, mirrors for any off-line well) added to the equation block; the
+  attractor table has σ₂ rows ((±0.99, ∓0.07), (±1.11, ∓0.04), (±1.02, 0), (±0.92, ∓0.03); 2 attractors each) and
+  σ₃ rows (pair on the axis, |a| = |a′| to 0.02, plus the vertical decision pair (0, ±0.85–1.05) in 3/4 seeds);
+  chips for heights, counts and the exact residuals; closing paragraph: all four as written, σ₂ chose the line and
+  used the free cross-overlaps (no rotation), σ₃ ≈ whole group with the §2.2 reason.
+- **v3.36 (Leon): the two simpler tasks (GNG alone, delayed 2AFC) moved to the supplement** as S.7–S.9 with Figures
+  S14–S18; the worked example is §5 and "what the group explains" §6; main figures 1–12 (1 DPA theory, 2 DPA sims,
+  3 GNG theory, 4 GNG sims, 5 Dual theory, 6 released flows, 7 n vs inputs, 8–12 the GNG/Dual story).
+- **v3.37 (Leon): Figure 12 (populations at the expert checkpoint, m/n scatters after Dual) → Figure S19 (S.6a);
+  main figures 1–11.**
+- **Nogo scoring (Leon, 2026-09-22: "there is an error in scoring no-go trials").** `_dual_accuracy` with
+  `response_in_cue=True` scores nogo as mean κ₁ ≤ 0 over the LAST 0.5 s OF THE CUE (cue on), the window the loss
+  supervises (`nolick_nogo_in_cue`); after cue-off the nogo response is free (`nogo_target None`) and unscored.
+  Recomputed on Dual trials (256, trained η): s3_symdpa_test — in-cue nogo mean ≤ 0 in 0.15 (the reported 0.185),
+  pre-cue −0.64 (100%), post-cue 0.5 s +0.43 (0%); s0_symdpa_inv — in-cue 0.63, post-cue 0.00 (+0.34);
+  s0_symdpa_klein — in-cue 1.00 (mean) but max ≤ 0 only 0.51, post-cue 0.81; recipe7_bfix s0 — in-cue 0.85,
+  **post-cue 0.24** (+0.13). So even the "passing" networks lick AFTER the cue on nogo trials; the in-cue reading
+  hides it and the loss never prices it. Hence the comparison Leon asked for: the full curriculum with every choice
+  read after its stimulus (`postresp_*`: response_in_cue False, GNG response 0.5 s after cue-off, pairing 0.5 s
+  after test offset via `dpa_post_response_window` in both the DPA and Dual generators) vs the in-cue/in-test set.
+- **Launched 2026-09-22 ~14:30 (`queue_bfix` screen):** `sweep_lif_symdpa_bfix` (symdpa_pair + symdpa_klein, 8 runs,
+  fixed code, in-cue) → then `sweep_lif_postresp` (postresp_pair/inv → test/klein → free, 20 runs, full curriculum,
+  post-stimulus choices) → plot_sweep + gallery. Markers SYMDPA_BFIX_DONE, POSTRESP wave 1/2 done, POSTRESP_DONE,
+  POSTRESP_PLOTS_DONE. A first launch with a syntax error in sweep.py was killed before any run started.
+- **Publication-ready modelling artifact (Leon, 2026-09-22 afternoon).** New deliverable for the paper in ~/dual: the
+  modelling section written to the main draft's standard — `~/dual/docs/paper/modelling_draft.md` (Results with four
+  claim-titled sections, Methods, Extended = Fig. 5 + ED 11–16 legends + references + the full Supplementary Note of
+  definitions/derivations pulled from `derivations.html` at build time, working appendix); builder
+  `~/dual/build_modelling_artifact.py` (pandoc + the draft template → `figures/paper_share/artifact_build/
+  mpfc_dual_modelling_v1.html`). Figures in the house style (`~/rnn/paper/style.py`: Arial, 8/7 pt, thin rules,
+  lowercase bold letters, A #332288 / B #44AA99, per-seed lines): `fig5_model.py` → Fig. 5 (a literature-style
+  low-rank RNN schematic; b accuracy per trial type from simulated trials — after GNG the NoGo response on dual trials
+  is at chance in several seeds (median 0.61), the model's interference; c flows at the three checkpoints with all
+  seeds' occupied wells (landing-based selection); d per-seed push; e the group with action schemes; f/g per-tie well
+  planes at DPA ckpt / after the curriculum; h populations). `render_ed.py` re-renders the source figures under the
+  paper rcParams and composes ED 11–16 (theory A–D; predictions E–G; DPA-ckpt sims + orbit counts; GNG theory +
+  sims; Dual theory + released flows; GNG-alone + 2AFC). Outputs `~/dual/figures/paper_share/modelling/`. Published: https://claude.ai/artifact/YXnnS3NxWR3TcDPqa9RoXL (v1.0).
+- **`sweep_lif_symdpa_bfix` DONE (2026-09-22 15:07): σ₁ and V scaffolds on the FIXED code (bias tied in DPA, frozen in
+  Dual).** The confound is resolved, in the bad direction: **every scaffold fails NoGo in Dual when the bias is frozen** —
+  σ₁: nogo 0.968, 0.124, 0.574, 0.332; V: 0.012, 0.721, 0.162, 1.000 (go 1.000 everywhere) — against 0.947–0.997 for the
+  same scaffolds on the old code (bias trained in Dual) and 0.96–1.00 for the FREE recipe on the fixed code. So scaffold ×
+  frozen bias → NoGo lost; the old scaffold runs paid for NoGo with the Dual-trained bias (rms 0.5 → 0.9–1.6, §37h).
+  Geometry: σ₁ expert both below 4/4 (−0.38…−0.53; s3 keeps an upper pair at +0.45/+0.59); V expert both below 3/4
+  (−0.34…−0.49), s3 collapsed to ONE well (−0.53, −0.38) with DPA 0.508 (memory lost; after_gng/dpa already 0.51).
+  **DPA checkpoint with the EXACT tie differs from the old klein runs:** V s0/s2 = pair on the axis (±0.9, 0) + decision
+  pair; V s1 = decision pair ONLY (no κ₀ attractor, yet DPA 0.96–1.00 — a slow memory?); **V s3 = the QUADRUPLE
+  (±0.5, ±0.7) with the tie held** — the first 4-well DPA memory; σ₁ s3 = level pair (±1.0, −0.17) + upper pair
+  (±0.97, +0.53) (a σ₁-symmetric quadruple); σ₁ s0–s2 = level pair at −0.07…−0.21 (+ a decision well in s1, s2).
+  Residuals at DPA exactly 0.000 for the tied element(s). ⇒ the "no quadruple with the tie held" and "σ₃ ≈ V"
+  statements of the note were made on the bias-untied klein runs; with the exact tie 2/8 scaffolded DPA networks
+  show a 4-well memory. Fig. 5 (paper) re-rendered with the bfix ties; note §2.3/Fig 1–2 captions to be revised. NoGo windows on the bfix
+  scaffolds (256 dual trials): pre-cue all at −0.3…−0.8 (100%); in-cue σ₁ 0.99/0.17/0.68/0.35, V 0.02/0.81/0.19/1.00;
+  post-cue 0.00–0.57 for EVERY network incl. free bfix (0.24–0.50) and the old scaffolds (0.74–0.77): the cue lifts
+  the NoGo state and nothing prices the post-cue lick. Modelling draft v1.1 states this; postresp will settle it.
+- **Note v3.38:** Figures 2, 6, S7, S8, S12, S13 re-rendered with the fixed-code σ₁/V runs (`BFIX=1` on
+  `dpa_summary_fig.py`; grid/mn rows pointed at `sweep_lif_symdpa_bfix`); §2.3 box records the changed statements
+  (quadruple with the tie held in 2/8; σ₃ ≈ V only for the mean pair position; V s3 loses its memory; every scaffold
+  fails nogo under the frozen bias); Figure 6 caption corrected. Modelling artifact v1.1 in step.
+- **Depth ↔ performance by perturbation — Fig. 5g,h of the paper (Leon, 2026-09-22 evening; `paper/perturb_depth.py`).**
+  The model twin of the optogenetic experiment (paper Fig. 6): move the memory wells along the lick axis of a trained
+  Dual network WITHOUT retraining and without touching the trained field, and read DPA and GNG performance against
+  the well position. Leon's first idea was to perturb n₁; that changes the test-driven field (F = Ψ(κ; x) − κ with the
+  test overlap n₁ᵀw_C), so the design is a **constant drive δ·m̂₁ to every unit** (m̂₁ = m₁ scaled to unit rms; a
+  per-unit input current, added to `Ai·wi(x)` in a custom loop over `update_dynamics`), on from sample offset until
+  the stimulus to be read out arrives (the test on DPA-only trials, the go/nogo odor on dual trials), then off — the
+  state is displaced, the field acts unchanged from the displaced start. Both wells move together, so each δ gives
+  two well positions (A and B), as Leon asked. 8 `recipe7_bfix` experts; final run 81 δ in [−0.6, 1.0], 2048 trials per
+  type, 4 GPU jobs in parallel (`SEEDS`/`DEV`/`NDELTA`/`NTR`/`OUT` env, parts merged; ~10 min) — Leon asked twice for more
+  simulations; the 17 × 256 and 41 × 1024 passes are kept as `perturb_depth_17x256.json` / `_41x1024.json`. Well position = mean κ₁/η of the sample's trials at the last drive step.
+  **Result (dense run):** DPA is at ceiling from −1.8 η to +2 η and fails on BOTH sides: deeper wells → MISSES (mean
+  0.74 below −2.4 η, Spearman ρ = 0.88 below the trained position); wells > +2 η → FALSE ALARMS (the unpaired trial no
+  longer returns below the line before the readout; fa 0.09 at 2–2.5 η, 0.61 at 3–3.5 η; ρ = −0.62 above +2 η). GNG is
+  at ceiling for every well below the line (mean 0.98) and degrades as the well rises above it, from NOGO LICKS only
+  (go stays 1.00): at +2 η (odor arrival) NoGo 0.53–0.60 (ρ = −0.71 overall). **Dual performance** (Leon: "a panel that
+  combines the two perfs") = DPA acc × GNG acc per (network, sample, δ) = P(both responses of a dual trial correct): peaks
+  at 0.97 for wells 0.5–1 η below the line (the trained position is −0.9 η at odor arrival, at the peak) and falls both
+  ways (0.63 at −2 η, 0.67 at +2 η) — the trained well is at the optimum of the combined objective. ⇒ the two tasks pull in opposite directions along the lick axis
+  and the trained position (−1.2 η; −0.9 η at odor onset) sits at the DEEP EDGE of the DPA plateau and inside the GNG
+  one — as deep as DPA allows, the compromise the dual cost selects. Control (mean added to n₁, δ/2 per entry, 9 δ in
+  [−1.2, 1.2]): moves the field AND the readout κ₁ = n₁ᵀr/N itself, so every response moves with the well and both
+  tasks collapse on either side (go → 0 below, nogo → 0 above); only the delay-confined drive isolates the well
+  position. First pass (drive on through the odor and cue on dual trials, δ ∈ [−1.2, 1.2] in 9 steps) was discarded:
+  it measured the drive acting on the response (GNG at chance for |δ| ≥ 0.3) and the grid jumped the wells across
+  the line between δ = 0 and 0.3. Note some seeds have baseline in-cue NoGo 0.75–0.85 on these 256-trial sets
+  (trained noise, no drive). Outputs `~/dual/figures/paper_share/modelling/perturb_depth.{json,png,svg}` (= ED 17);
+  Fig. 5 gained a fourth row (h DPA accuracy vs well at test arrival; i GNG accuracy vs well at odor arrival; every
+  point gray, binned mean ± 95% CI in 0.5 η bins, Spearman — Leon: bin/average per location with error bars). Same
+  round (Leon): the RNN schematic redrawn as interconnected nodes + the W_rec matrix image; the DPA four-group
+  restored as panel e with ONE SUB-PANEL PER ELEMENT (relabeling, plane action, allowed memory pair); ties → f,
+  populations → g. Well finder now cached on the parameter hash (`.wells_cache.pkl`) so re-renders take seconds. Final
+  round (Leon): the ties panel REMOVED from Fig. 5 ("not sure what info f provides" — with the fixed code the free
+  networks also go 8/8 below, so the panel no longer shows a difference; the ties stay in ED 13/15 and the claim-3 text);
+  panel e = full row: the task table + σ₁/σ₂/σ₃ list (the text Leon liked) + one sub-panel per element; d's Wilcoxon text
+  shortened; last row f populations, g DPA, h GNG, i dual (DPA × GNG). Modelling artifact v1.3 published.
+  Then (Leon): (1) VOCABULARY — the paper names the axes SAMPLE (κ₀) and CHOICE (κ₁), as in its Figs 3–4: all Fig. 5
+  labels and the draft renamed (sample/choice coordinate, sample/choice readout n₀/n₁, sample/choice write m₀/m₁,
+  pure-choice units, choice sign); "memory wells" and "lick line" kept (both are paper terms). (2) NEW PANEL f, "the
+  group across the curriculum" — the group-theory explanation of the push with its sim support: left, the account
+  (DPA: V holds, σ₃/V pin the wells on the line; GNG: the one-sided objective breaks σ₂, σ₃ because they flip the
+  response; Dual: the no-lick cost is a downward field and σ₁ ⇒ both wells move as one); middle, the overlaps
+  n₁ᵀw_Go / n₁ᵀw_NoGo of the 8 bfix nets per checkpoint (`overlaps_bfix.json`): ≈ 0 after DPA (−0.6…0.1) → 1.1…2.1 /
+  −2.3…−1.2 after GNG → 2.0…3.3 / −3.7…−1.7 after Dual, while n₀'s stay small (σ₁ forces them to 0) — the GNG stage
+  breaks σ₂/σ₃ ON THE INPUT SIDE (deafness lemma); right, the equivariance residual per element (`sym_violation2.py`
+  on bfix, `symviol_bfix.tsv`): σ₁ median 0.25/0.29/0.25 at DPA/GNG/Dual, σ₂ 0.30/0.46/0.80, σ₃ 0.57/0.65/0.83 — the
+  autonomous field breaks σ₂/σ₃ in DUAL (it does not see the input columns) and keeps σ₁, hence the rigid push. Fig. 5 is
+  now a–j, five rows (9.6 × 15.4 in; may need splitting for the journal). Draft: new paragraph in claim 2, legend f.
+  (3) Panel e redesigned in the same descriptive style (Leon): the task table with colored sample labels, then ONE
+  RELABELED TABLE PER ELEMENT (σ₁ rows and columns exchanged; σ₂ rows exchanged + response flipped; σ₃ columns
+  exchanged + response flipped — each returns the same table), the sub-panels framed in the element's color with the
+  A–B pair joined; all row layouts checked for overlaps (e-left 11 cols, sub-panels 9; f 10/5/5).
+  (4) Leon: the relabeled tables are redundant and the identity panel empty → e = task table + σ list (left, 8 cols)
+  and σ₁ / σ₂ / σ₃ / V on the plane (right), each with its 2×2 MATRIX D as mathtext (`\genfrac{}{}{0}{}{a}{c}` columns
+  inside `\left[ \right]` renders a clean small matrix; `\begin{matrix}` is unsupported), the V panel showing the three
+  images of a state and the pinned pair or the faint quadruple. (5) Group ↔ h–j link (Leon): A filled / B open points
+  coincide (σ₁ maps one well onto the other: same height, same performance at every drive); the red dotted σ₃ image
+  of the dual curve (κ₁ → −κ₁) differs from the curve: σ₃ is broken by the no-lick cost, which is why the optimum sits
+  below the line instead of on it. Draft: legend e/j and a closing paragraph of the perturbation section. Modelling draft v1.3: new Results section "Moving a
+  well along the lick axis trades DPA against Go/NoGo performance", Methods "Perturbation of the well position",
+  legend g,h, ED 17. Fig. 5 v5 fixes on the way (clipped formula, NaN Wilcoxon for a missing B well → n-aware,
+  colliding titles/captions).
 - **Six populations, not four (Leon, 2026-09-21, v3.12)**: every trained DPA network (free, σ₁, σ₃, V) has the four
   lattice clusters (±2.5, ±1.2; ~200 units each) PLUS a pair on the decision axis (0, ±4.5) in (m₀, m₁), ~50 units
   each (6–11% of units), m₀ ≈ 0, n₁ ≈ ±4–5: the units of the decision wells. A BIC-free GMM finds 6–8 components;
@@ -3389,3 +3510,81 @@ after the 2AFC waves (before the bias-fix rerun). Predictions:
   follows m within a mode) — colored by the sign quadrant of (m₀, m₁) (coloring by block is useless for a
   tied net: the blocks are exact sign copies of one cloud). Main figures now 1–13. Gallery
   `lif_symdpa/misc/summary_grid_mn_dpa_ckpt.png`.
+
+## §40 — The paper's modelling figure and artifact: what was built on 2026-09-22 (consolidated)
+
+The detailed entries are in the §36e/§37 bullet list above (bfix result, the modelling artifact, the perturbation,
+the vocabulary, panels e–f). This section is the map for the next session.
+
+**Deliverable.** The modelling section of the mPFC dual-task paper, publication-ready: `~/dual/docs/paper/modelling_draft.md`
+(v1.3; Results in four claim sections + the perturbation section, Methods, Extended = Fig. 5 legend + ED 11–17 legends +
+references + the Supplementary Note pulled from `derivations.html`), built by `~/dual/build_modelling_artifact.py` into
+`~/dual/figures/paper_share/artifact_build/mpfc_dual_modelling_v1.html` and published at
+https://claude.ai/artifact/YXnnS3NxWR3TcDPqa9RoXL (republish with `url=`). The group-theory note (v3.38) stays at
+https://claude.ai/artifact/ANVVa4bWp1bzB4fByKJFwW as the long-form source.
+
+**Fig. 5 (`~/rnn/paper/fig5_model.py`, house style from `paper/style.py`; 9.6 × 15.4 in, five rows, will need splitting):**
+a  rank-2 RNN as interconnected nodes + the W_rec matrix image = m₀n₀ᵀ + m₁n₁ᵀ · b  lick probability per trial type at
+the three checkpoints (simulated, trained noise; NoGo-at-cue interference after GNG) · c  the autonomous flow at the three
+checkpoints with every seed's wells · d  the push (well height per seed, mean ± 95% CI, Wilcoxon; 8/8 below) ·
+e  the DPA task and its symmetries: table + σ list, then σ₁ / σ₂ / σ₃ / V on the plane with their 2×2 matrices and the
+memory pair each allows · f  the group across the curriculum: the account (V → Z₂ = {e, σ₁} at GNG → the downward field
+at Dual), the choice readout's overlaps with the Go/NoGo columns (`overlaps_bfix.json`; installed by GNG, forbidden under
+σ₂/σ₃), the per-element equivariance residual of the autonomous field (`symviol_bfix.tsv`; σ₂/σ₃ break in Dual, σ₁ kept) ·
+g  six populations of a whole-group-tied net · h/i/j  DPA, GNG and dual (= DPA × GNG) accuracy vs the well's position on
+the choice axis, moved by the delay-only drive (81 δ × 2048 trials × 8 nets; binned mean ± 95% CI; A filled / B open
+coincide by σ₁; the σ₃ image of the dual curve differs from it — σ₃ is broken, hence the optimum below the line).
+Dropped from Fig. 5 on Leon's call: the ties panel (with the fixed code free is also 8/8; ties stay in ED 13/15).
+Wells are cached on the parameter hash (`.wells_cache.pkl`); a re-render takes ~3 min. ED 11–16 by `paper/render_ed.py`,
+ED 17 = `perturb_depth.png`.
+
+**Vocabulary (Leon, binding for paper material):** the axes are SAMPLE (κ₀) and CHOICE (κ₁), as in the paper's Figs 3–4;
+sample/choice readout n₀/n₁, sample/choice write m₀/m₁, pure-choice units; the tasks are DPA and GNG; "memory wells" and
+"lick line" are kept (paper terms); "no-lick" for the region/cost.
+
+**Results of the day (numbers in the entries above):** (i) fixed-code σ₁/V scaffolds fail NoGo in-cue under the frozen
+bias; the exact tie yields the quadruple in 2/8 DPA nets; (ii) the delay-only perturbation: DPA plateau −1.8…+2 η, GNG
+degrades only above the line, dual optimum at the trained well (−0.9 η at odor arrival); (iii) the input-side breaking
+of σ₂/σ₃ by GNG (overlaps) and the field-side breaking by Dual (residuals), σ₁ kept throughout.
+
+**Re-layout (Leon, 2026-09-22 night; draft v1.4):** Fig. 5 is now a  model · b  THE CURRICULUM (three trial timelines with the
+stimuli, the response windows and what each stage trains/freezes) · c  the symmetries: table + σ list on the left, σ₁/σ₂/σ₃/V
+on the plane with their matrices (upper row) and, UNDER EACH, the simulated flow of a network tied to that element at the
+DPA checkpoint (σ₁: bfix pair s0, σ₂: inv s0, σ₃: test s1, V: bfix klein s2; the wells of every seed under that tie
+overlaid) · d  the group across the curriculum · e  the push · f/g/h  DPA / GNG / dual vs well position. The lick
+probabilities, the free network's checkpoint flows and the six populations moved to **ED 18** (a/b/c; rendered by the
+same script as a second figure, `ed18.png`; the build embeds ED 11–18). Nine rows of text references remapped.
+
+**`sweep_lif_postresp` DONE (19:14) — the post-stimulus scoring question, answered.** Every choice read (and trained) in
+the 0.5 s AFTER its stimulus. After Dual: DPA 0.88–1.00, Go 1.00, **NoGo 0.13–0.58 free / 0.03–0.94 scaffolds** (pair s3
+0.94, s1 0.68; everything else ≤ 0.35). Config diff vs `recipe7_bfix` is ONLY `response_in_cue` + the DPA post window —
+the NoGo don't-lick hinge (`nolick_nogo_in_cue`: softplus on κ₁ > 0 from cue onset to test onset, weight 1) is identical
+in both, so **the post-cue lick was priced all along**; my draft sentence "a lick the objective never prices" was wrong and
+is replaced. Windows (256 dual trials, κ₁/η on NoGo trials): pre-cue −1.0…−2.6, in-cue −0.3…−1.0, post-cue +0.1…+0.5 in
+BOTH sets (P(post-cue lick) 0.46–0.96 postresp, 0.50–0.76 bfix); Go in-cue +0.4…+2.2, post-cue up to +2.4. Reading: the
+cue rides the Go channel at scale 2 and lifts every NoGo state; the softplus price of +0.3 η is small next to the Go
+response target on the same channel, and training settles on the trade (dual loss 1.7–2.1 vs 1.5–1.8). The model's NoGo
+is a suppression that holds DURING the cue, not after. Draft v1.4 NoGo paragraph rewritten accordingly (the [AUTHOR]
+placeholder is gone). Not done: a stronger `nolick_weight` / a NoGo response target — Leon's call.
+
+**Stage-specific tie grids (Leon, 2026-09-22 night).** `scratchpad/tie_grid_fig.py` now draws the PREDICTED column per stage,
+as derived in the note (§3.1 deafness lemma + σ₁ survival, §4.1 the push): held tie at DPA (unchanged schemes); after GNG,
+tie released — σ₁ survives (equivariant gradient flow of a σ₁-invariant objective), σ₂/σ₃ are broken (they flip the
+response) so the antipodal / on-axis relations may go (drawn as faint broken relations) while the κ₀ positions stay
+(rank 0 frozen); after Dual — σ₁ kept, one height, both below (σ₂/σ₃ rows: both below, heights unrelated). Six grids:
+`sweep_lif_symdpa` (free = recipe7_bfix, σ₁/V = symdpa_bfix, σ₂/σ₃ = old symdpa; 4 seeds) and `sweep_lif_postresp`
+(5 arms × 4 seeds), each at dpa / naive / expert → `results/figures/<sweep>/summary/grid_<stage>_ckpt.png`, copied to the
+gallery folders `lif_symdpa/misc` and `lif_postresp/misc` as `summary_grid_<stage>_ckpt.png`.
+Reading (wells in raw κ; η ≈ 0.37): **after GNG** nothing moves — every tie's pair sits where DPA left it (σ₁ 0.00…−0.05
+at one height, σ₃ on the line, V pinned pair + decision pair in s0–s2; the released relations are *allowed* to break but
+nothing drives them: no DPA trial in the GNG stage), two casualties: σ₂ s0 keeps a single attractor, V s3 has none.
+**After Dual, lif_symdpa:** free bfix 4/4 both below (−0.23…−0.71); σ₁ 3/4 below at one height (s3 keeps the upper pair
+of its quadruple, +0.45/+0.59); σ₂ and σ₃ 4/4 below with heights matched to ≤ 0.1 — allowed to be unrelated, they come
+out matched because σ₁ is only approximately broken (σ₁ residual 0.12–0.47); V 3/4 below one height, s3 one well.
+**After Dual, lif_postresp:** the push is WEAKER in the free nets (s0 −0.22/−0.23, s1 +0.12/+0.02 NOT below, s2 −0.33/−0.08,
+s3 lopsided (0.39, −0.95)/(−0.88, −0.12)) while every scaffold pushes both wells below at one height (σ₁ −0.19…−0.43,
+σ₂ −0.13…−0.43, σ₃ −0.23…−0.47, V −0.17…−0.32). With the response read after the stimulus the no-lick pressure on the
+delay is the same but the pairing target moves after the test, and the free networks settle shallower.
+
+**Open / running:** postresp plots + gallery (queue, automatic); `memhold_*` arms not launched; nothing committed since
+`436f9bd` (paper scripts, draft, build script, sweep arms, tasks.py post window, all docs of the day are dirty).

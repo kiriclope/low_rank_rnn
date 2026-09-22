@@ -306,6 +306,7 @@ def generate_dual_trials(
     gng_memory: bool = True,
     decay_onesided: bool = False,
     response_in_cue: bool = False,
+    post_response_window: float | None = None,   # seconds of pairing target AFTER test offset when response_in_cue=False (None = legacy 0.25 s)
     gng_rwd_after_cue: bool = False,
     hold_full_delay: bool = False,  # gng_memory hold spans go/nogo-stim-off → cue-on
 ):
@@ -426,7 +427,8 @@ def generate_dual_trials(
 
         # pairing: response_in_cue → last 0.5 s of the TEST (test ON, rp0:rp1 = to-half:to) so the match
         # decision is test-DRIVEN; else legacy 0.25 s starting at test-off. Decay follows at rp1.
-        rp0, rp1 = (to - half, to) if response_in_cue else (to, to + quarter)
+        post = quarter if post_response_window is None else int(round(post_response_window / timing.dt))
+        rp0, rp1 = (to - half, to) if response_in_cue else (to, to + post)
         targets[idx_pair,  rp0:rp1, -1] =  1.0
         targets[~idx_pair, rp0:rp1, -1] = -1.0
 

@@ -16,7 +16,8 @@ COLS = [("free", "results/dual/sweep_lif_recipe7", "recipe7", "free\n(no tie)"),
         ("test", "results/dual/sweep_lif_symdpa", "symdpa_test", "tied to σ₃ = diag(+1, −1)\n(C↔D alone)"),
         ("klein", "results/dual/sweep_lif_symdpa", "symdpa_klein", "tied to the whole group\n(4 blocks)")]
 teal, plum, ember = "#0d818b", "#6b2f74", "#b0460e"; MK = ["o", "s", "D", "^", "v", "<", ">", "p"]
-if os.environ.get("NOFREE", "0") == "1": COLS = [c for c in COLS if c[0] != "free"]   # NOFREE=1 drops the free column (the ties only)
+if os.environ.get("NOFREE", "0") == "1": COLS = [c for c in COLS if c[0] != "free"]
+if os.environ.get("BFIX", "0") == "1": COLS = [(k, ("results/dual/sweep_lif_symdpa_bfix" if k in ("pair", "klein") else sw), arm, lab) for k, sw, arm, lab in COLS]   # BFIX=1: σ₁/V from the fixed-code rerun   # NOFREE=1 drops the free column (the ties only)
 SCHEMES = os.environ.get("SCHEMES", "0") == "1"   # SCHEMES=1 keeps the prediction row (the schemes now live in the theory figure)
 ROWS = os.environ.get("ROWS", "dpa,expert").split(",")   # any of: dpa (flow, tie held), expert (flow, released), mn (the (m0, m1) populations at the DPA checkpoint)
 NR = len(ROWS) + (1 if SCHEMES else 0)
