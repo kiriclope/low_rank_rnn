@@ -3,6 +3,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400;1,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']], macros: {
+    R: '\\mathbb{R}', E: '\\mathbb{E}', Tr: '\\mathrm{T}', diag: '\\operatorname{diag}', sgn: '\\operatorname{sgn}', relu: '\\operatorname{relu}' } },
+  svg: { fontCache: 'global' },
+  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js" async></script>
+
 <style>
 :root {
   --paper:      #f7f4f7;
@@ -149,5 +159,9 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
 .plab { font-family: var(--f-mono); font-size: 0.72rem; color: var(--plum); margin-right: 0.45rem; font-weight: 500; }
 .h3num { font-family: var(--f-mono); font-size: 0.78rem; color: var(--muted); margin-right: 0.55rem; font-weight: 500; }
 .fig .panels { margin: 0.4rem 0 0.8rem; }
+.deriv { max-width: var(--measure); }
+.deriv p { margin: 0.5rem 0; }
+.deriv .lead { font-family: var(--f-mono, monospace); font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--plum); display: block; margin-top: 1.1rem; }
+mjx-container { overflow-x: auto; overflow-y: hidden; }
 </style>
 

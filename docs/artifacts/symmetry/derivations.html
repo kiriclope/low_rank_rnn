@@ -300,7 +300,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
   </div>
   <div class="proof"><p>(1) On the \(\kappa_i\) axis the drive of a unit and of its image are equal, since only column \(j\) differs and \(\kappa_j = 0\); their \(n_j\) are opposite, so their contributions to \(\Psi_j\) cancel pairwise, and \(F_j = \Psi_j - \kappa_j = 0\). (2) On the \(\kappa_j\) axis the drives of a unit and its image are \(u_k+\beta_k\) and \(-u_k+\beta_k\) while their \(n_i\) are equal; \(\varphi(u+\beta)+\varphi(-u+\beta) = 2c + \psi(u+\beta) - \psi(u-\beta)\), which is (6.1) restricted to the pair; the \(-\kappa_i\) term vanishes on this axis. (3) Under \(-I\) the image of a unit has both columns and \(n\) negated, so the pair sum for \(\Psi_i\) on the \(\kappa_j\) axis is \(n_i[\varphi(u+\beta) - \varphi(-u+\beta)] = n_i[\psi(u+\beta)+\psi(u-\beta)]\). <span class="qed">&#8718;</span></p></div>
   <div class="box rem"><span class="tag">Remark &mdash; what this adds to the orbit rule</span>
-    <p>The group says a mirror pair under \(\diag(+1,-1)\) has the form \((a, \pm w)\); it does not say what \(a\) is. The corollary says the \(\kappa_1\) axis is invariant up to \(\langle n_0\rangle\) and \(b\), which is where the trained networks put the pair (\(a = 0.00\) in every seed). Under the whole group both axes are exactly invariant and each carries a pair: the memory pair on \(\kappa_1\) and the unused mode's own pair on \(\kappa_0\). Under \(-I\) the antipodes sit at a free angle. Measured on the rule-task networks: the field's \(\kappa_1\) component on the \(\kappa_0\) axis is \(0.000\) under \(\diag(+1,-1)\) and under the group, and \(0.26\)&ndash;\(0.50\) under \(-I\).</p>
+    <p>The group says a mirror pair under \(\diag(+1,-1)\) has the form \((a, \pm w)\); it does not say what \(a\) is. The corollary says the \(\kappa_1\) axis is invariant up to \(\langle n_0\rangle\) and \(b\), which is where the trained networks put the pair (\(a = 0.00\) in every seed). Under the whole group both axes are exactly invariant and each carries a pair: the memory pair on \(\kappa_1\) and the unused mode's own pair on \(\kappa_0\). Under \(-I\) the antipodes sit at a free angle. Measured on GNG-task networks: the field's \(\kappa_1\) component on the \(\kappa_0\) axis is \(0.000\) under \(\diag(+1,-1)\) and under the group, and \(0.26\)&ndash;\(0.50\) under \(-I\).</p>
   </div>
 
   <!-- ─────────────────────────── 7 ─────────────────────────── -->
@@ -309,13 +309,13 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
     <p>Let the network be equivariant under a subgroup \(H\le V\). Then for any two of the vectors \(m_0, n_0, m_1, n_1, b, w_c\) lying in isotypic components of \(H\) with different characters, the overlap is identically zero. In particular:</p>
     <ol>
       <li>under \(\{e,\sigma_1\}\), \(\{e,\sigma_3\}\) or \(V\): \(\ n_0^{\Tr}m_1 = n_1^{\Tr}m_0 = 0\) (memory and decision decouple);</li>
-      <li>under \(\{e,\sigma_3\}\) or \(V\) (any element with \(D_{11} = -1\)): \(\ n_1^{\Tr}w_{\rm go} = n_1^{\Tr}w_{\rm nogo} = n_1^{\Tr}w_{\rm cue} = n_1^{\Tr}b = 0\) &mdash; the rule stimuli have no first-order drive on the decision axis; the network is <em>deaf</em> to the rule;</li>
-      <li>under \(\{e,\sigma_1\}\) or \(V\): \(\ n_0^{\Tr}w_{\rm go} = n_0^{\Tr}w_{\rm nogo} = n_0^{\Tr}w_{\rm cue} = n_0^{\Tr}b = 0\) &mdash; the rule cannot leak onto the memory readout; and \(n_0^{\Tr}(w_A + w_B) = 0\), \(n_1^{\Tr}(w_A - w_B) = 0\), i.e. \(n_0\cdot w_A = -\,n_0\cdot w_B\) and \(n_1\cdot w_A = n_1\cdot w_B\).</li>
+      <li>under \(\{e,\sigma_3\}\) or \(V\) (any element with \(D_{11} = -1\)): \(\ n_1^{\Tr}w_{\rm go} = n_1^{\Tr}w_{\rm nogo} = n_1^{\Tr}w_{\rm cue} = n_1^{\Tr}b = 0\) &mdash; the GNG stimuli have no first-order drive on the decision axis; the network is <em>deaf</em> to GNG;</li>
+      <li>under \(\{e,\sigma_1\}\) or \(V\): \(\ n_0^{\Tr}w_{\rm go} = n_0^{\Tr}w_{\rm nogo} = n_0^{\Tr}w_{\rm cue} = n_0^{\Tr}b = 0\) &mdash; GNG cannot leak onto the memory readout; and \(n_0^{\Tr}(w_A + w_B) = 0\), \(n_1^{\Tr}(w_A - w_B) = 0\), i.e. \(n_0\cdot w_A = -\,n_0\cdot w_B\) and \(n_1\cdot w_A = n_1\cdot w_B\).</li>
     </ol>
   </div>
   <div class="proof"><p>All are instances of Theorem 2.4 (orthogonality of distinct isotypic components), once each vector is placed. \(n_0\in U_{\chi_{-+}}\), \(m_1, n_1\in U_{\chi_{+-}}\) give (1). Unswapped columns and the bias are fixed by every element, so they lie in \(U_{\chi_{++}}\); \(n_1\) carries \(\chi_{+-}\), which differs from \(\chi_{++}\) exactly on the elements with \(D_{11} = -1\), giving (2); \(n_0\) carries \(\chi_{-+}\), giving the first half of (3). For the swapped pair, \(\rho(\sigma_1)w_A = w_B\) and \(\rho(\sigma_1)w_B = w_A\), so \(w_A + w_B\in U_{\chi(\sigma_1) = +1}\) and \(w_A - w_B\in U_{\chi(\sigma_1) = -1}\); \(n_0\) has \(\chi(\sigma_1) = -1\) and \(n_1\) has \(+1\). <span class="qed">&#8718;</span></p></div>
   <div class="box rem"><span class="tag">Remark &mdash; what this proves about the curriculum</span>
-    <p>The rule stage has to drive \(\kappa_1\) with the go and nogo inputs. By (2), a network that respects \(\sigma_3\) or \(\sigma_2\) cannot do so to first order. Therefore the rule stage must break every element with a minus sign on \(\kappa_1\), regardless of the shape of its cost; the one-sided cost fixes the <em>direction</em> of the break, not the fact of it. Item (3) says the pair exchange costs the rule nothing, which is why it can survive all three stages. The exact zeros of (2) and the exact equalities of (3) are what <code>input_overlaps.py</code> reports at the tied checkpoints.</p>
+    <p>The GNG stage has to drive \(\kappa_1\) with the go and nogo inputs. By (2), a network that respects \(\sigma_3\) or \(\sigma_2\) cannot do so to first order. Therefore the GNG stage must break every element with a minus sign on \(\kappa_1\), regardless of the shape of its cost; the one-sided cost fixes the <em>direction</em> of the break, not the fact of it. Item (3) says the pair exchange costs GNG nothing, which is why it can survive all three stages. The exact zeros of (2) and the exact equalities of (3) are what <code>input_overlaps.py</code> reports at the tied checkpoints.</p>
   </div>
 
   <!-- ─────────────────────────── 8 ─────────────────────────── -->
@@ -376,7 +376,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
         <tr><td>Dual delay no-lick</td><td>\(h(\kappa_1)\), one-sided, \(h = \mathrm{softplus}\)</td><td>invariant</td><td><b>not</b></td></tr>
         <tr><td>Dual cue</td><td>go-channel input, upward target</td><td>invariant (cue shared)</td><td><b>not</b></td></tr>
       </tbody></table></div>
-    <p>So the DPA objective is invariant under all of \(V\); the GNG and Dual objectives are invariant under \(\{e,\sigma_1\}\) only. (\(\sigma_2 = \sigma_1\sigma_3\) follows.) The rule exchange \(\tau\) (go&harr;nogo with \(\kappa_1\mapsto-\kappa_1\)) fails on the go and nogo rows for the same reason.</p>
+    <p>So the DPA objective is invariant under all of \(V\); the GNG and Dual objectives are invariant under \(\{e,\sigma_1\}\) only. (\(\sigma_2 = \sigma_1\sigma_3\) follows.) GNG exchange \(\tau\) (go&harr;nogo with \(\kappa_1\mapsto-\kappa_1\)) fails on the go and nogo rows for the same reason.</p>
   </div>
   <div class="box rem"><span class="tag">Remark &mdash; spontaneous breaking</span>
     <p>Theorem 9.1 says the equivariant subspace is invariant under the training dynamics of an invariant loss; it does not say it is attracting. Two things move a free network off it: the mini-batch loss is only invariant in expectation (each batch has its own noise draws), and the finite-sample initialization sits a few percent off the subspace to begin with (3&ndash;12% for \(\sigma_1\), \(\sigma_3\)). If the symmetric solution has an unstable transverse direction, those seeds grow, in a direction the objective does not choose. That is the measured picture after DPA in the free networks: residuals of 0.1&ndash;0.95, differing from seed to seed, for an objective that is exactly invariant. The projection \(R\) after each step removes the seed and keeps the network on the subspace regardless of its stability.</p>
@@ -402,7 +402,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
   </div>
   <div class="proof"><p>(i) \(\Psi\) is an average of \(N\) i.i.d. bounded terms. (ii) Oddness of \(F\) (Theorem 6.1) maps the point at angle \(\theta\) on the ring to the point at \(\theta+\pi\) with \(F\mapsto-F\); the tangent vector also reverses, so the tangential component is unchanged. (iii) On a closed curve on which the radial direction is stable, a zero of \(F_\theta\) with \(F_\theta' < 0\) is an attractor and one with \(F_\theta' > 0\) a saddle; zeros of a periodic function alternate in the sign of the derivative. <span class="qed">&#8718;</span></p></div>
   <div class="box rem"><span class="tag">Remark</span>
-    <p>The lowest allowed harmonic is generically the largest for a smooth field, which is why the corrugated ring shows four critical points in the clean cases. The training inputs \(w_A = -w_B\propto u_{\rm mem}\) are not \(O(2)\)-invariant: they write along one axis, and the memory task selects that axis as soon as training starts. \(O(2)\) is a property of the initialization, never of the task.</p>
+    <p>The lowest allowed harmonic is generically the largest for a smooth field, which is why the corrugated ring shows four critical points in the clean cases. The training inputs \(w_A = -w_B\propto u_{\rm mem}\) are not \(O(2)\)-invariant: they write along one axis, and DPA selects that axis as soon as training starts. \(O(2)\) is a property of the initialization, never of the task.</p>
   </div>
 
   <!-- ─────────────────────────── 11 ─────────────────────────── -->
@@ -431,7 +431,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
     (Lemma 12.1); a line fixed by the plane action is invariant under the flow (Lemma 12.2); and images of
     attractors are attractors with the same spectrum (Theorem 1.5). This section states the first two,
     then derives the possible wells for each element, for the four-group, and for the three
-    \(\mathbb Z_2\) representations of the rule task and the 2AFC. The point most often asked about, the
+    \(\mathbb Z_2\) representations of the GNG task and the 2AFC. The point most often asked about, the
     common height of the two memory wells under \(\sigma_1\), is (12.3): it is not a property of the
     attractor set, it is a property of which attractor each stimulus selects.
   </p>
@@ -462,7 +462,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
     <p>Lemma 12.2 constrains the noise-averaged trajectory. A single trial leaves the fixed line as soon as the noise has a component across it. If the point the mean trajectory rests at is stable across the line, the trials stay close to it; if it is a saddle across the line, the trials fall to one of its two images on either side, which are attractors by Theorem 1.5, and only their average sits on the line. This is the pair-versus-split alternative drawn faint in the schemes. When every input column, the noise included, is fixed by \(S\), the argument holds trial by trial: the population state stays \(\rho\)-even exactly, and the coordinate along the flipped mode is identically zero (the whole-group 2AFC networks, main document Figure 14).</p>
   </div>
 
-  <h3>12.1 The four-group of the memory task</h3>
+  <h3>12.1 The four-group of DPA</h3>
   <p>Write the A memory state as \(\kappa_A = (a, w)\). Each element identifies \(\kappa_B\), the decision wells, the rest state, and the invariant lines. Throughout, "well" means an attractor of the autonomous field; "memory well" means one that is a memory state.</p>
 
   <div class="box thm"><span class="tag">Proposition 12.3 &mdash; \(\sigma_1\) alone: a mirror pair at one height</span>
@@ -493,7 +493,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
   </div>
 
   <div class="box rem"><span class="tag">Remark &mdash; for the memory objective, \(\sigma_3\) is nearly the whole group</span>
-    <p>The elements \(\sigma_3\) lacks, \(\sigma_1\) and \(\sigma_2\), differ from it by the relabeling A \(\leftrightarrow\) B. By Theorem 6.1 the inversion can only be broken through \(\langle n\rangle\) and \(b\); the \(\sigma_3\) pairing flips \(n_1\), so \(\langle n_1\rangle = 0\) identically, and &sect;7 gives \(J_{01} = J_{10} = 0\) and \(n_1^{\Tr}w_A = n_1^{\Tr}w_B = 0\). These are the quantities the free networks move when they break \(\sigma_1\) and \(\sigma_2\) during the memory stage. What \(\sigma_3\) leaves open and \(V\) closes is \(\langle n_0\rangle\) and the asymmetry \(a' \ne -a\), and neither is driven by an objective and an initialization that are A \(\leftrightarrow\) B symmetric on average. Measured after DPA (2026-09-21): under \(\sigma_3\), \(\langle n_1\rangle = 0\), \(J_{01} = J_{10} = 0\), \(|\langle n_0\rangle| \le 0.015\), wells at \((\pm1.0, 0)\) with \(|a'| - |a| \le 0.01\); indistinguishable from the whole-group networks except for the exact zero of \(\langle n_0\rangle\).</p>
+    <p>The elements \(\sigma_3\) lacks, \(\sigma_1\) and \(\sigma_2\), differ from it by the relabeling A \(\leftrightarrow\) B. By Theorem 6.1 the inversion can only be broken through \(\langle n\rangle\) and \(b\); the \(\sigma_3\) pairing flips \(n_1\), so \(\langle n_1\rangle = 0\) identically, and &sect;7 gives \(J_{01} = J_{10} = 0\) and \(n_1^{\Tr}w_A = n_1^{\Tr}w_B = 0\). These are the quantities the free networks move when they break \(\sigma_1\) and \(\sigma_2\) during the DPA stage. What \(\sigma_3\) leaves open and \(V\) closes is \(\langle n_0\rangle\) and the asymmetry \(a' \ne -a\), and neither is driven by an objective and an initialization that are A \(\leftrightarrow\) B symmetric on average. Measured after DPA (2026-09-21): under \(\sigma_3\), \(\langle n_1\rangle = 0\), \(J_{01} = J_{10} = 0\), \(|\langle n_0\rangle| \le 0.015\), wells at \((\pm1.0, 0)\) with \(|a'| - |a| \le 0.01\); indistinguishable from the whole-group networks except for the exact zero of \(\langle n_0\rangle\).</p>
   </div>
   <div class="box thm"><span class="tag">Proposition 12.6 &mdash; the whole group: a pinned pair, or the quadruple</span>
     <p>Combine (12.5) and (12.2): \(\kappa_A = (a,0)\) by \(\sigma_3\), \(\kappa_B = D_1\kappa_A = (-a,0)\) by \(\sigma_1\),</p>
@@ -505,7 +505,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
     <p>No tie, no constraint. The initialization is exactly \(\sigma_2\)-equivariant (Theorem 6.1) and approximately \(V\)-equivariant (main document, supplement), so the free network starts near the picture of Proposition 12.6 and leaves it in a seed-dependent direction, which is what the residual ledger measures.</p>
   </div>
 
-  <h3>12.2 One relabeling, three representations: the rule task and the 2AFC</h3>
+  <h3>12.2 One relabeling, three representations: the GNG task and the 2AFC</h3>
   <p>
     Both simpler tasks have a single relabeling, go \(\leftrightarrow\) nogo or L \(\leftrightarrow\) R, with the response flipped, and an objective that reads \(\kappa_1\) only. Nothing reads \(\kappa_0\), so the relabeling may act on the plane as \(-I\) or as \(\diag(+1,-1)\); their product \(\diag(-1,+1)\) is then a symmetry with no relabeling at all. Write the go (or R) memory state as \(\kappa_{\rm go} = (a,w)\), with \(w\) the quantity the response reads.
   </p>
@@ -527,8 +527,8 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
         <tr><td>\(\sigma_2\): \(-I\), A&harr;B</td><td>\((a,w),\ (-a,-w)\): straddling or on the line</td><td>origin</td><td>origin, exactly</td><td>antipodal pair, any angle; rotation allowed</td><td>free</td></tr>
         <tr><td>\(\sigma_3\): \(\diag(+1,-1)\), C&harr;D</td><td>\((a,0),\ (a',0)\) in mean; each may split to \((a,\pm w)\)</td><td>\(\kappa_0\) axis</td><td>on the \(\kappa_0\) axis</td><td>vertical pair \((u,\pm w_d)\)</td><td>0</td></tr>
         <tr><td>\(V\)</td><td>\((\pm a,0)\) in mean; or the quadruple \((\pm a,\pm w)\)</td><td>both axes</td><td>origin, exactly</td><td>\((0,\pm w_d)\) or a quadruple</td><td>0</td></tr>
-        <tr><td>rule task / 2AFC, \(-I\)</td><td>\((a,w),\ (-a,-w)\)</td><td>origin</td><td>origin</td><td>&mdash;</td><td>free</td></tr>
-        <tr><td>rule task / 2AFC, \(\diag(+1,-1)\)</td><td>\((a,w),\ (a,-w)\), \(a\) small</td><td>\(\kappa_0\) axis</td><td>on the \(\kappa_0\) axis</td><td>&mdash;</td><td>0</td></tr>
+        <tr><td>GNG task / 2AFC, \(-I\)</td><td>\((a,w),\ (-a,-w)\)</td><td>origin</td><td>origin</td><td>&mdash;</td><td>free</td></tr>
+        <tr><td>GNG task / 2AFC, \(\diag(+1,-1)\)</td><td>\((a,w),\ (a,-w)\), \(a\) small</td><td>\(\kappa_0\) axis</td><td>on the \(\kappa_0\) axis</td><td>&mdash;</td><td>0</td></tr>
         <tr><td>2AFC, \(\diag(-1,+1)\) with swap</td><td>\((a,w),\ (-a,w)\): same \(\kappa_1\), chance</td><td>\(\kappa_1\) axis</td><td>on the \(\kappa_1\) axis</td><td>&mdash;</td><td>0</td></tr>
         <tr><td>2AFC, whole group</td><td>\((0,w),\ (0,-w)\), exact per trial</td><td>both axes</td><td>origin</td><td>&mdash;</td><td>0</td></tr>
       </tbody></table></div>

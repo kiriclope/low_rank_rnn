@@ -1,4 +1,4 @@
-"""Figure 1 of the note: the memory task (DPA) — its symmetries, the predicted wells for each tie (scheme),
+"""Figure 1 of the note: DPA (DPA) — its symmetries, the predicted wells for each tie (scheme),
 and the trained networks: free, and tied to each element of the Klein group and to the whole group, at the
 DPA checkpoint (tie held) and at the expert checkpoint (released, after GNG and Dual).
 Usage: dpa_summary_fig.py <out.png>   (reads sweep_lif_recipe7 for the free arm and sweep_lif_symdpa for the ties)"""
@@ -16,7 +16,11 @@ COLS = [("free", "results/dual/sweep_lif_recipe7", "recipe7", "free\n(no tie)"),
         ("test", "results/dual/sweep_lif_symdpa", "symdpa_test", "tied to σ₃ = diag(+1, −1)\n(C↔D alone)"),
         ("klein", "results/dual/sweep_lif_symdpa", "symdpa_klein", "tied to the whole group\n(4 blocks)")]
 teal, plum, ember = "#0d818b", "#6b2f74", "#b0460e"; MK = ["o", "s", "D", "^", "v", "<", ">", "p"]
-fig = plt.figure(figsize=(20, 13), dpi=140); gs = fig.add_gridspec(3, 5, height_ratios=[0.8, 1, 1])
+if os.environ.get("NOFREE", "0") == "1": COLS = [c for c in COLS if c[0] != "free"]   # NOFREE=1 drops the free column (the ties only)
+SCHEMES = os.environ.get("SCHEMES", "0") == "1"   # SCHEMES=1 keeps the prediction row (the schemes now live in the theory figure)
+ROWS = os.environ.get("ROWS", "dpa,expert").split(",")   # any of: dpa (flow, tie held), expert (flow, released), mn (the (m0, m1) populations at the DPA checkpoint)
+NR = len(ROWS) + (1 if SCHEMES else 0)
+fig = plt.figure(figsize=(4 * len(COLS), 4.6 * NR + (0.6 if SCHEMES else 0)), dpi=140); gs = fig.add_gridspec(NR, len(COLS), height_ratios=([0.8] if SCHEMES else []) + [1] * len(ROWS))
 def scheme(ax, wells, pairs, title, note, open_wells=()):
     ax.set_xlim(-1.4, 1.4); ax.set_ylim(-1.4, 1.4); ax.set_aspect("equal"); ax.axhline(0, color=ember, lw=1.1, ls=(0, (4, 3))); ax.axvline(0, color="0.8", lw=0.8)
     for (x, y) in wells: ax.plot(x, y, "o", color=teal, ms=9, zorder=4)
@@ -25,18 +29,31 @@ def scheme(ax, wells, pairs, title, note, open_wells=()):
     ax.set_xticks([]); ax.set_yticks([]); ax.set_title(title, fontsize=10, pad=6); pass
     ax.set_ylabel("κ₁", fontsize=9); ax.text(0.97, 0.03, "κ₀", transform=ax.transAxes, ha="right", va="bottom", fontsize=9, color="0.4")
 a = 0.95; wd = 1.1
-ax0 = fig.add_subplot(gs[0, 0]); scheme(ax0, [], [], "free: no constraint", "any orbit to the right; the init is\nσ₂-exact and V-approximate"); ax0.text(0.5, 0.5, "?", transform=ax0.transAxes, ha="center", va="center", fontsize=26, color="0.6")
-ax1 = fig.add_subplot(gs[0, 1]); scheme(ax1, [(a, -0.22), (-a, -0.22)], [((a, -0.22), (-a, -0.22))], "σ₁: mirror pair, one height", "memory (±a, w), w set by ⟨n₁⟩ and b;\nthe κ₁ axis is invariant: a lone decision well allowed", open_wells=[(0, wd)])
-ax2 = fig.add_subplot(gs[0, 2]); scheme(ax2, [(a, 0.35), (-a, -0.35)], [((a, 0.35), (-a, -0.35)), ((0.3, wd), (-0.3, -wd))], "σ₂: antipodes", "memory (a, w), (−a, −w): straddling, or both on the line;\nno invariant axis; J₀₁, J₁₀ free; ring or rotation allowed", open_wells=[(0.3, wd), (-0.3, -wd)])
-ax3 = fig.add_subplot(gs[0, 3]); scheme(ax3, [(a, 0), (-0.7, 0)], [((0, wd), (0, -wd))], "σ₃: on the line, unmatched", "the κ₀ axis is invariant: memory at (a, 0), (−a′, 0), a ≠ a′;\nor a vertical pair each (faint); J = 0; decision wells a pair", open_wells=[(0, wd), (0, -wd)])
-ax4 = fig.add_subplot(gs[0, 4]); scheme(ax4, [(a, 0), (-a, 0)], [((a, 0), (-a, 0)), ((0, wd), (0, -wd))], "whole group: on the line, or a quadruple", "two wells ⇒ pinned at (±a, 0); off the line ⇒ the\nquadruple (±a, ±w) (faint); decision wells a pair; J = 0", open_wells=[(0, wd), (0, -wd)])
-for x in (a, -0.7):
-    for y in (0.45, -0.45): ax3.plot(x, y, "o", ms=8, mfc="none", mec=teal, mew=1.0, alpha=0.45, zorder=3)
-for x in (a, -a):
-    for y in (0.45, -0.45): ax4.plot(x, y, "o", ms=8, mfc="none", mec=teal, mew=1.0, alpha=0.45, zorder=3)
-for r, (stage, stagelab) in enumerate([("dpa", "DPA checkpoint  (tie held)"), ("expert", "after GNG and Dual  (released)")]):
+if SCHEMES:
+    ax0 = fig.add_subplot(gs[0, 0]); scheme(ax0, [], [], "free: no constraint", "any orbit to the right; the init is\nσ₂-exact and V-approximate"); ax0.text(0.5, 0.5, "?", transform=ax0.transAxes, ha="center", va="center", fontsize=26, color="0.6")
+    ax1 = fig.add_subplot(gs[0, 1]); scheme(ax1, [(a, -0.22), (-a, -0.22)], [((a, -0.22), (-a, -0.22))], "σ₁: mirror pair, one height", "memory (±a, w), w set by ⟨n₁⟩ and b;\nthe κ₁ axis is invariant: a lone decision well allowed", open_wells=[(0, wd)])
+    ax2 = fig.add_subplot(gs[0, 2]); scheme(ax2, [(a, 0.35), (-a, -0.35)], [((a, 0.35), (-a, -0.35)), ((0.3, wd), (-0.3, -wd))], "σ₂: antipodes", "memory (a, w), (−a, −w): straddling, or both on the line;\nno invariant axis; J₀₁, J₁₀ free; ring or rotation allowed", open_wells=[(0.3, wd), (-0.3, -wd)])
+    ax3 = fig.add_subplot(gs[0, 3]); scheme(ax3, [(a, 0), (-0.7, 0)], [((0, wd), (0, -wd))], "σ₃: on the line, unmatched", "the κ₀ axis is invariant: memory at (a, 0), (−a′, 0), a ≠ a′;\nor a vertical pair each (faint); J = 0; decision wells a pair", open_wells=[(0, wd), (0, -wd)])
+    ax4 = fig.add_subplot(gs[0, 4]); scheme(ax4, [(a, 0), (-a, 0)], [((a, 0), (-a, 0)), ((0, wd), (0, -wd))], "whole group: on the line, or a quadruple", "two wells ⇒ pinned at (±a, 0); off the line ⇒ the\nquadruple (±a, ±w) (faint); decision wells a pair; J = 0", open_wells=[(0, wd), (0, -wd)])
+    for x in (a, -0.7):
+        for y in (0.45, -0.45): ax3.plot(x, y, "o", ms=8, mfc="none", mec=teal, mew=1.0, alpha=0.45, zorder=3)
+    for x in (a, -a):
+        for y in (0.45, -0.45): ax4.plot(x, y, "o", ms=8, mfc="none", mec=teal, mew=1.0, alpha=0.45, zorder=3)
+STAGELAB = {"dpa": "DPA checkpoint  (tie held)", "expert": "after GNG and Dual  (released)", "mn": "populations, DPA checkpoint"}
+QC = {(1, 1): "#4c72b0", (-1, 1): "#dd8452", (-1, -1): "#55a868", (1, -1): "#c44e52"}
+for r, stage in enumerate(ROWS):
+    stagelab = STAGELAB[stage]
     for c, (key, sw, arm, collab) in enumerate(COLS):
-        ax = fig.add_subplot(gs[r + 1, c])
+        ax = fig.add_subplot(gs[r + (1 if SCHEMES else 0), c])
+        if stage == "mn":   # the (m0, m1) scatter of seed 0 (seed 1 for the free arm, as in the population figure), colored by sign quadrant, axis units gray
+            sd = 1 if key == "free" else 0; mdl, cfg = load_run(sw, f"s{sd}_{arm}", stage="dpa", device="cpu"); M = mdl.m.detach().numpy(); Nv = mdl.n.detach().numpy(); N = len(M)
+            J = Nv.T @ M / N; axu = (np.abs(M[:, 0]) < 0.8) & (np.abs(M[:, 1]) > 2.5); lat = ~axu
+            for q, col in QC.items():
+                sel = lat & (np.sign(M[:, 0]) == q[0]) & (np.sign(M[:, 1]) == q[1]); ax.scatter(M[sel, 0], M[sel, 1], s=5, color=col, alpha=0.65, edgecolors="none")
+            ax.scatter(M[axu, 0], M[axu, 1], s=6, color="0.45", alpha=0.8, edgecolors="none")
+            ax.axhline(0, color="0.85", lw=0.8); ax.axvline(0, color="0.85", lw=0.8); ax.set_xlim(-6.5, 6.5); ax.set_ylim(-6.5, 6.5); ax.set_aspect("equal")
+            ax.set_title(f"{collab.splitlines()[0]}\nseed {sd} · J₀₁ {J[0, 1]:+.2f}  J₁₀ {J[1, 0]:+.2f} · axis units {axu.sum()}", fontsize=8)
+            ax.set_xlabel("m₀", fontsize=9); ax.set_ylabel(("m₁\n" + stagelab) if c == 0 else "m₁", fontsize=9); continue
         seeds = sorted(int(os.path.basename(d)[1]) for d in glob.glob(f"{sw}/s?_{arm}") if os.path.exists(f"{d}/{stage}_s{os.path.basename(d)[1]}_{arm}.pth"))
         if not seeds: ax.text(0.5, 0.5, f"{arm}\n(not run yet)", ha="center", va="center", transform=ax.transAxes); ax.set_xticks([]); ax.set_yticks([]); continue
         m0, cfg = load_run(sw, f"s{seeds[0]}_{arm}", stage=stage, device="cpu"); sig = sig_of(cfg)

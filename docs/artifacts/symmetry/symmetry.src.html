@@ -3,6 +3,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400;1,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']], macros: {
+    R: '\\mathbb{R}', E: '\\mathbb{E}', Tr: '\\mathrm{T}', diag: '\\operatorname{diag}', sgn: '\\operatorname{sgn}', relu: '\\operatorname{relu}' } },
+  svg: { fontCache: 'global' },
+  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js" async></script>
+
 <style>
 :root {
   --paper:      #f7f4f7;
@@ -149,6 +159,10 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
 .plab { font-family: var(--f-mono); font-size: 0.72rem; color: var(--plum); margin-right: 0.45rem; font-weight: 500; }
 .h3num { font-family: var(--f-mono); font-size: 0.78rem; color: var(--muted); margin-right: 0.55rem; font-weight: 500; }
 .fig .panels { margin: 0.4rem 0 0.8rem; }
+.deriv { max-width: var(--measure); }
+.deriv p { margin: 0.5rem 0; }
+.deriv .lead { font-family: var(--f-mono, monospace); font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--plum); display: block; margin-top: 1.1rem; }
+mjx-container { overflow-x: auto; overflow-y: hidden; }
 </style>
 
 
@@ -206,9 +220,9 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         </table>
       </div>
       <p>
-        Read the DPA column down: the memory task is invariant under the whole group. Read the
-        &sigma;<sub>2</sub> row across: the inversion is a symmetry of the memory task and of the
-        initialization, and it forbids the geometry we want. The curriculum works because the rule stage
+        Read the DPA column down: DPA is invariant under the whole group. Read the
+        &sigma;<sub>2</sub> row across: the inversion is a symmetry of DPA and of the
+        initialization, and it forbids the geometry we want. The curriculum works because the GNG stage
         breaks it while the pairing symmetry survives. That survival is not an assumption. The pair exchange
         is a symmetry of all three objectives (the &sigma;<sub>1</sub> row), so nothing in training pushes
         against it; it can only drift, through the finite batch and the finite sample. The measurement in
@@ -267,7 +281,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
   <section>
     <p class="sec-no">&sect; 2 &middot; DPA</p>
     <div class="sec-body wide">
-      <h2>The memory task and the Klein four-group</h2>
+      <h2>DPA and the Klein four-group</h2>
       <p>
         Sample <i>s</i> &isin; {A, B}, a delay, test <i>t</i> &isin; {C, D}; lick if the pair matches
         (A with C, B with D). As a truth function, with A and C coded 0,
@@ -306,10 +320,30 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
       </p>
 
       <h3><span class="h3num">2.1</span>The scheme, and the whole story in one figure</h3>
-      <p>Put the A-odor well at (+<i>a</i>, <i>w</i>). Each element demands a partner, and the demand is the story: the B memory is the image of the A memory under the element (the derivations, &sect;12), so &sigma;<sub>1</sub> puts it at (&minus;<i>a</i>, <i>w</i>), at the same height, &sigma;<sub>2</sub> at (&minus;<i>a</i>, &minus;<i>w</i>), and &sigma;<sub>3</sub>, which fixes A, keeps the mean A trajectory on the &kappa;&#8320; axis. <a href="#fig-1">Figure 1</a> lays it out the way the rest of this note will be read: the group, the wells each tie predicts, and then the trained networks, free and tied, at the memory checkpoint and after the whole curriculum. The sections that follow supply the derivations behind each column and the population-level evidence. What the initialization contributes, and the transfer-function identity behind it, are in the supplement; the two facts used below are that the inversion is exact at initialization and that the other two elements hold there to a few percent.</p>
+      <p>Put the A-odor well at (+<i>a</i>, <i>w</i>). Each element demands a partner, and the demand is the story: the B memory is the image of the A memory under the element (the derivations, &sect;12), so &sigma;<sub>1</sub> puts it at (&minus;<i>a</i>, <i>w</i>), at the same height, &sigma;<sub>2</sub> at (&minus;<i>a</i>, &minus;<i>w</i>), and &sigma;<sub>3</sub>, which fixes A, keeps the mean A trajectory on the &kappa;&#8320; axis. <a href="#fig-1">Figure 1</a> is the theory: the task, its group, how the group acts on the plane and on the units, and what it predicts for the wells and the populations, tie by tie. <a href="#fig-2">Figure 2</a> is the same two rows in the simulations, the flow and the populations of the trained networks at the DPA checkpoint, free and under each tie. <a href="#fig-s11">Figure S11</a> continues the predictions at the level of the overlaps, the inputs against the modes, and the rest; <a href="#fig-6">Figure 6</a> shows the same networks after the whole curriculum. The sections that follow supply the derivations behind each column and the population-level evidence. What the initialization contributes, and the transfer-function identity behind it, are in the supplement; the two facts used below are that the inversion is exact at initialization and that the other two elements hold there to a few percent.</p>
       <figure class="fig" id="fig-1">
-        <div class="mat"><img src="{{FIG:dpa_summary}}" alt="The memory task: its symmetries, the predicted wells for each tie, and trained networks free and tied, at the memory checkpoint and after the whole curriculum"></div>
-        <figcaption><span class="fignum">Figure 1.</span> <b>The memory task: symmetries, predicted wells, and what free and tied networks do.</b> <b>Top row</b> The predicted wells for each column, as a scheme, written before the runs (the derivations, &sect;12): no constraint; a mirror pair at one common height under &sigma;<sub>1</sub>, the &kappa;&#8321; axis being exactly invariant; antipodes under &sigma;<sub>2</sub>, straddling the line or both on it, with no invariant axis and the cross-overlaps free, so a ring or a rotation is not excluded; the noise-averaged memory on the line under &sigma;<sub>3</sub>, the &kappa;&#8320; axis being exactly invariant, at positions that need not match between A and B (faint circles: the vertical pair each memory splits into if the axis is a saddle across &kappa;&#8321;; open circles: the pair any decision well brings); a pair pinned on the line under the whole group, or the quadruple (faint) by the same mechanism. The schemes fix the orbit structure and the invariant axes; the heights, the well count, and the choice between a pair and its split are the training's, not the theory's. <b>Middle row</b> The DPA checkpoint, tie held: seed 0's autonomous field with the attractors of the other seeds overlaid, the three residuals as medians, the attractor count per seed, and how many seeds have both memories below the line. Free (the eight seeds of the recipe): wells near the line, seed-dependent residuals. &sigma;<sub>1</sub>: a level pair just below the line in every seed, with a decision well above. &sigma;<sub>2</sub>: inversion residual 0.00, two attractors per seed, and the antipodal pair has chosen the line, (&plusmn;1, 0), the <i>w</i> = 0 case the scheme allows. &sigma;<sub>3</sub>: residual 0.00, the memory pair on the invariant &kappa;&#8320; axis and a vertical decision pair (0, &plusmn;1), four attractors in three seeds, as drawn. Whole group: the pair on the line, residuals 0.02&ndash;0.03. The &sigma;<sub>3</sub> and whole-group panels are alike for a reason: the &sigma;<sub>3</sub> pairing flips <i>n</i>&#8321;, so &lang;<i>n</i>&#8321;&rang; = 0 identically, and the characters set the cross-overlaps and the sample overlaps on the decision readout to zero; these are the quantities the free seeds move when they break the other two elements, and what &sigma;<sub>3</sub> leaves open, &lang;<i>n</i>&#8320;&rang; and an A/B asymmetry, nothing in the memory objective drives (the derivations, remark after Proposition 12.5). For the memory stage &sigma;<sub>3</sub> is the whole group in practice; the informative contrasts are &sigma;<sub>1</sub> and &sigma;<sub>2</sub> against it. <b>Bottom row</b> The same networks after GNG and Dual, tie released: the free curriculum ends with both memories below the line in 6 of 8, the &sigma;<sub>1</sub>-scaffolded one in 4 of 4, the whole-group one in 4 of 4; the inversion residual rises to 0.6&ndash;0.8 everywhere while the pair exchange stays at 0.16&ndash;0.29. The &sigma;<sub>2</sub> and &sigma;<sub>3</sub> curricula are still running and their bottom panels will be filled in when they finish.</figcaption>
+        <div class="mat"><img src="{{FIG:theory}}" alt="The Klein four-group of the DPA task, its actions, and its predictions per tie for the flow, the trial trajectories, the units and the overlaps"></div>
+        <figcaption><span class="fignum">Figure 1.</span> <b>The Klein four-group of DPA: the group, its actions, and the wells and populations it predicts.</b> <b>A</b> The task as a truth table, lick iff the pair matches, and the three relabelings that leave it unchanged: &sigma;<sub>1</sub> exchanges A with B and C with D, &sigma;<sub>2</sub> exchanges A with B and flips the response, &sigma;<sub>3</sub> exchanges C with D and flips the response; with the identity they form <i>V</i>, whose Cayley table is shown. The loss is invariant under every element, so training has no reason to prefer one. <b>B</b> How each element acts on the plane and, once tied, on the units: a permutation &rho; that copies or flips each mode, exchanges the swapped input columns and shares the bias; four blocks for the whole group; then the field is equivariant, exactly. <b>C</b> The autonomous flow: the attractor set is closed under the tie&rsquo;s action; the B memory is labeled as the image of A where an element provides one, and under &sigma;<sub>3</sub>, where none does, the two distances <i>a</i> and <i>a</i>&prime; are independent. <b>D</b> The units: <i>m</i> and <i>n</i> transform like the plane, so the populations are a union of orbits; a generic population and the images the tie demands, and the pair on the decision axis, which is its own image under &sigma;<sub>1</sub> and exchanged under &sigma;<sub>3</sub>.</figcaption>
+      </figure>
+      <figure class="fig" id="fig-2">
+        <div class="mat"><img src="{{FIG:sim_cd}}" alt="Simulations of rows C and D of Figure 1: the autonomous flow and the unit populations at the DPA checkpoint, free and under each tie"></div>
+        <figcaption><span class="fignum">Figure 2.</span> <b>Rows C and D of Figure 1 in the simulations, at the DPA checkpoint with the tie held.</b> Columns: the four ties, held during the DPA stage (the free recipe is in Figure 6 and the supplement). <b>Top row</b> Seed 0&rsquo;s input-noise-averaged autonomous field (attractors &#9675;, saddles &times;, repellers &#9651;) with the attractors of the other seeds overlaid in white, the three residuals as medians, the attractor count per seed, and how many seeds have both memories below the line. &sigma;<sub>1</sub>: a level pair just below the line in every seed with a decision well above. &sigma;<sub>2</sub>: residual 0.00, the antipodal pair on the line, the <i>w</i> = 0 case. &sigma;<sub>3</sub>: residual 0.00, the pair on the invariant &kappa;&#8320; axis and a vertical decision pair. Whole group: the pair on the line. <b>Bottom row</b> The (<i>m</i>&#8320;, <i>m</i>&#8321;) populations of one seed per column, colored by sign quadrant, the decision-axis units in gray, with the cross-overlaps in the title. Every column shows the six populations: the four-cluster lattice with the images its tie demands, exactly (&sigma;<sub>1</sub> mirror across <i>m</i>&#8321;, &sigma;<sub>2</sub> antipodes with the lattice tilted by the free cross-overlaps, &sigma;<sub>3</sub> mirror across <i>m</i>&#8320;, the whole group all three) and the axis pair, its own image under &sigma;<sub>1</sub>, exchanged under &sigma;<sub>3</sub>. Three things the schemes allow and the training did not use: under &sigma;<sub>2</sub> no seed puts the antipodal pair off the line (tilt at most 4&deg;, though the lattice tilts); under &sigma;<sub>3</sub> no seed makes <i>a</i> and <i>a</i>&prime; different (|<i>a</i>| &minus; |<i>a</i>&prime;| &le; 0.02); and neither &sigma;<sub>3</sub> nor the whole group produces the quadruple while the tie is held, the extra attractors being the decision pair on the &kappa;&#8321; axis. The quadruple appears only after release, in the whole-group seed 0 (&plusmn;1.05, +0.58), (&plusmn;1.0, &minus;0.57) and as the unoccupied upper pair of three &sigma;<sub>1</sub> seeds (Figure 6).</figcaption>
+      </figure>
+      <figure class="fig" id="fig-3">
+        <div class="mat"><img src="{{FIG:gng_theory}}" alt="The GNG stage: the go/nogo task, its relabeling tau, which elements of V survive GNG, and the predictions per element for the fields, the units, the GNG columns and the rest"></div>
+        <figcaption><span class="fignum">Figure 3.</span> <b>The GNG stage: one candidate relabeling, an objective that breaks it, and what each element of the DPA group predicts for GNG.</b> <b>A</b> The GNG task, go then cue then lick, nogo then cue then no lick, and its one relabeling &tau;, go with nogo and the response flipped. The objective we train is one-sided, go above +&theta; and nogo at or below zero, and &tau; maps the go cost onto a nogo cost that does not exist: the one-sided GNG is invariant under nothing, an explicit symmetry-breaking field; a two-sided GNG would be &tau;-invariant. The stage releases the memory tie, freezes the memory mode and the sample columns, and trains the decision mode, the bias and the GNG columns. <b>B</b> &tau; acts on the plane as &sigma;<sub>3</sub> and on the units by flipping the decision side and exchanging the go and nogo columns. The deafness lemma sorts the elements of <i>V</i>: &sigma;<sub>1</sub> keeps &kappa;&#8321; and fixes the GNG channels, so GNG cannot write on the memory readout (compatible, and it protects the memory); &sigma;<sub>2</sub> and &sigma;<sub>3</sub> flip &kappa;&#8321; and fix the GNG channels, so the decision readout cannot hear GNG at all (incompatible with any rule); &tau; is compatible with a two-sided GNG only. Columns from here on: &sigma;<sub>1</sub> kept, &tau; tied, &sigma;<sub>2</sub> or &sigma;<sub>3</sub> kept, and the free one-sided GNG. <b>C</b> The input-driven fields: under &sigma;<sub>1</sub> the go well and the nogo state sit on the &kappa;&#8321; axis and the memory pair is untouched; under &tau; the go-driven field is the mirror of the nogo-driven one; under a kept &sigma;<sub>2</sub> or &sigma;<sub>3</sub> the go-driven field is mirror-symmetric across the line and no lick can come from rest; under the free rule nothing pins either state to an axis. <b>D</b> What the stage can and cannot change under each element. <b>E</b> The images the lattice keeps in the GNG stage. Rows F and G, the GNG columns against the modes and the remaining predictions, are Figure S9.</figcaption>
+      </figure>
+      <figure class="fig" id="fig-4">
+        <div class="mat"><img src="{{FIG:gng_sim}}" alt="Rows C and D of Figure 3 in the simulations after the GNG stage: autonomous, go-driven and nogo-driven fields and the populations, for sigma1 kept, tau tied on GNG alone, sigma3 kept, and the free recipe"></div>
+        <figcaption><span class="fignum">Figure 4.</span> <b>Rows C and D of Figure 3 in the simulations, at the checkpoint after GNG.</b> Columns: &sigma;<sub>1</sub> tied in DPA and released for GNG; &tau; tied as diag(+1, &minus;1) on GNG alone with the two-sided objective (the &sect;5 networks); &sigma;<sub>3</sub> tied in DPA and released for GNG; the free recipe with the one-sided GNG. <b>Top row</b> The autonomous field after GNG, seed 0 with the attractors of the other seeds in white, the residual of the column&rsquo;s element as a median, and the attractor count per seed: the memory pair of the DPA stage is still there in every column (two attractors, plus a decision well in some seeds), and the released &sigma;<sub>3</sub> networks, which learned GNG from an exact zero of the go and nogo overlaps, keep a field with residual 0.19. Under &tau; the autonomous field is odd in &kappa;&#8321; and the memory is a pair on the &kappa;&#8321; axis, the whole-group solution of GNG alone. <b>Bottom row</b> The (<i>m</i>&#8320;, <i>m</i>&#8321;) populations of seed 0: the lattice of the DPA stage is intact in the curriculum columns, the GNG stage does not move the populations; under &tau; the lattice is exactly mirror-symmetric across <i>m</i>&#8320;.</figcaption>
+      </figure>
+      <figure class="fig" id="fig-5">
+        <div class="mat"><img src="{{FIG:dual_theory}}" alt="The Dual task: two bits in, two responses on one decision axis, the group it leaves under the two-sided and the one-sided objective, and the predictions per element for the flow, the populations and what the stage can change"></div>
+        <figcaption><span class="fignum">Figure 5.</span> <b>The Dual task: one decision axis for two responses, the group it leaves, and what the breaking field can do.</b> <b>A</b> The Dual trial and its two responses, lick iff go at the cue and lick iff the pair matches at the test. The abstract task inherits <i>V</i> from DPA and &tau; from GNG, but both responses are read from the same &kappa;&#8321;, so an element that flips &kappa;&#8321; must flip both responses: &sigma;<sub>3</sub> alone is deaf to GNG, &tau; alone is deaf to the test odors, and the consistent elements are &sigma;<sub>3</sub>&tau; and &sigma;<sub>2</sub>&tau;. A two-sided Dual has <i>V</i>&prime; = {e, &sigma;<sub>1</sub>, &sigma;<sub>2</sub>&tau;, &sigma;<sub>3</sub>&tau;}, the same plane actions as <i>V</i>; the real Dual, with the one-sided nogo and the no-lick cost, breaks every element with a minus sign on &kappa;&#8321;, leaving Z&#8322; = {e, &sigma;<sub>1</sub>}. <b>B</b> The surviving elements&rsquo; actions, what the stage trains, and what the breaking field can move: only &lang;<i>n</i>&rang; and the bias break the inversion, so with the bias frozen the Dual cost has one handle, &lang;<i>n</i>&#8321;&rang;. If &sigma;<sub>1</sub> holds, the two memory wells share a height and descend together or not at all. <b>C</b> The autonomous flow after Dual per element: a level pair pushed below the line together under &sigma;<sub>1</sub>; a pair that cannot leave the line under &sigma;<sub>3</sub>&tau;; an antipodal pair, one up and one down, under &sigma;<sub>2</sub>&tau;, which the no-lick cost forbids; and in the free Dual both below if &sigma;<sub>1</sub> survived the earlier stages, otherwise one up and one down. <b>D</b> The populations after Dual: which images survive and which readout mean is free to move. <b>E</b> What the stage can and cannot change under each element. The inputs against the modes and the remaining predictions are Figure S10.</figcaption>
+      </figure>
+      <figure class="fig" id="fig-6">
+        <div class="mat"><img src="{{FIG:dpa_summary}}" alt="DPA: its symmetries, the predicted wells for each tie, and trained networks free and tied, at the DPA checkpoint and after the whole curriculum"></div>
+        <figcaption><span class="fignum">Figure 6.</span> <b>The same networks after GNG and Dual, tie released.</b> Columns as in Figure 2; seed 0&rsquo;s autonomous field at the expert checkpoint with the attractors of the other seeds overlaid, the residuals as medians, the attractor count per seed, and how many seeds end with both memories below the line. The free curriculum ends with both memories below in 6 of 8 (8 of 8 when the same seeds are rerun with the bias frozen in Dual, &sect;4.3); every tied curriculum in 4 of 4. &sigma;<sub>1</sub> and the whole group keep a decision well above the line; &sigma;<sub>2</sub> and &sigma;<sub>3</sub> end with a single pair at (&plusmn;1, &minus;0.45) and nothing else, two attractors in every seed, and these are the networks that fail nogo in Dual (0.18&ndash;0.91 against 0.95&ndash;1.00). The &sigma;<sub>2</sub> and &sigma;<sub>3</sub> curricula ran with the bias frozen in Dual and the other two did not; the free recipe rerun with the bias frozen keeps nogo at 0.96&ndash;1.00, so the freeze alone is not the cause, and the scaffold-by-freeze comparison is still to be run. The inversion residual rises to 0.3&ndash;0.8 everywhere while the pair exchange stays at 0.16&ndash;0.29.</figcaption>
       </figure>
       <p>
         The counting form of the same statement is the one that can be checked on a flow field. Under
@@ -318,7 +352,39 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         has an even orbit, so the number is even and the set is symmetric about both axes.
       </p>
 
-      <h3><span class="h3num">2.2</span>Training under the constraint: &sigma;<sub>1</sub> alone, or the whole group</h3>
+      <h3><span class="h3num">2.2</span>The predictions of Figure 1, derived</h3>
+      <div class="deriv">
+        <p>Everything in Figures 1, 2 and S11 follows from one identity and the way it is read at each level. Proofs in full are in the companion; here each prediction is written as the equation it is.</p>
+        <span class="lead">the field and the tie</span>
+        <p>With \(r\) the rates, \(\kappa = n^{\Tr} r/N\) and the drive \(u(\kappa, x) = g\,(m\kappa + W_{\rm in}x + b)\), the reduced field is</p>
+        \[ F(\kappa; x) = \tfrac{1}{N}\, n^{\Tr}\varphi\big(u(\kappa,x)\big) - \kappa . \tag{2.1} \]
+        <p>A relabeling \(\sigma\) of the task is a channel permutation \(S_\sigma\) with a plane action \(D_\sigma\): \(D_1 = \diag(-1,+1)\) with \(S_1 = (A\,B)(C\,D)\); \(D_2 = -I\) with \(S_2 = (A\,B)\); \(D_3 = \diag(+1,-1)\) with \(S_3 = (C\,D)\). The network is tied to \(\sigma\) when a unit permutation \(\rho\) satisfies</p>
+        \[ \rho\, m = m D, \qquad \rho\, n = n D, \qquad \rho\, W_{\rm in} = W_{\rm in} S, \qquad \rho\, b = b . \tag{2.2} \]
+        <p>Substituting (2.2) into the drive gives \(\rho\,u(\kappa,x) = u(D\kappa, Sx)\); \(\varphi\) acts unit by unit, so \(\varphi(\rho u) = \rho\varphi(u)\); and \(n^{\Tr}\rho = (\rho^{\Tr} n)^{\Tr} = (nD)^{\Tr}\) because \(\rho\) is an involution. Hence, for every input and every state,</p>
+        \[ F(D\kappa;\, Sx) = D\,F(\kappa;\, x), \tag{2.3} \]
+        <p>and the same for the noise-averaged field, since channel noise has the same law after \(S\).</p>
+        <span class="lead">row C: the autonomous flow</span>
+        <p>Set \(x = 0\) in (2.3). If \(F(\kappa^\ast) = 0\) then \(F(D\kappa^\ast) = 0\), and differentiating (2.3) gives \(J(D\kappa) = D\,J(\kappa)\,D\), the same spectrum. So the attractor set is a union of orbits,</p>
+        \[ \mathcal A = D\mathcal A, \qquad |\text{orbit of } \kappa| = \frac{|G|}{|\text{Stab}(\kappa)|} \in \{4, 2, 1\}\ \text{under } V \text{ (generic, on an axis, the origin)}. \tag{2.4} \]
+        <p>Which attractor a stimulus selects is the trajectory statement: starting from rest, which \(\rho\) fixes, and with \(S\xi \sim \xi\), the noise-averaged trajectory of the relabeled protocol is the image of the original,</p>
+        \[ \bar\kappa_{Sx}(t) = D\,\bar\kappa_x(t), \qquad\text{so}\qquad \kappa_B = D\,\kappa_A . \tag{2.5} \]
+        <p>With \(\kappa_A = (a, w)\): under \(\sigma_1\), \(\kappa_B = (-a, w)\), the same height; under \(\sigma_2\), \(\kappa_B = (-a,-w)\); under \(\sigma_3\), which fixes A, \(\bar\kappa_A = D_3\bar\kappa_A\) forces \(\bar\kappa_{A,1}(t) \equiv 0\), so \(\kappa_A = (a, 0)\) and \(\kappa_B = (a', 0)\) with \(a'\) unrelated; under \(V\), \((\pm a, 0)\). A line fixed by \(D\) is invariant for every input fixed by \(S\): for \(\kappa \in \mathrm{Fix}(D)\) and \(Sx = x\), (2.3) reads \(F(\kappa;x) = D F(\kappa;x)\), so</p>
+        \[ \sigma_1:\ F_0(0,\kappa_1; x) = 0, \qquad \sigma_3:\ F_1(\kappa_0, 0; x) = 0, \qquad \sigma_2:\ F(0; x) = 0 \quad (x \text{ fixed by } S) . \tag{2.6} \]
+        <p>A memory on an invariant axis stays there in the mean; if \(\partial_1 F_1(a,0) > 0\) the trials split to \((a,\pm w)\), the quadruple. The height \(w\) under \(\sigma_1\) is not fixed by the group. For \(\varphi = c + \psi\) with \(\psi\) odd (lif: \(c = \tfrac12\)) the field's even part is</p>
+        \[ \Psi(\kappa) + \Psi(-\kappa) = 2c\,\langle n\rangle + \tfrac{1}{N}\textstyle\sum_i n_i\big[\psi(u_i + \beta_i) - \psi(u_i - \beta_i)\big], \qquad \beta_i = g b_i, \tag{2.7} \]
+        <p>and at a well \(F(a,w) = 0\) of a \(\sigma_1\)-tied network, \(F_1(a,-w) = [D_1 F(-a,-w)]_1 = 2E_1(a,w)\): the mirror across the line is a zero exactly when the even part vanishes, so \(\langle n_1\rangle\) and the bias are what move the pair off \(w = 0\). At rest, \(D J(0) D = J(0)\) forces \(J\) diagonal under \(\sigma_1\) or \(\sigma_3\) (the modes are eigendirections) and leaves it free under \(-I\), where a complex pair, a rotation, is allowed.</p>
+        <span class="lead">row D and Figure S11: the units</span>
+        <p>By (2.2) the unit \(\rho(i)\) has \((m_{\rho(i)}, n_{\rho(i)}) = (m_i D, n_i D)\): the ensemble in the \((m_0, m_1)\) plane is a union of the same orbits as (2.4), so any set of populations has size</p>
+        \[ 4a + 2b + c, \quad c \le 1 \ \text{(the origin)}, \qquad p(\theta) = \textstyle\sum_{j} a_{2j}\cos 2j\theta \ \text{for the density of units on the circle,} \tag{2.8} \]
+        <p>the sines killed by the reflections and the odd orders by the inversion. Write \(\chi_j(\sigma) = \pm 1\) for the sign \(D_\sigma\) puts on mode \(j\), and pair unit \(i\) with \(i' = \rho(i)\). Relabeling the sum over units,</p>
+        \[ n_j^{\Tr} w_c = \textstyle\sum_i n_{j,i'}\, w_{c,i'} = \chi_j(\sigma)\, n_j^{\Tr} w_{S c}, \qquad n_j^{\Tr} m_k = \chi_j(\sigma)\chi_k(\sigma)\, n_j^{\Tr} m_k . \tag{2.9} \]
+        <p>So an input column fixed by \(S\) has zero overlap with every flipped mode; a swapped column has the overlap of its partner, equal or opposite; and the cross-overlaps \(J_{01}, J_{10}\) vanish whenever the two modes carry different signs, which is under \(\sigma_1\), \(\sigma_3\) and \(V\) but not under \(-I\). The same holds with \(m\) in place of \(n\), and it extends to combinations: with the characters (order \(\sigma_1, \sigma_3, \sigma_2\))</p>
+        \[ \chi(m_0, n_0) = (-,+,-),\quad \chi(m_1, n_1) = (+,-,-),\quad \chi(w_A - w_B) = (-,+,-),\quad \chi(w_C - w_D) = (-,-,+),\quad \chi(w_A + w_B) = \chi(w_{\rm go}) = \chi(b) = (+,+,+), \tag{2.10} \]
+        <p>an overlap \(\langle\text{mode}, \text{input}\rangle\) is forced to zero as soon as the two characters differ on a tied element. The test contrast has the one character no mode carries, so under \(V\) it is orthogonal to \(m_0, n_0, m_1, n_1\): the pairing can only be computed by gain modulation. In a scatter of \(m_j\) against a combination \(u\), a tied element maps the cloud to \((\chi_j x, \chi_u y)\): an antipode when the signs agree, which keeps the correlation, a mirror when they differ, which kills it (Figure S11).</p>
+        <span class="lead">what training preserves</span>
+        <p>The loss is invariant, \(L(\rho\cdot\theta) = L(\theta)\), so its gradient is equivariant, \(\nabla L(\rho\cdot\theta) = \rho\cdot\nabla L(\theta)\), and the subspace (2.2) is invariant under gradient flow; Adam is coordinatewise and \(\rho\) permutes coordinates with signs, so it is invariant under Adam too, and the projection after every step makes it exact at finite precision. A free network starts on the subspace only approximately (the initialization is exactly \(\sigma_2\)-symmetric and \(V\)-symmetric to \(O(N^{-1/2})\)) and leaves it in a direction seeded by finite \(N\).</p>
+      </div>
+      <h3><span class="h3num">2.3</span>Training under the constraint: &sigma;<sub>1</sub> alone, or the whole group</h3>
       <div class="call kep">
         <span class="tag">What &ldquo;tying&rdquo; means</span>
         <p>
@@ -346,17 +412,17 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
       <p>
         Eight networks on the same base (&lambda; = 7, &rho; = 1, the final recipe, no term on
         &kappa;&#8321; in the DPA loss), four seeds with &sigma;<sub>1</sub> tied and four with the whole
-        group, the constraint held only during the memory stage (the middle row of <a href="#fig-1">Figure 1</a>, every seed in <a href="#fig-s7">Figure S7</a>; the attractor sets are listed in the table
+        group, the constraint held only during the DPA stage (the middle row of <a href="#fig-6">Figure 6</a>, every seed in <a href="#fig-s7">Figure S7</a>; the attractor sets are listed in the table
         that follows).
       </p>
       <p>
         One more thing to know before reading the flows. The initialization gives the decision mode the same
-        overlap as the memory mode, &lambda; = 7 on both, and the memory task leaves it there (J&#8321;&#8321;
+        overlap as the memory mode, &lambda; = 7 on both, and DPA leaves it there (J&#8321;&#8321;
         = 6.3&ndash;6.8 after DPA). That is above the critical overlap, so the decision mode is bistable on its
         own: the autonomous field has attractors on the &kappa;&#8321; axis, at (0, &plusmn;1.1&ndash;1.3), a
         state with no memory and a fixed decision. Call them the <em>decision wells</em>. No DPA trial visits
         them and they are not the memory, but they are fixed points, so the group counts them: they are the
-        extra attractors of Figure 1 and of the table.
+        extra attractors of Figure 6 and of the table.
       </p>
       <div class="tbl-scroll">
         <table>
@@ -387,14 +453,14 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         Both predictions come out as written: the whole group pins the pair on the line, an order of magnitude
         closer than &sigma;<sub>1</sub> leaves it, and odd counts appear only under &sigma;<sub>1</sub>.
         Nothing in the objective mentions &kappa;&#8321;, so the residual &minus;0.3 &eta; on the left is
-        the memory task itself expressing a mild preference for sitting low, a preference the whole group is
+        DPA itself expressing a mild preference for sitting low, a preference the whole group is
         strong enough to forbid. The last two chips are a confession: the projection used in these runs tied
         <i>m</i>, <i>n</i> and <i>W</i><sub>in</sub> but not the bias, so the low-rank structure is exact
         while the field carries a few-percent residual from <i>b</i>. The projection now ties the bias as
         well, and with it the field equivariance is exact to machine precision.
       </p>
 
-      <h3><span class="h3num">2.3</span>&hellip; and at the level of <i>m</i> and <i>n</i></h3>
+      <h3><span class="h3num">2.4</span>&hellip; and at the level of <i>m</i> and <i>n</i></h3>
       <p>
         A network that realizes <i>V</i> has its units in four blocks indexed by two bits (<i>a</i>, <i>b</i>),
         the memory mode carrying one parity and the decision mode the other:
@@ -403,11 +469,24 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         <span class="eq-row"><i>m</i>&#8320; = (&minus;1)<sup><i>a</i></sup>&mu;&#8320;, &nbsp; <i>n</i>&#8320; = (&minus;1)<sup><i>a</i></sup>&nu;&#8320; &nbsp;&nbsp;|&nbsp;&nbsp; <i>m</i>&#8321; = (&minus;1)<sup><i>b</i></sup>&mu;&#8321;, &nbsp; <i>n</i>&#8321; = (&minus;1)<sup><i>b</i></sup>&nu;&#8321;</span>
         <span class="note">within a block <i>m</i>&#8320; and <i>n</i>&#8320; share a sign and so do <i>m</i>&#8321; and <i>n</i>&#8321;; the two parities are independent. The cross-overlap <i>n</i>&#8320;<sup>T</sup><i>m</i>&#8321; sums (&minus;1)<sup><i>a</i>+<i>b</i></sup> over the four blocks and vanishes identically.</span>
       </div>
-      <p><a href="#fig-2">Figure 2</a> shows the lattice for each condition, with the images each tie predicts drawn beside the measured clouds.</p>
-      <figure class="fig" id="fig-2">
-        <div class="mat"><img src="{{FIG:mn_grid_dpa}}" alt="Predicted cluster lattice and three scatters of the low-rank vectors per condition at the DPA checkpoint"></div>
-        <figcaption><span class="fignum">Figure 2.</span> <b>The low-rank vectors at the DPA checkpoint, one row per condition.</b> First column: the cluster lattice each tie predicts in the (<i>m</i>&#8320;, <i>m</i>&#8321;) plane, a generic cluster with the images the group element demands: a mirror image across the <i>m</i>&#8321; axis under &sigma;<sub>1</sub>, an antipode under &sigma;<sub>2</sub>, a mirror image across the <i>m</i>&#8320; axis under &sigma;<sub>3</sub>, all three under the whole group. Then, for one seed, the three scatters that carry the argument: <i>m</i>&#8320; against <i>m</i>&#8321;, which shows the lattice, and the two same-mode panels, <i>m</i>&#8320; against <i>n</i>&#8320; and <i>m</i>&#8321; against <i>n</i>&#8321;, which show that write and read vectors share a sign within a mode. Points are colored by the sign quadrant of (<i>m</i>&#8320;, <i>m</i>&#8321;), so a tie's prediction reads as which colors mirror which. Every trained network has <em>six</em> populations, not four: the four lattice clusters at (&plusmn;2.5, &plusmn;1.2), about 200 units each, and a pair on the m&#8321; axis at (0, &plusmn;4.5), about 50 units each, with m&#8320; &asymp; 0 and the largest decision loadings in the network; these are the units of the decision wells, and the schemes draw them in gray. They are made by training, not inherited: the initialization is one isotropic Gaussian, and a unit's final position is uncorrelated with its initial one (<i>r</i> &asymp; 0). The free network (top, seed 1, the one tabulated below) shows the lattice with unequal magnitudes. The &sigma;<sub>1</sub> network is exactly mirror-symmetric across the m&#8321; axis, each axis cluster its own image. The &sigma;<sub>2</sub> network is exactly antipodal but its lattice has lost its right angles: the free cross-overlaps tilt it (J&#8321;&#8320; = &minus;0.35 in this seed, up to &minus;0.95 in another) and the clusters trail along the tilt. The &sigma;<sub>3</sub> network is exactly mirror-symmetric across the m&#8320; axis, the axis clusters exchanged; this seed's lattice is sharp, and in its other three seeds the memory clusters split only weakly along m&#8321;. The whole-group network is exactly symmetric under all three, with the cross-overlaps at 0.000.</figcaption>
+      <p>
+        Before the measurements, what the group predicts for the units themselves, and what it leaves open
+        (<a href="#fig-7">Figure 7</a>). The ensemble transforms exactly as the plane does, &rho;<i>m</i> = <i>m D</i>,
+        so the orbit table written for fixed points applies verbatim to units in the (<i>m</i>&#8320;, <i>m</i>&#8321;)
+        plane: a generic point has four images, a point on an axis two, the origin one. Any population structure
+        must be a union of such orbits, so the number of populations is 4<i>a</i> + 2<i>b</i> + <i>c</i> with at most
+        one population at the origin; without one, the count is even, and four and six are equally allowed. The
+        density of units on the circle can carry only the harmonics cos 2<i>j</i>&theta;: reflection kills the sines,
+        inversion the odd orders. What the group cannot say is whether there are populations at all (an isotropic
+        cloud is invariant too, and it is the initialization), how many generic orbits, which axis carries a pair,
+        or anything that distinguishes <i>m</i> from <i>n</i>, which transform identically. Those are questions for the
+        task and the nonlinearity.
+      </p>
+      <figure class="fig" id="fig-7">
+        <div class="mat"><img src="{{FIG:group_predictions}}" alt="The orbit types of V in the unit plane, the allowed population counts, the allowed angular harmonics, and the whole-group, free and initial ensembles"></div>
+        <figcaption><span class="fignum">Figure 7.</span> <b>What the group predicts for the unit ensemble, and what it leaves open.</b> <b>A</b> The orbit types of <i>V</i> in the (<i>m</i>&#8320;, <i>m</i>&#8321;) plane: a generic orbit of four, the two axis orbits of two, the origin. <b>B</b> The population counts they allow, 4<i>a</i> + 2<i>b</i> + <i>c</i>: odd counts need an untuned population at the origin; four is a quadruple or two axis pairs, six a quadruple and an axis pair. <b>C</b> The angular density of units may contain cos 2<i>j</i>&theta; only; cos 2&theta; elongates the cloud along an axis, cos 4&theta; splits it four ways. <b>D</b> A whole-group network at the DPA checkpoint, colored by orbit: one generic orbit (872 units) and one axis pair (92), harmonics <i>a</i>&#8322; = +0.72, <i>a</i>&#8324; = &minus;0.24, every forbidden coefficient 0.00; the inset is the angular histogram. <b>E</b> A free network: the same decomposition to within the residual, forbidden coefficients &le; 0.06. <b>F</b> The initialization of the network in D: invariant under the group, one isotropic population, all harmonics zero. The group fixes the orbit types a population structure may have; the task and the nonlinearity choose which are occupied, and on which side of the unit.</figcaption>
       </figure>
+      <p><a href="#fig-s12">Figure S12</a> shows the lattice for each condition, with the images each tie predicts drawn beside the measured clouds; <a href="#fig-s13">Figure S13</a> repeats it for the read vectors.</p>
       <p>
         The constraint is a statement about individual units, so it can also be checked one unit at a time,
         by comparing each image unit with the value the group element predicts for it; that check, exact to
@@ -415,10 +494,10 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
       </p>
       
 
-      <h3><span class="h3num">2.4</span>The free network</h3>
+      <h3><span class="h3num">2.5</span>The free network</h3>
       <p>
-        Now the same measurement on a network trained on the memory task with no constraint at all, the top
-        row of <a href="#fig-2">Figure 2</a>. The objective is invariant under the whole group; the solution
+        Now the same measurement on a network trained on DPA with no constraint at all, the top
+        row of <a href="#fig-s12">Figure S12</a>. The objective is invariant under the whole group; the solution
         need not be.
       </p>
       
@@ -433,7 +512,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
           </tbody>
         </table>
       </div>
-      <p>The mixture above was asked for four components. Left to choose its own count it finds six: the four of the table and the pair on the decision axis, (0, &plusmn;4.5) in (<i>m</i>&#8320;, <i>m</i>&#8321;), about 50 units each, with <i>n</i>&#8321; following <i>m</i>&#8321; at &plusmn;4 to &plusmn;5 and no memory loading. They are the population behind the decision wells of Figure 1. Under the whole group they are one orbit of size two, (0, &plusmn;<i>w</i>); under &sigma;<sub>1</sub> each is its own image.</p>
+      <p>The mixture above was asked for four components. Left to choose its own count it finds six: the four of the table and the pair on the decision axis, (0, &plusmn;4.5) in (<i>m</i>&#8320;, <i>m</i>&#8321;), about 50 units each, with <i>n</i>&#8321; following <i>m</i>&#8321; at &plusmn;4 to &plusmn;5 and no memory loading. They are the population behind the decision wells of Figure 6. Under the whole group they are one orbit of size two, (0, &plusmn;<i>w</i>); under &sigma;<sub>1</sub> each is its own image.</p>
       <div class="call kep">
         <span class="tag">What the six populations are</span>
         <p>
@@ -447,7 +526,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
           largest decision loading in the network, <i>m</i>&#8321; &asymp; <i>n</i>&#8321; &asymp; &plusmn;4.5. These units
           read &kappa;&#8321; and write &kappa;&#8321; and nothing else, a pure self-excitation on the decision axis that
           supplies about half of J&#8321;&#8321; &asymp; 6.5 with a tenth of the units; they are why the decision wells
-          exist and why the memory stage leaves them alone.
+          exist and why the DPA stage leaves them alone.
         </p>
         <p>
           The group would allow a second special orbit, on the fixed line of &sigma;<sub>3</sub>: pure memory units at
@@ -474,7 +553,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
       <div class="call kep">
         <span class="tag">The DPA result</span>
         <p>
-          <strong>The memory task is invariant under the Klein four-group, and a network trained on it
+          <strong>DPA is invariant under the Klein four-group, and a network trained on it
           starts out equivariant under it.</strong> Held to the group, the network keeps its two memory wells
           on the lick line and its four unit populations in an exact sign lattice, with the cross-overlap
           between memory and decision identically zero. Left free, it keeps the lattice as a trend, its wells
@@ -489,14 +568,15 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
   <section>
     <p class="sec-no">&sect; 3 &middot; GNG</p>
     <div class="sec-body wide">
-      <h2>The rule task adds one symmetry and breaks two</h2>
+      <h2>The GNG task adds one symmetry and breaks two</h2>
       <p>
-        The rule stage introduces stimuli the memory group never saw, go and nogo, and with them a new
-        candidate symmetry &tau;: exchange go with nogo and invert the response. On the &kappa;-plane &tau;
+        The GNG stage introduces stimuli the DPA group never saw, go and nogo, and with them a new
+        candidate symmetry &tau;: exchange go with nogo and invert the response (<a href="#fig-3">Figure 3</a> lays out the
+        GNG stage the way Figure 1 lays out the DPA stage). On the &kappa;-plane &tau;
         acts as (+&kappa;&#8320;, &minus;&kappa;&#8321;), the same action as &sigma;<sub>3</sub>.
       </p>
       <p>
-        But &tau; is a symmetry of the abstract rule, not of the objective we train. Go must drive
+        But &tau; is a symmetry of the abstract GNG rule, not of the objective we train. Go must drive
         &kappa;&#8321; above a positive threshold; nogo only has to keep it at or below zero, a one-sided
         cost with no counterpart above. The asymmetry is deliberate, it reflects the asymmetry of the animal's
         errors, and in the language of physics it is an <strong>explicit symmetry-breaking field</strong>
@@ -506,7 +586,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         <span class="tag">What breaks, and why</span>
         <p>
           Every element whose action carries a minus sign on &kappa;&#8321;, which is &sigma;<sub>2</sub>,
-          &sigma;<sub>3</sub> and &tau;, is incompatible with the rule stage. &sigma;<sub>1</sub>, which leaves
+          &sigma;<sub>3</sub> and &tau;, is incompatible with the GNG stage. &sigma;<sub>1</sub>, which leaves
           &kappa;&#8321; alone and does not touch the go, nogo and cue channels, is untouched. The reason is
           sharper than the one-sided cost: <em>a network equivariant under any of those three cannot hear the
           rule at all.</em>
@@ -519,11 +599,11 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
       </p>
       <div class="eq">
         <span class="eq-row"><i>n</i>&#8321;<sup>T</sup><i>w</i><sub>go</sub> = &Sigma;<sub>pairs</sub> (&nu;&#8321; &minus; &nu;&#8321;) <i>w</i><sub>go</sub> = 0, &nbsp; and likewise for nogo and the cue</span>
-        <span class="note">the same holds under &sigma;<sub>2</sub>. Under &sigma;<sub>1</sub> it is <i>n</i>&#8320; that flips, so the rule stimuli have zero overlap with the memory readout instead, which is what one wants.</span>
+        <span class="note">the same holds under &sigma;<sub>2</sub>. Under &sigma;<sub>1</sub> it is <i>n</i>&#8320; that flips, so the GNG stimuli have zero overlap with the memory readout instead, which is what one wants.</span>
       </div>
       <p>
         So the go and nogo inputs have no first-order projection onto the decision axis while
-        &sigma;<sub>3</sub> holds. To learn the rule the network must break it, and the measurement below shows
+        &sigma;<sub>3</sub> holds. To learn GNG the network must break it, and the measurement below shows
         it doing so, from an exact zero.
       </p>
       <div class="tbl-scroll">
@@ -537,15 +617,32 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         </table>
       </div>
 
-      <h3><span class="h3num">3.1</span>Which parameters carry the break</h3>
+      <h3><span class="h3num">3.1</span>The predictions of Figure 3, derived</h3>
+      <div class="deriv">
+        <span class="lead">the relabeling and the objective</span>
+        <p>GNG has one relabeling, \(\tau\): go \(\leftrightarrow\) nogo with the response flipped, \(D_\tau = \diag(+1,-1)\), \(S_\tau = (\text{go}\ \text{nogo})\), the cue fixed. With \(\theta\) the lick threshold and the response window \(R\), the objective we train and its two-sided counterpart are</p>
+        \[ L_{\rm GNG} = \sum_{\rm go}\sum_{t\in R}\relu(\theta - \kappa_1)^2 + \sum_{\rm nogo}\sum_{t\in R}\relu(\kappa_1)^2, \qquad L_{2} = \sum_{\rm go}\sum_{t\in R}\relu(\theta - \kappa_1)^2 + \sum_{\rm nogo}\sum_{t\in R}\relu(\theta + \kappa_1)^2 . \tag{3.1} \]
+        <p>Under \(\tau\), \(\kappa_1 \to -\kappa_1\) and the trial labels swap: \(L_2\) is mapped onto itself, \(L_{\rm GNG}\) onto \(\sum_{\rm nogo}\relu(\theta+\kappa_1)^2 + \sum_{\rm go}\relu(-\kappa_1)^2 \ne L_{\rm GNG}\). The one-sided rule is invariant under nothing; its asymmetry is an explicit symmetry-breaking field, and its sign is set: the go cost pulls \(\kappa_1\) up on go trials and the nogo cost pushes it down, with no counterpart above.</p>
+        <span class="lead">row B: which elements of V survive, the deafness lemma</span>
+        <p>Apply (2.9) to a channel the element fixes. For any \(\sigma\) with \(\chi_1(\sigma) = -1\) and \(S_\sigma\,\text{go} = \text{go}\),</p>
+        \[ n_1^{\Tr} w_{\rm go} = \chi_1(\sigma)\, n_1^{\Tr} w_{\rm go} = -\,n_1^{\Tr} w_{\rm go} \;\Rightarrow\; n_1^{\Tr} w_{\rm go} = n_1^{\Tr} w_{\rm nogo} = n_1^{\Tr} w_{\rm cue} = 0, \tag{3.2} \]
+        <p>and by (2.6) the go-driven field is mirror-symmetric across the line, \(F(D_3\kappa;\,\text{go}) = D_3 F(\kappa;\,\text{go})\), so from rest a go pulse cannot produce a lick: \(\sigma_2\) and \(\sigma_3\) are incompatible with any rule and the GNG stage must break them, from an exact zero of (3.2). For \(\sigma_1\), \(\chi_0 = -1\) and \(\chi_1 = +1\), so the same relabeling gives</p>
+        \[ n_0^{\Tr} w_{\rm go} = n_0^{\Tr} w_{\rm nogo} = n_0^{\Tr} w_{\rm cue} = 0 : \tag{3.3} \]
+        <p>the GNG inputs cannot write on the memory readout at first order; \(\sigma_1\) constrains nothing the rule needs and protects the memory. Under \(\tau\) itself, \(n_1^{\Tr} w_{\rm go} = -\,n_1^{\Tr} w_{\rm nogo}\) and \(n_0^{\Tr} w_{\rm go} = n_0^{\Tr} w_{\rm nogo}\): compatible with \(L_2\) and not with \(L_{\rm GNG}\).</p>
+        <span class="lead">rows C–E: what the stage can change</span>
+        <p>The GNG stage freezes \(m_0, n_0\) and the sample columns and trains \(m_1, n_1, b\) and the go, nogo and cue columns. The autonomous field (2.1) at \(x = 0\) depends on the trained parameters only through \(m_1, n_1\) and \(b\), and the go-driven field only adds \(W_{\rm in}\,e_{\rm go}\) to the drive. Under \(\sigma_1\) the invariant line (2.6) holds for every GNG input, so the go well and the nogo state sit on the \(\kappa_1\) axis, \(F_0(0,\kappa_1;\,\text{go}) = 0\); under \(\tau\) tied, (2.3) with \(S_\tau\) gives</p>
+        \[ F(D_3\kappa;\,\text{go}) = D_3\,F(\kappa;\,\text{nogo}), \qquad \bar\kappa_{\rm nogo}(t) = D_3\,\bar\kappa_{\rm go}(t), \tag{3.4} \]
+        <p>the go-driven field is the mirror of the nogo-driven field and the nogo trajectory the mirror of the go trajectory. The prediction that the break lands in the input columns first is (3.2) read as a gradient: the overlaps \(n_1^{\Tr}w_{\rm go}, n_1^{\Tr}w_{\rm nogo}\) start at exactly zero and grow, while the residual of the autonomous field can rise only through \(b\) and \(\langle n_1\rangle\), by (2.7).</p>
+      </div>
+      <h3><span class="h3num">3.2</span>Which parameters carry the break</h3>
       <p>
-        The rule stage freezes the memory mode and the memory input columns. What is free is the decision
-        mode, the bias, and the go, nogo and cue columns, and the table above shows where the rule goes: into
+        The GNG stage freezes the memory mode and the memory input columns. What is free is the decision
+        mode, the bias, and the go, nogo and cue columns, and the table above shows where GNG goes: into
         the input columns, which the autonomous field never sees. This is why the field itself barely
-        changes during the rule stage. Its inversion residual in the free networks moves from 0.11&ndash;0.95
+        changes during the GNG stage. Its inversion residual in the free networks moves from 0.11&ndash;0.95
         after DPA to 0.14&ndash;0.90 after GNG, and in the released networks from 0.02&ndash;0.05 to
         0.07&ndash;0.13. The memory wells stay where they were, on the line. Nothing in a go or nogo trial
-        visits a memory well, so nothing in the rule objective prices the height of one. That has to wait for
+        visits a memory well, so nothing in GNG objective prices the height of one. That has to wait for
         a trial in which the memory and the lick cost meet, which is the Dual stage.
       </p>
       <p>
@@ -555,21 +652,21 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         the same leak in several seeds.
       </p>
 
-      <h3><span class="h3num">3.2</span>What the rule stage does to the inputs</h3>
+      <h3><span class="h3num">3.3</span>What the GNG stage does to the inputs</h3>
       <p>
         The third equivariance condition is a statement about which input may correlate with which readout,
-        and both sides are vectors that can be read off the trained network directly (<a href="#fig-3">Figure 3</a>).
+        and both sides are vectors that can be read off the trained network directly (<a href="#fig-8">Figure 8</a>).
       </p>
-      <figure class="fig" id="fig-3">
+      <figure class="fig" id="fig-8">
         <div class="mat"><img src="{{FIG:n_input}}" alt="Scatter of the low-rank vectors against each input weight column"></div>
-        <figcaption><span class="fignum">Figure 3.</span> <b>Where each stimulus writes, after the rule stage</b> (<code>s1_gngscan_7</code>, the GNG checkpoint of the target network). Rows are the low-rank vectors, columns the input weight for each channel, Pearson <i>r</i> in each panel. The sample odors load almost entirely on the memory readout and are blind to the lick readout: <i>r</i> = +0.86 and &minus;0.84 on <i>n</i>&#8320; against &minus;0.01 and +0.02 on <i>n</i>&#8321;. That is why a sample can be stored without touching the decision. The rule stimuli do the opposite, +0.36 for go and &minus;0.46 for nogo on <i>n</i>&#8321;, weakly and not quite orthogonally: the residual +0.23 of nogo on <i>n</i>&#8320; is the leak that a tied network sets to zero. The test odors are orthogonal on average, |<i>r</i>| &le; 0.08, yet split <em>within</em> each population, the signature of a conjunction rather than an additive drive.</figcaption>
+        <figcaption><span class="fignum">Figure 8.</span> <b>Where each stimulus writes, after the GNG stage</b> (<code>s1_gngscan_7</code>, the GNG checkpoint of the target network). Rows are the low-rank vectors, columns the input weight for each channel, Pearson <i>r</i> in each panel. The sample odors load almost entirely on the memory readout and are blind to the lick readout: <i>r</i> = +0.86 and &minus;0.84 on <i>n</i>&#8320; against &minus;0.01 and +0.02 on <i>n</i>&#8321;. That is why a sample can be stored without touching the decision. The GNG stimuli do the opposite, +0.36 for go and &minus;0.46 for nogo on <i>n</i>&#8321;, weakly and not quite orthogonally: the residual +0.23 of nogo on <i>n</i>&#8320; is the leak that a tied network sets to zero. The test odors are orthogonal on average, |<i>r</i>| &le; 0.08, yet split <em>within</em> each population, the signature of a conjunction rather than an additive drive.</figcaption>
       </figure>
       <p>
-        Two further observations from the rule stage, on the &lambda; scan rather than the recipe. If the
+        Two further observations from the GNG stage, on the &lambda; scan rather than the recipe. If the
         rule is stored as a &kappa;&#8321; memory, with a hold during the delay, the field grows a second
         attractor pair on the decision axis, at (0, &plusmn;1), alongside the memory pair at (&plusmn;1, 0):
-        four wells on two axes, for two different reasons. If the rule is carried as a transient, with no hold,
-        the memory pair survives untouched and the rule never becomes an attractor. The final recipe uses the
+        four wells on two axes, for two different reasons. If GNG is carried as a transient, with no hold,
+        the memory pair survives untouched and GNG never becomes an attractor. The final recipe uses the
         second.
       </p>
     </div>
@@ -581,14 +678,17 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
     <div class="sec-body wide">
       <h2>What the solution of the dual task is</h2>
       <p>
+        <a href="#fig-5">Figure 5</a> lays out the Dual task the way Figures 1 and 3 lay out DPA and GNG: two responses read from one decision axis leave a single symmetry, &sigma;<sub>1</sub>, and turn the no-lick cost into a downward breaking field.
+      </p>
+      <p>
         The dual task interleaves both, with a response cue. In group terms the solution is short to state:
-        keep the pair exchange, lose the rest. The ledger of <a href="#fig-4">Figure 4</a> is the whole curriculum in one figure, the
+        keep the pair exchange, lose the rest. The ledger of <a href="#fig-9">Figure 9</a> is the whole curriculum in one figure, the
         equivariance residual of the autonomous field for each element at each checkpoint, for every network in
         this note.
       </p>
-      <figure class="fig" id="fig-4">
+      <figure class="fig" id="fig-9">
         <div class="mat"><img src="{{FIG:sym_ledger}}" alt="Equivariance residual of the field for each group element across the four checkpoints"></div>
-        <figcaption><span class="fignum">Figure 4.</span> <b>The symmetry ledger.</b> Rows are the three group elements, columns the three curricula; each panel is the equivariance residual &Vert;<i>F</i>(<i>D</i>&kappa;) &minus; <i>D F</i>(&kappa;)&Vert; &frasl; &Vert;<i>F</i>&Vert; of the autonomous field over the disk |&kappa;| &le; 1.5, one thin line per network and a thick line for the median, at initialization and after each stage. Free curriculum, eight seeds, gray, with the two seeds that end one-up-one-down dashed in ember; &sigma;<sub>1</sub> tied through DPA then released, teal, four seeds; whole group tied through DPA then released, plum, four seeds. Read down the first column: the free networks break every element already during DPA, by an amount that differs from seed to seed. Read across the middle row: the inversion starts at zero wherever the initialization allows it, stays there under the whole-group tie, and is broken hard by the Dual stage in every curriculum. Read the top row against the middle one: the pair exchange only drifts, to 0.16&ndash;0.30, while the inversion goes to 0.6&ndash;0.8. The &sigma;<sub>1</sub>-tied initialization is not inversion-symmetric to begin with, because copying half the units leaves the decision readout with a nonzero mean.</figcaption>
+        <figcaption><span class="fignum">Figure 9.</span> <b>The symmetry ledger.</b> Rows are the three group elements, columns the three curricula; each panel is the equivariance residual &Vert;<i>F</i>(<i>D</i>&kappa;) &minus; <i>D F</i>(&kappa;)&Vert; &frasl; &Vert;<i>F</i>&Vert; of the autonomous field over the disk |&kappa;| &le; 1.5, one thin line per network and a thick line for the median, at initialization and after each stage. Free curriculum, eight seeds, gray, with the two seeds that end one-up-one-down dashed in ember; &sigma;<sub>1</sub> tied through DPA then released, teal, four seeds; whole group tied through DPA then released, plum, four seeds. Read down the first column: the free networks break every element already during DPA, by an amount that differs from seed to seed. Read across the middle row: the inversion starts at zero wherever the initialization allows it, stays there under the whole-group tie, and is broken hard by the Dual stage in every curriculum. Read the top row against the middle one: the pair exchange only drifts, to 0.16&ndash;0.30, while the inversion goes to 0.6&ndash;0.8. The &sigma;<sub>1</sub>-tied initialization is not inversion-symmetric to begin with, because copying half the units leaves the decision readout with a nonzero mean.</figcaption>
       </figure>
       <div class="tbl-scroll">
         <table>
@@ -613,8 +713,25 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         </table>
       </div>
 
-      <h3><span class="h3num">4.1</span>The flow, across the three stages</h3>
-      <figure class="fig" id="fig-5">
+      <h3><span class="h3num">4.1</span>The predictions of Figure 5, derived</h3>
+      <div class="deriv">
+        <span class="lead">two responses on one axis</span>
+        <p>The Dual trial reads both responses from \(\kappa_1\): \(r_{\rm GNG} = \sgn\kappa_1\) in the cue window and \(r_{\rm DPA} = \sgn\kappa_1\) in the test window. An element with \(\chi_1 = -1\) flips both, so to leave the task unchanged it must relabel both pairs of stimuli: \(\sigma_3\) alone (C \(\leftrightarrow\) D, go and nogo fixed) is ruled out by (3.2), and \(\tau\) alone (go \(\leftrightarrow\) nogo, C and D fixed) by the same argument with the test odors, \(n_1^{\Tr} w_C = n_1^{\Tr} w_D = 0\). The consistent elements are</p>
+        \[ \sigma_1 = (D_1,\ (A\,B)(C\,D)),\qquad \sigma_3\tau = (D_3,\ (C\,D)(\text{go}\ \text{nogo})),\qquad \sigma_2\tau = (-I,\ (A\,B)(\text{go}\ \text{nogo})), \tag{4.1} \]
+        <p>which with the identity form \(V' \cong V\), the group of a two-sided Dual (nogo \(\to -\theta\), nonmatch \(\to -\theta\)), with the same plane actions as \(V\).</p>
+        <span class="lead">the breaking field</span>
+        <p>The real Dual adds the one-sided nogo cost of (3.1) and the no-lick cost over the windows \(W\) where a lick is wrong,</p>
+        \[ L_{\rm nl} = \sum_{t\in W}\relu(\kappa_1(t))^2, \qquad \frac{\partial L_{\rm nl}}{\partial \kappa_1} = 2\,\relu(\kappa_1) \ge 0 . \tag{4.2} \]
+        <p>Under \(\kappa_1 \to -\kappa_1\), \(L_{\rm nl} \to \sum\relu(-\kappa_1)^2 \ne L_{\rm nl}\): every element with \(\chi_1 = -1\) is broken by the objective, and what survives is</p>
+        \[ Z_2 = \{e, \sigma_1\}, \tag{4.3} \]
+        <p>the only symmetry that leaves the decision axis alone. The gradient in (4.2) is one-signed: wherever the state is above the line in a no-lick window it is pushed down, never up. That is the downward breaking field, and by (2.7) it can act on the field's even part only through \(\langle n\rangle\) and \(b\); with the bias frozen in Dual the cost has one handle, \(\langle n_1\rangle\), which it drives negative.</p>
+        <span class="lead">rows C–E: the memory pair after Dual</span>
+        <p>If \(\sigma_1\) holds, (2.5) at every checkpoint gives \(\kappa_B = D_1\kappa_A\), hence</p>
+        \[ w_A = w_B : \tag{4.4} \]
+        <p>the two memory wells share a height and descend together or not at all; the imbalance \(|w_A - w_B|\) is a measure of the \(\sigma_1\) residual. Under \(\sigma_3\tau\) the \(\kappa_0\) axis is invariant by (2.6) and \(\langle n_1\rangle = 0\) by (2.9), so the memory cannot leave the line and the no-lick cost cannot be paid; under \(\sigma_2\tau\) the pair is antipodal, one well above the line, which (4.2) forbids: both ties must break under the real Dual. The state after the cue must carry the GNG decision and still the sample, a generic point \((\pm a, \pm w)\) with the full orbit (2.4); the level pairs under \(\sigma_1\), or the quadruple under \(V\), are its images, and (4.2) selects the lower pair as the occupied one.</p>
+      </div>
+      <h3><span class="h3num">4.2</span>The flow, across the three stages</h3>
+      <figure class="fig" id="fig-10">
       <div class="panels">
         <div class="panel">
           <svg viewBox="0 0 200 150" role="img" aria-label="After DPA: two wells on the lick line">
@@ -638,7 +755,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
           </svg>
           <h4><span class="plab">B</span>after GNG</h4>
           <p class="verdict">(&minus;1.15, 0.00) &nbsp;(+1.20, 0.00)</p>
-          <p>The rule is learned in the input columns; the autonomous field is nearly unchanged and the wells have not moved.</p>
+          <p>GNG is learned in the input columns; the autonomous field is nearly unchanged and the wells have not moved.</p>
         </div>
         <div class="panel">
           <svg viewBox="0 0 200 150" role="img" aria-label="After Dual: both wells below the lick line">
@@ -654,20 +771,20 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
           <p>Both wells below the line, at the same height, occupied for the whole delay.</p>
         </div>
       </div>
-      <figcaption><span class="fignum">Figure 5.</span> <b>The memory wells of the target network at the three checkpoints, schematically.</b> Coordinates are the measured fixed points of <code>s1_dualscan_7</code>; the lick line is dashed. <b>A</b> After DPA both wells sit on the lick line. <b>B</b> After GNG they have not moved: the rule went into the input columns. <b>C</b> After Dual both are below the line, at a common height. The measured fields are in the next figure.</figcaption>
+      <figcaption><span class="fignum">Figure 10.</span> <b>The memory wells of the target network at the three checkpoints, schematically.</b> Coordinates are the measured fixed points of <code>s1_dualscan_7</code>; the lick line is dashed. <b>A</b> After DPA both wells sit on the lick line. <b>B</b> After GNG they have not moved: GNG went into the input columns. <b>C</b> After Dual both are below the line, at a common height. The measured fields are in the next figure.</figcaption>
       </figure>
-      <figure class="fig" id="fig-6">
+      <figure class="fig" id="fig-11">
         <div class="mat"><img src="{{FIG:flow_stages}}" alt="Flow portraits for one network at three checkpoints across eight input conditions"></div>
-        <figcaption><span class="fignum">Figure 6.</span> <b>The target network, measured</b> (<code>s1_dualscan_7</code>). Rows: after DPA, after GNG, after Dual. Columns: the autonomous field and each frozen input condition. The schematics of Figure 5 are the leftmost column: the memory pair sits on the lick line after DPA and after GNG, then drops to (&plusmn;0.94, &minus;0.5) after Dual, level with each other at every stage. The input columns show why the descent is stable. A and B each collapse the plane to a single point, the write. Go and the cue drive upward from either memory side. C and D are mirror-image basin choices, the read: the D column is the C column reflected in &kappa;&#8320;, which is &sigma;<sub>1</sub> acting on the inputs.</figcaption>
+        <figcaption><span class="fignum">Figure 11.</span> <b>The target network, measured</b> (<code>s1_dualscan_7</code>). Rows: after DPA, after GNG, after Dual. Columns: the autonomous field and each frozen input condition. The schematics of Figure 10 are the leftmost column: the memory pair sits on the lick line after DPA and after GNG, then drops to (&plusmn;0.94, &minus;0.5) after Dual, level with each other at every stage. The input columns show why the descent is stable. A and B each collapse the plane to a single point, the write. Go and the cue drive upward from either memory side. C and D are mirror-image basin choices, the read: the D column is the C column reflected in &kappa;&#8320;, which is &sigma;<sub>1</sub> acting on the inputs.</figcaption>
       </figure>
       <p>
-        Read <a href="#fig-5">Figure 5</a> left to right, with the measured fields of <a href="#fig-6">Figure 6</a> beneath it: that is the group argument made visible. &sigma;<sub>1</sub> keeps the two wells
+        Read <a href="#fig-10">Figure 10</a> left to right, with the measured fields of <a href="#fig-11">Figure 11</a> beneath it: that is the group argument made visible. &sigma;<sub>1</sub> keeps the two wells
         level with each other at every stage. &sigma;<sub>2</sub> keeps them on the line until something breaks
         it. The one-sided lick cost, now priced at the memory well itself, breaks it with a definite sign, and
         the wells go down together, because &sigma;<sub>1</sub> never allowed anything else.
       </p>
 
-      <h3><span class="h3num">4.2</span>How reliable is it</h3>
+      <h3><span class="h3num">4.3</span>How reliable is it</h3>
       <p>
         Eight seeds of the full curriculum, identical configuration, no symmetry tying anywhere, the network
         left to find the structure itself:
@@ -683,7 +800,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
       <p>
         The two seeds that miss do so in the way the group predicts: one side settles below while the other
         keeps a partner above, which is what a residual &sigma;<sub>2</sub> looks like. And the ledger says
-        when that was decided. Rank the eight seeds after the memory stage by how much more they have broken
+        when that was decided. Rank the eight seeds after the DPA stage by how much more they have broken
         the inversion than the pair exchange:
       </p>
       <div class="tbl-scroll">
@@ -702,19 +819,34 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         </table>
       </div>
       <p>
-        The two failures are the two seeds that left the memory stage with the inversion most intact relative
+        The two failures are the two seeds that left the DPA stage with the inversion most intact relative
         to the pair exchange, and the third in that order is the most lopsided of the successes. Eight seeds
         is a small sample and the ordering among the successes is not clean, so this is a pattern rather than
         a law. But it points at the obvious experiment: impose the symmetry while the memory is being built,
         then take it away.
       </p>
+      <div class="call kep">
+        <span class="tag">The same eight seeds with the bias frozen in Dual: 8 of 8</span>
+        <p>
+          The Dual stage is documented as &ldquo;inputs frozen&rdquo;, but until the code review of 2026-09-21 the
+          per-unit input bias kept training through it. Rerunning the identical eight seeds with the bias frozen
+          (deterministic through the memory and rule stages, so the two curricula differ only in Dual) ends with
+          <strong>both memories below the line in 8 of 8</strong>, at &minus;0.6 to &minus;1.9 &eta;, with no upper well
+          anywhere, the trials landing on the wells, and GNG intact (go 1.000, nogo 0.96&ndash;1.00). Seeds 0
+          and 3, the two that kept a partner above at +0.9 and +1.0 &eta;, now end at &minus;0.6/&minus;1.0 and
+          &minus;1.8/&minus;1.9 &eta;. The identity of &sect;S.1 says why: only the readout mean and the bias can break the
+          inversion, and with the bias frozen the Dual cost has one handle left, &lang;<i>n</i>&#8321;&rang;, which it
+          drives down (&minus;0.04 to &minus;0.42 across the eight). The bias was the escape route the two failures used.
+          The tied curricula of &sect;4.4 and the free column of Figure 6 predate the fix; the &sigma;<sub>2</sub> and
+          &sigma;<sub>3</sub> columns do not.
+        </p>
+      </div>
 
-      <h3><span class="h3num">4.3</span>Build it in, then let it go</h3>
+      <h3><span class="h3num">4.4</span>Build it in, then let it go</h3>
       <p>
-        These are the eight tied networks of <a href="#fig-1">Figure 1</a>, four with &sigma;<sub>1</sub>
-        tied and four with the whole group, in both cases held only during DPA and released before the rule
-        stage. After release the parameters are free, the objective is the ordinary one, and the breaking
-        field does what it does to any other network (the bottom row of <a href="#fig-1">Figure 1</a>; every seed in <a href="#fig-s8">Figure S8</a>).
+        These are the sixteen tied networks of <a href="#fig-6">Figure 6</a>, four per element and four with
+        the whole group, in every case held only during DPA and released before the GNG stage. After release the parameters are free, the objective is the ordinary one, and the breaking
+        field does what it does to any other network (the bottom row of <a href="#fig-6">Figure 6</a>; every seed in <a href="#fig-s8">Figure S8</a>).
       </p>
       <div class="chips">
         <span class="chip">both states in wells below the line<b>8 / 8</b></span>
@@ -737,16 +869,16 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         the states down; it cannot be, since it is gone by then, and while it was on it either held the wells
         level or pinned them on the line outright. What changes is reliability, eight of eight against six, and
         how level the pair ends up, three times more balanced, with the worst free case twice as lopsided as
-        the worst case here. The constraint hands the rule stage a starting point with no residual
+        the worst case here. The constraint hands the GNG stage a starting point with no residual
         &sigma;<sub>2</sub> in it, so the breaking field acts on both memories the same way and both go down
         together. The symmetry is scaffolding: it decides which solution the later stages are pushed away from.
       </p>
 
-      <h3><span class="h3num">4.4</span>&hellip; and at the level of <i>m</i> and <i>n</i></h3>
-      <p>Finally, the population structure after the whole curriculum (<a href="#fig-7">Figure 7</a>).</p>
-      <figure class="fig" id="fig-7">
+      <h3><span class="h3num">4.5</span>&hellip; and at the level of <i>m</i> and <i>n</i></h3>
+      <p>Finally, the population structure after the whole curriculum (<a href="#fig-12">Figure 12</a>).</p>
+      <figure class="fig" id="fig-12">
         <div class="mat"><img src="{{FIG:mn_expert}}" alt="Pairwise scatter of the low-rank components after the Dual stage"></div>
-        <figcaption><span class="fignum">Figure 7.</span> <b>After the whole curriculum</b> (<code>s1_dualscan_7</code>, expert checkpoint). Compare with the free row of Figure 2, the DPA checkpoint of the same network: the sign lattice is unchanged and <i>m</i>&#8320; still sits at &plusmn;3, but the lick readout has stretched, spread of <i>n</i>&#8321; over units 3.58 &rarr; 5.04, with cluster means on <i>n</i>&#8321; moving from &plusmn;2.9&ndash;3.6 to &plusmn;4.2&ndash;5.0. The overlap matrix has acquired a small off-diagonal, J&#8321;&#8320; = &minus;0.30, where the tied network has zero.</figcaption>
+        <figcaption><span class="fignum">Figure 12.</span> <b>After the whole curriculum</b> (<code>s1_dualscan_7</code>, expert checkpoint). Compare with the free row of Figure S12, the DPA checkpoint of the same network: the sign lattice is unchanged and <i>m</i>&#8320; still sits at &plusmn;3, but the lick readout has stretched, spread of <i>n</i>&#8321; over units 3.58 &rarr; 5.04, with cluster means on <i>n</i>&#8321; moving from &plusmn;2.9&ndash;3.6 to &plusmn;4.2&ndash;5.0. The overlap matrix has acquired a small off-diagonal, J&#8321;&#8320; = &minus;0.30, where the tied network has zero.</figcaption>
       </figure>
       <p>
         The population structure survives the whole curriculum: the same four clusters, the same sign lattice,
@@ -763,7 +895,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
       <h2>The same machinery on two simpler tasks</h2>
       <p>
         A theory that only ever meets one task is hard to trust, so we ran the whole apparatus on two
-        simpler tasks. The first is the simplest task in the curriculum: the delayed rule task alone, from scratch, both modes free, the
+        simpler tasks. The first is the simplest task in the curriculum: the delayed GNG task alone, from scratch, both modes free, the
         cue on its own channel so that exchanging go with nogo is a clean relabeling. Two objectives. The
         <em>two-sided</em> one asks go to reach +&theta; and nogo to reach &minus;&theta;, and is invariant
         under the exchange with the response flipped. The <em>one-sided</em> one is the real go/nogo, go
@@ -778,7 +910,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         With a single element acting as <i>D</i> = &minus;<i>I</i>, orbits have size two: every attractor
         off the origin has an exact antipode, one above the line for one below. Because both modes carry the
         same character, the isotypic argument of &sect;3 no longer forces the cross-overlaps to vanish; it
-        forces nothing about them. That is the sharpest contrast with the memory task, where the whole group
+        forces nothing about them. That is the sharpest contrast with DPA, where the whole group
         sets them to zero identically. A tied network must answer nogo with exactly minus its go answer,
         which satisfies the one-sided cost as well, so the tie should learn both tasks. And the two-sided
         objective never looks at &kappa;&#8320;, so it is also invariant under the reflection that flips
@@ -805,7 +937,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         &kappa;&#8321; component on the &kappa;&#8320; axis is 0.000 under diag(+1, &minus;1) and under the
         whole group, its &kappa;&#8320; component on the &kappa;&#8321; axis is 0.005&ndash;0.074 under
         diag(+1, &minus;1) and 0.000 under the whole group, against 0.05&ndash;0.50 for either axis under
-        &minus;<i>I</i>. <a href="#fig-8">Figure 8</a> puts the predictions and the trained networks side by side, and the map below
+        &minus;<i>I</i>. <a href="#fig-13">Figure 13</a> puts the predictions and the trained networks side by side, and the map below
         does for this task what the map at the top does for the curriculum.
       </p>
       <div class="tbl-scroll">
@@ -849,13 +981,13 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
       <p>
         Read the two objective columns against the last two: the one-sided objective breaks the two
         elements that relabel go and nogo, and the free one-sided networks let exactly those two drift while
-        keeping the third, which no objective touches. The memory mode is where the rule task differs most
-        from the memory task: here it is a spectator, and every symmetry that involves it is a symmetry of
+        keeping the third, which no objective touches. The memory mode is where the GNG task differs most
+        from DPA: here it is a spectator, and every symmetry that involves it is a symmetry of
         both objectives.
       </p>
-      <figure class="fig" id="fig-8">
-        <div class="mat"><img src="{{FIG:rulesym_summary}}" alt="The rule task: symmetries, predicted wells, and trained free and tied networks for both objectives"></div>
-        <figcaption><span class="fignum">Figure 8.</span> <b>The rule task alone: symmetries, predicted wells, and what free and tied networks do</b> (<code>sweep_lif_rulesym</code>, 32 networks). <b>Top</b> The task and its symmetries, in words, with the predictions written before the runs. <b>Second row</b> The predicted wells for each column, as a scheme: no constraint; antipodes at a free angle under &minus;<i>I</i>, which has no invariant axis; a mirror pair across the lick line on the &kappa;&#8321; axis under diag(+1, &minus;1), whose position along &kappa;&#8320; the identity pins near zero; a pair on each axis under the whole group, the &kappa;&#8320; pair (open circles) belonging to the unused memory mode. <b>Third row</b> The two-sided objective, seed 0's autonomous field with the attractors of seeds 1&ndash;3 overlaid as white markers, the three residuals as medians over the four seeds, the attractor count per seed and the task accuracy. Free networks put both wells on the &kappa;&#8321; axis at (0, &plusmn;0.93) and keep all three residuals small: the whole-group solution, found by every seed. Tied to &minus;<i>I</i>: exact antipodes off the axes, at seed-dependent angles, with a rotational component in the flow. Tied to diag(+1, &minus;1): a mirror pair across the line, in every seed at &kappa;&#8320; = 0. Tied to the whole group: the pair on the &kappa;&#8321; axis and the pair on the &kappa;&#8320; axis, as the scheme has them. <b>Bottom row</b> The one-sided objective. Free networks end near-antipodal, one well above and one below. Tied to &minus;<i>I</i>: antipodes in two seeds and, in the other two, no fixed point but a slow rotation on the ring. Tied to diag(+1, &minus;1) and to the whole group: the same orbits as for the two-sided objective, at 0.979&ndash;0.999 on the task.</figcaption>
+      <figure class="fig" id="fig-13">
+        <div class="mat"><img src="{{FIG:rulesym_summary}}" alt="The GNG task: symmetries, predicted wells, and trained free and tied networks for both objectives"></div>
+        <figcaption><span class="fignum">Figure 13.</span> <b>The GNG task alone: symmetries, predicted wells, and what free and tied networks do</b> (<code>sweep_lif_rulesym</code>, 32 networks). <b>Top</b> The task and its symmetries, in words, with the predictions written before the runs. <b>Second row</b> The predicted wells for each column, as a scheme: no constraint; antipodes at a free angle under &minus;<i>I</i>, which has no invariant axis; a mirror pair across the lick line on the &kappa;&#8321; axis under diag(+1, &minus;1), whose position along &kappa;&#8320; the identity pins near zero; a pair on each axis under the whole group, the &kappa;&#8320; pair (open circles) belonging to the unused memory mode. <b>Third row</b> The two-sided objective, seed 0's autonomous field with the attractors of seeds 1&ndash;3 overlaid as white markers, the three residuals as medians over the four seeds, the attractor count per seed and the task accuracy. Free networks put both wells on the &kappa;&#8321; axis at (0, &plusmn;0.93) and keep all three residuals small: the whole-group solution, found by every seed. Tied to &minus;<i>I</i>: exact antipodes off the axes, at seed-dependent angles, with a rotational component in the flow. Tied to diag(+1, &minus;1): a mirror pair across the line, in every seed at &kappa;&#8320; = 0. Tied to the whole group: the pair on the &kappa;&#8321; axis and the pair on the &kappa;&#8320; axis, as the scheme has them. <b>Bottom row</b> The one-sided objective. Free networks end near-antipodal, one well above and one below. Tied to &minus;<i>I</i>: antipodes in two seeds and, in the other two, no fixed point but a slow rotation on the ring. Tied to diag(+1, &minus;1) and to the whole group: the same orbits as for the two-sided objective, at 0.979&ndash;0.999 on the task.</figcaption>
       </figure>
       <div class="tbl-scroll">
         <table>
@@ -874,18 +1006,18 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
       </div>
       <h3><span class="h3num">5.2</span>Scoring the predictions</h3>
       <ul>
-        <li><strong>Orbits.</strong> Each tie produced the orbit its group prescribes, in every seed: antipodes under &minus;<i>I</i>, with exact antipodal cluster pairs in the populations (<a href="#fig-9">Figure 9</a>; the free two-sided counterpart in <a href="#fig-10">Figure 10</a>); a mirror pair across the lick line under diag(+1, &minus;1), on the &kappa;&#8321; axis as the identity says; a pair on each invariant axis under the whole group. The free two-sided networks found the whole-group solution on their own: memory on the decision axis, the memory mode left with saddles. Confirmed.</li>
-        <li><strong>Which overlaps vanish.</strong> Under &minus;<i>I</i> both modes carry the same character and the cross-overlaps are large in every tied network, &plusmn;1.7 to &plusmn;2.9. Under diag(+1, &minus;1) and under the whole group the modes carry different characters and the cross-overlaps are 0.000 in every tied network, as under the memory task's group. The go and nogo overlaps behave the same way: exactly opposite on the decision readout under every tie, exactly equal on the memory readout under diag(+1, &minus;1), exactly zero there under the whole group. The free two-sided networks keep the cross-overlaps near zero because they keep the larger group. The isotypic argument discriminates the two groups exactly as it should. Confirmed, and with a bonus: the antisymmetric part of a cross-overlap is a rotation of the plane, which &minus;<i>I</i> permits and the four-group forbids; two of the four tied one-sided networks use it and hold the memory on a slowly rotating ring rather than in wells, at 0.999 on the task, because the delay is one second.</li>
+        <li><strong>Orbits.</strong> Each tie produced the orbit its group prescribes, in every seed: antipodes under &minus;<i>I</i>, with exact antipodal cluster pairs in the populations (<a href="#fig-14">Figure 14</a>; the free two-sided counterpart in <a href="#fig-15">Figure 15</a>); a mirror pair across the lick line under diag(+1, &minus;1), on the &kappa;&#8321; axis as the identity says; a pair on each invariant axis under the whole group. The free two-sided networks found the whole-group solution on their own: memory on the decision axis, the memory mode left with saddles. Confirmed.</li>
+        <li><strong>Which overlaps vanish.</strong> Under &minus;<i>I</i> both modes carry the same character and the cross-overlaps are large in every tied network, &plusmn;1.7 to &plusmn;2.9. Under diag(+1, &minus;1) and under the whole group the modes carry different characters and the cross-overlaps are 0.000 in every tied network, as under DPA's group. The go and nogo overlaps behave the same way: exactly opposite on the decision readout under every tie, exactly equal on the memory readout under diag(+1, &minus;1), exactly zero there under the whole group. The free two-sided networks keep the cross-overlaps near zero because they keep the larger group. The isotypic argument discriminates the two groups exactly as it should. Confirmed, and with a bonus: the antisymmetric part of a cross-overlap is a rotation of the plane, which &minus;<i>I</i> permits and the four-group forbids; two of the four tied one-sided networks use it and hold the memory on a slowly rotating ring rather than in wells, at 0.999 on the task, because the delay is one second.</li>
         <li><strong>Tied networks learn both tasks.</strong> Confirmed, including the one-sided one, where the tie answers nogo with minus the go answer. The go and nogo overlaps are exactly opposite on both readouts.</li>
         <li><strong>The one-sided cost breaks the field.</strong> Not as written. The autonomous field of the free one-sided networks is as close to odd as the two-sided ones, 0.05&ndash;0.09. The explicit break landed where the ledger of &sect;4 says it does in the full curriculum: in the input columns, as unequal go and nogo overlaps and a cue overlap of +0.5 to +0.9 that the two-sided networks never build, and only weakly in the wells, whose heights differ by 0.05&ndash;0.07 against 0.02. An explicit break enters through the parameters the cost touches directly and reaches the autonomous field slowly.</li>
       </ul>
-      <figure class="fig" id="fig-9">
-        <div class="mat"><img src="{{FIG:rulesym_mn_tied}}" alt="Pairwise scatter of the low-rank components of a network with the rule task's Z2 tied"></div>
-        <figcaption><span class="fignum">Figure 9.</span> <b>Populations under a tied Z&#8322;</b> (<code>s0_rulesym_afc_tied</code>, after the rule stage). The four clusters are two exact antipodal pairs, (&minus;2.77, &minus;0.17, &minus;2.93, +0.09) with (+2.77, +0.17, +2.93, &minus;0.09) and (+1.73, +2.55, +0.24, +2.54) with (&minus;1.73, &minus;2.55, &minus;0.24, &minus;2.54): the orbit structure of &minus;<i>I</i>, with the two modes mixed in the second pair, which is the large cross-overlap of the table. Compare Figure 2, where the four-group produces a sign lattice with the modes kept apart.</figcaption>
+      <figure class="fig" id="fig-14">
+        <div class="mat"><img src="{{FIG:rulesym_mn_tied}}" alt="Pairwise scatter of the low-rank components of a network with the GNG task's Z2 tied"></div>
+        <figcaption><span class="fignum">Figure 14.</span> <b>Populations under a tied Z&#8322;</b> (<code>s0_rulesym_afc_tied</code>, after the GNG stage). The four clusters are two exact antipodal pairs, (&minus;2.77, &minus;0.17, &minus;2.93, +0.09) with (+2.77, +0.17, +2.93, &minus;0.09) and (+1.73, +2.55, +0.24, +2.54) with (&minus;1.73, &minus;2.55, &minus;0.24, &minus;2.54): the orbit structure of &minus;<i>I</i>, with the two modes mixed in the second pair, which is the large cross-overlap of the table. Compare Figure S12, where the four-group produces a sign lattice with the modes kept apart.</figcaption>
       </figure>
-      <figure class="fig" id="fig-10">
-        <div class="mat"><img src="{{FIG:rulesym_mn_free}}" alt="Pairwise scatter of the low-rank components of a free network trained on the two-sided rule task"></div>
-        <figcaption><span class="fignum">Figure 10.</span> <b>Populations of a free two-sided network</b> (<code>s0_rulesym_afc</code>). The bit lives on the decision mode as an antipodal pair, (<i>m</i>&#8321;, <i>n</i>&#8321;) &asymp; (&minus;2.3, &minus;2.7) against (+2.1, +2.3), with no memory loading; the other two clusters are a mirror pair on the memory mode with the same small decision loading. The overlap matrix is diagonal. The network solved the task without the memory mode and, in doing so, kept every element of the four-group approximately.</figcaption>
+      <figure class="fig" id="fig-15">
+        <div class="mat"><img src="{{FIG:rulesym_mn_free}}" alt="Pairwise scatter of the low-rank components of a free network trained on the two-sided GNG task"></div>
+        <figcaption><span class="fignum">Figure 15.</span> <b>Populations of a free two-sided network</b> (<code>s0_rulesym_afc</code>). The bit lives on the decision mode as an antipodal pair, (<i>m</i>&#8321;, <i>n</i>&#8321;) &asymp; (&minus;2.3, &minus;2.7) against (+2.1, +2.3), with no memory loading; the other two clusters are a mirror pair on the memory mode with the same small decision loading. The overlap matrix is diagonal. The network solved the task without the memory mode and, in doing so, kept every element of the four-group approximately.</figcaption>
       </figure>
       <h3><span class="h3num">5.3</span>A delayed two-alternative choice: the tie that must fail, and the one that holds by exactness</h3>
       <p>
@@ -897,11 +1029,11 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         relabeling at all, a pure flip of the memory mode: together a Klein four-group of parameter symmetries.
         The same matrix diag(&minus;1, +1) <em>with</em> the L &harr; R swap is not a symmetry: it forces
         &kappa;&#8321;(L) = &kappa;&#8321;(R), which the task forbids. Tying it should fail at chance. The predictions were written
-        before the runs (ring log &sect;39a) and are laid out in the top row of <a href="#fig-11">Figure 11</a>.
+        before the runs (ring log &sect;39a) and are laid out in the top row of <a href="#fig-16">Figure 16</a>.
       </p>
-      <figure class="fig" id="fig-11">
+      <figure class="fig" id="fig-16">
         <div class="mat"><img src="{{FIG:afc2_summary}}" alt="The delayed 2AFC: symmetries, predicted wells per tie, and the trained networks free and tied"></div>
-        <figcaption><span class="fignum">Figure 11.</span> <b>The delayed 2AFC: symmetries, predicted wells, and what free and tied networks do.</b> Same layout as Figure 8. <b>Top</b> The task, its group, and the predictions. <b>Second row</b> The predicted wells per column: free, the whole-group solution with the memory on the &kappa;&#8321; axis; &minus;<i>I</i>, antipodes at a free angle with a ring or rotation allowed; diag(+1, &minus;1), a mirror pair across the line on the invariant &kappa;&#8321; axis; diag(&minus;1, +1) with the swap, not a symmetry, chance predicted; the whole group, pairs on both axes with one of them the memory. <b>Third row</b> Seed 0&rsquo;s autonomous field with the attractors of the other seeds overlaid, the three residuals, the attractor count, and the task accuracy per seed. Free: (0, &plusmn;0.9) in every seed, residuals 0.09&ndash;0.20. &minus;<i>I</i>: residual 0.000, antipodes at 65&ndash;75&deg;, cross-overlaps up to 1.6, and one seed with no fixed point at all (a limit cycle, Figure 12). diag(+1, &minus;1): residual 0.000, the mirror pair, cross-overlaps 0.00, 0.98&ndash;0.99. diag(&minus;1, +1) with the swap: 0.48&ndash;0.53, chance in four of four, with a bistable memory on the &kappa;&#8320; axis that the stimulus cannot select. Whole group: all three residuals 0.000, the autonomous wells on the &kappa;&#8320; axis, 0.96&ndash;0.99 in three seeds and 0.43 in the fourth, which was still descending at the epoch budget. <b>Bottom row</b> Where L and R write, per seed: under the whole group both overlaps with the memory readout are exactly zero.</figcaption>
+        <figcaption><span class="fignum">Figure 16.</span> <b>The delayed 2AFC: symmetries, predicted wells, and what free and tied networks do.</b> Same layout as Figure 13. <b>Top</b> The task, its group, and the predictions. <b>Second row</b> The predicted wells per column: free, the whole-group solution with the memory on the &kappa;&#8321; axis; &minus;<i>I</i>, antipodes at a free angle with a ring or rotation allowed; diag(+1, &minus;1), a mirror pair across the line on the invariant &kappa;&#8321; axis; diag(&minus;1, +1) with the swap, not a symmetry, chance predicted; the whole group, pairs on both axes with one of them the memory. <b>Third row</b> Seed 0&rsquo;s autonomous field with the attractors of the other seeds overlaid, the three residuals, the attractor count, and the task accuracy per seed. Free: (0, &plusmn;0.9) in every seed, residuals 0.09&ndash;0.20. &minus;<i>I</i>: residual 0.000, antipodes at 65&ndash;75&deg;, cross-overlaps up to 1.6, and one seed with no fixed point at all (a limit cycle, Figure 17). diag(+1, &minus;1): residual 0.000, the mirror pair, cross-overlaps 0.00, 0.98&ndash;0.99. diag(&minus;1, +1) with the swap: 0.48&ndash;0.53, chance in four of four, with a bistable memory on the &kappa;&#8320; axis that the stimulus cannot select. Whole group: all three residuals 0.000, the autonomous wells on the &kappa;&#8320; axis, 0.96&ndash;0.99 in three seeds and 0.43 in the fourth, which was still descending at the epoch budget. <b>Bottom row</b> Where L and R write, per seed: under the whole group both overlaps with the memory readout are exactly zero.</figcaption>
       </figure>
       <p>
         Four of the five predictions came out as written; the fifth came out sharper. The tie to the
@@ -910,7 +1042,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         response is the same on both trial types and the side of the memory is chosen by the noise. Under &minus;<i>I</i>
         the cross-overlaps are free and one seed used them: no fixed point off the origin, but a limit cycle of
         radius 0.85 and period near thirty seconds, slow enough to keep the sign of &kappa;&#8321; for the five seconds
-        that matter, and 0.999 on the task (<a href="#fig-12">Figure 12</a>). It is the rotation that the character
+        that matter, and 0.999 on the task (<a href="#fig-17">Figure 17</a>). It is the rotation that the character
         table allows under &minus;<i>I</i> and forbids under the other two elements, and it appears only there.
       </p>
       <p>
@@ -926,9 +1058,9 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         against 0.05 to 0.16 for the decision-flip tie, and the seed at 0.43 is the slow one: its pair on the axis is there,
         but its stimulus push, <i>n</i>&#8321;&middot;<i>w</i><sub>R</sub> = 0.13, loses to the noise.
       </p>
-      <figure class="fig" id="fig-12">
+      <figure class="fig" id="fig-17">
         <div class="mat"><img src="{{FIG:afc2_traj}}" alt="Kappa traces of L and R trials for a free, a -I-tied, a whole-group-tied and a non-symmetry-tied 2AFC network"></div>
-        <figcaption><span class="fignum">Figure 12.</span> <b>Trials on the &kappa;-plane, four 2AFC networks.</b> Rows: free (<code>s0</code>), tied to &minus;<i>I</i> (<code>s2</code>, the seed with no fixed point), tied to the whole group (<code>s1</code>), tied to diag(&minus;1, +1) with the swap (<code>s0</code>). Left and center: &kappa;&#8320; (blue) and &kappa;&#8321; (red) against time on R and on L trials, twelve trials thin and the mean thick; gray bands are the stimulus and the cue. Right: the same trials on the plane, R orange and L green. The free network stores the choice on the &kappa;&#8321; axis with a shared &kappa;&#8320; dip during the stimulus. The &minus;<i>I</i> network sweeps around the origin on a slow cycle. The whole-group network keeps &kappa;&#8320; at exactly zero and holds &plusmn;0.4 on the axis. The non-symmetry tie produces identical &kappa;&#8321; on L and R and a &kappa;&#8320; memory whose side is random.</figcaption>
+        <figcaption><span class="fignum">Figure 17.</span> <b>Trials on the &kappa;-plane, four 2AFC networks.</b> Rows: free (<code>s0</code>), tied to &minus;<i>I</i> (<code>s2</code>, the seed with no fixed point), tied to the whole group (<code>s1</code>), tied to diag(&minus;1, +1) with the swap (<code>s0</code>). Left and center: &kappa;&#8320; (blue) and &kappa;&#8321; (red) against time on R and on L trials, twelve trials thin and the mean thick; gray bands are the stimulus and the cue. Right: the same trials on the plane, R orange and L green. The free network stores the choice on the &kappa;&#8321; axis with a shared &kappa;&#8320; dip during the stimulus. The &minus;<i>I</i> network sweeps around the origin on a slow cycle. The whole-group network keeps &kappa;&#8320; at exactly zero and holds &plusmn;0.4 on the axis. The non-symmetry tie produces identical &kappa;&#8321; on L and R and a &kappa;&#8320; memory whose side is random.</figcaption>
       </figure>
       <div class="call kep">
         <span class="tag">The check</span>
@@ -1017,7 +1149,7 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         It explains the <strong>form</strong> of everything measured here. Why wells come in pairs and never
         singly; why a corrugated ring has two attractors and two saddles; why the cross-overlap between memory
         and decision is the quantity that tracks retention; why the trained population splits into four
-        clusters in a sign lattice; why a network that respects the memory group cannot hear the rule; why the
+        clusters in a sign lattice; why a network that respects the DPA group cannot hear GNG; why the
         memory wells could not both descend until a trial priced the lick at the well itself; and why, once
         they descend, they descend together.
       </p>
@@ -1037,10 +1169,22 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
         <li>The inversion at initialization is exact because &phi; is a constant plus an odd function and both &lang;<i>n</i>&rang; and the bias start at zero, not because of an ensemble symmetry that a finite sample does not have. Measured 0.000 in all eight seeds; the ensemble argument is kept as the general case.</li>
         <li>The bias is a fourth equivariance condition. The projection used for the published runs did not tie it; the low-rank structure is exact and the field carries a 1&ndash;5% residual. The projection now ties the bias and the residual is 10<sup>&minus;15</sup>.</li>
         <li>The deafness lemma: a network equivariant under any element with a minus sign on &kappa;&#8321; has zero go and nogo overlap on the decision readout. Verified as an exact zero at the tied DPA checkpoint.</li>
-        <li>The symmetry ledger, and the memory-stage ordering of the free seeds against their final outcome, are new measurements.</li>
+        <li>The symmetry ledger, and the DPA-stage ordering of the free seeds against their final outcome, are new measurements.</li>
         <li>The &lambda; = 14 tied-versus-untied control (a different base with a deliberate downward bias in the initialization) has been dropped from the note; its depths were never evidence for the mechanism.</li>
-        <li>The two per-seed grids of v3 (memory stage and expert stage) are now Figures S7 and S8; Figure 1 carries their content in the main text.</li>
-        <li>The delayed 2AFC (&sect;5.3, Figures 11&ndash;12): a second validation with a full Klein four, a tie that must fail and does, and a whole-group memory held on an unstable invariant axis.</li>
+        <li>The predictions of Figures 1, 3 and 5 are now derived explicitly as numbered equations in &sect;2.2, &sect;3.1 and &sect;4.1 (the note renders MathJax).</li>
+        <li>The DPA predictions figure (E&ndash;G) and the two population grids are now Figures S11&ndash;S13; main figures 1&ndash;17.</li>
+        <li>Figure 4: rows C and D of Figure 3 in the simulations after GNG; Figure 5: the Dual task as a theory figure (its rows F and G are Figure S10).</li>
+        <li>Figure 3 keeps rows A&ndash;E; its rows F and G (the GNG columns against the modes, the remaining predictions) are Figure S9.</li>
+        <li>Figure 3: the GNG stage as a theory figure (&tau;, the deafness lemma, and the predictions per element).</li>
+        <li>Figure 2: rows C and D of Figure 1 in the simulations (flow and populations at the DPA checkpoint); Figure 6 keeps the released networks only.</li>
+        <li>Figure S11: the predictions for the overlaps, the inputs and the rest, split out of Figure 1 as scatter schemes.</li>
+        <li>Figure 1 is now the theory alone: the task, the group, its actions and every prediction per tie; Figure 6 the simulations.</li>
+        <li>Figure 7: the group&rsquo;s predictions for the unit ensemble (orbit types, allowed counts, allowed harmonics) against the tied, free and initial ensembles.</li>
+        <li>Figure S13: the population grid for the read vectors; the lattice is a property of <i>m</i>, the read vectors are sign-locked and otherwise continuous.</li>
+        <li>The free recipe rerun with the bias frozen in Dual: 8 of 8 both below, same seeds (&sect;4.3).</li>
+        <li>The &sigma;<sub>2</sub> and &sigma;<sub>3</sub> curricula are complete: both scaffolds give the pair below the line 4 of 4, and both fail nogo in Dual; Figure 6 and Figures S7&ndash;S8 filled in.</li>
+        <li>The two per-seed grids of v3 (DPA stage and expert stage) are now Figures S7 and S8; Figure 6 carries their content in the main text.</li>
+        <li>The delayed 2AFC (&sect;5.3, Figures 16&ndash;17): a second validation with a full Klein four, a tie that must fail and does, and a whole-group memory held on an unstable invariant axis.</li>
         <li>The spread of <i>n</i>&#8321; after DPA is 3.58, not 3.68; the after-DPA schematic no longer names an element it cannot distinguish.</li>
       </ul>
     </div>
@@ -1139,17 +1283,41 @@ figure:target .mat, figure:target .panels { outline: 2px solid var(--plum); outl
 
 <figure class="fig" id="fig-s6">
         <div class="mat"><img src="{{FIG:symdpa_blocks}}" alt="Scatter of actual against predicted low-rank values for each image unit, held and released"></div>
-        <figcaption><span class="fignum">Figure S6.</span> <b>The constraint, checked unit by unit.</b> Each panel is one component of <i>m</i> or <i>n</i>: horizontal the value the group element predicts for an image unit, vertical the value the network has. Rows 1 and 3 are the memory checkpoint with the constraint held, &sigma;<sub>1</sub> above and the whole group below: every point is on the identity line to the last bit, max |actual &minus; predicted| = 0, and the cross-overlaps are 0.000. Rows 2 and 4 are the same networks after the constraint is lifted and the two remaining stages are trained freely. The lattice survives as a trend but is no longer exact. That scatter is the symmetry breaking, seen in the parameters.</figcaption>
+        <figcaption><span class="fignum">Figure S6.</span> <b>The constraint, checked unit by unit.</b> Each panel is one component of <i>m</i> or <i>n</i>: horizontal the value the group element predicts for an image unit, vertical the value the network has. Rows 1 and 3 are the DPA checkpoint with the constraint held, &sigma;<sub>1</sub> above and the whole group below: every point is on the identity line to the last bit, max |actual &minus; predicted| = 0, and the cross-overlaps are 0.000. Rows 2 and 4 are the same networks after the constraint is lifted and the two remaining stages are trained freely. The lattice survives as a trend but is no longer exact. That scatter is the symmetry breaking, seen in the parameters.</figcaption>
       </figure>
-      <h3><span class="h3num">S.3</span>Every seed of the tied and free memory-stage networks</h3>
-      <p>The two grids behind Figure 1: one flow panel per seed at the memory checkpoint with the tie held, and at the expert checkpoint after release. Figure 1 shows seed 0 of each condition with the attractors of the other seeds overlaid; these show the fields themselves.</p>
+      <h3><span class="h3num">S.3</span>Every seed of the tied and free DPA-stage networks</h3>
+      <p>The two grids behind Figure 6: one flow panel per seed at the DPA checkpoint with the tie held, and at the expert checkpoint after release. Figure 6 shows seed 0 of each condition with the attractors of the other seeds overlaid; these show the fields themselves.</p>
       <figure class="fig" id="fig-s7">
         <div class="mat"><img src="{{FIG:dpa_ckpt_grid}}" alt="Predicted wells and the autonomous field at the DPA checkpoint, one row per condition and one column per seed"></div>
-        <figcaption><span class="fignum">Figure S7.</span> <b>The memory stage, every seed.</b> Rows: the free recipe (its first four seeds), and the four ties held through DPA, &sigma;<sub>1</sub>, &sigma;<sub>2</sub>, &sigma;<sub>3</sub> and the whole group. First column: the wells each condition predicts, as in the top row of Figure 1. Then one panel per seed: the autonomous field at the DPA checkpoint, its attractors, the number of attractors and the residual of the tied element (all three for the free row); dashed line the lick line. Read each row against its first column. The &sigma;<sub>1</sub> row is a level pair just below the line in every seed with a decision well above; the whole-group row is the pair on the line, in two seeds with the decision pair as well. The &sigma;<sub>2</sub> row is the antipodal pair on the line in every seed; the &sigma;<sub>3</sub> row the memory pair on the &kappa;&#8320; axis with a vertical decision pair.</figcaption>
+        <figcaption><span class="fignum">Figure S7.</span> <b>The DPA stage, every seed.</b> Rows: the free recipe (its first four seeds), and the four ties held through DPA, &sigma;<sub>1</sub>, &sigma;<sub>2</sub>, &sigma;<sub>3</sub> and the whole group. First column: the wells each condition predicts, as in the top row of Figure 6. Then one panel per seed: the autonomous field at the DPA checkpoint, its attractors, the number of attractors and the residual of the tied element (all three for the free row); dashed line the lick line. Read each row against its first column. The &sigma;<sub>1</sub> row is a level pair just below the line in every seed with a decision well above; the whole-group row is the pair on the line, in two seeds with the decision pair as well. The &sigma;<sub>2</sub> row is the antipodal pair on the line in every seed; the &sigma;<sub>3</sub> row the memory pair on the &kappa;&#8320; axis with a vertical decision pair.</figcaption>
       </figure>
       <figure class="fig" id="fig-s8">
         <div class="mat"><img src="{{FIG:expert_ckpt_grid}}" alt="The same networks after GNG and Dual with the tie released, one row per condition and one column per seed"></div>
-        <figcaption><span class="fignum">Figure S8.</span> <b>After GNG and Dual, every seed.</b> The networks of Figure 1 at the expert checkpoint, tie released. Rows: the free recipe (its first four seeds) and the four ties held through DPA; first column the wells each condition predicts, then one panel per seed with the autonomous field, its attractors, the attractor count and the residual of the tied element. Every &sigma;<sub>1</sub>-scaffolded and whole-group-scaffolded seed ends with its memory pair below the line and level, the height fixed while the symmetry held and the depth acquired after it was lifted; several keep an unoccupied upper pair. The free row shows the seed-dependent outcome of the free curriculum, six of eight both below across all its seeds, with seed 0 and seed 3 ending one up and one down.</figcaption>
+        <figcaption><span class="fignum">Figure S8.</span> <b>After GNG and Dual, every seed.</b> The networks of Figure 6 at the expert checkpoint, tie released. Rows: the free recipe (its first four seeds) and the four ties held through DPA; first column the wells each condition predicts, then one panel per seed with the autonomous field, its attractors, the attractor count and the residual of the tied element. Every &sigma;<sub>1</sub>-scaffolded and whole-group-scaffolded seed ends with its memory pair below the line and level, the height fixed while the symmetry held and the depth acquired after it was lifted; several keep an unoccupied upper pair. The &sigma;<sub>2</sub> and &sigma;<sub>3</sub> rows end the same way, a level pair at &minus;0.45 to &minus;0.5, and with nothing else: two attractors in every seed. These are the networks that fail nogo in Dual (Figure 6). The free row shows the seed-dependent outcome of the free curriculum, six of eight both below across all its seeds, with seed 0 and seed 3 ending one up and one down.</figcaption>
+      </figure>
+      <h3><span class="h3num">S.4</span>The GNG stage, continued</h3>
+      <figure class="fig" id="fig-s9">
+        <div class="mat"><img src="{{FIG:gng_theory_supp}}" alt="The GNG columns against the modes as predicted scatters, and the table of the remaining GNG-stage predictions, per element"></div>
+        <figcaption><span class="fignum">Figure S9.</span> <b>The GNG stage, continued: rows F and G of the GNG theory figure.</b> Columns as in Figure 3. <b>F</b> The GNG columns against the modes, as predicted scatters: under &sigma;<sub>1</sub> every GNG column is orthogonal to the memory mode; under &tau; the go/nogo contrast may drive &kappa;&#8321; and only &kappa;&#8321;; under a kept &sigma;<sub>3</sub> every GNG column is orthogonal to the decision mode; under the free rule nothing is forced, which is where the cue-to-&kappa;&#8321; overlap of the free networks comes from. <b>G</b> The remaining predictions: which elements survive, the autonomous field, trial trajectories, memory retention, behavior, single units, and what the Dual stage inherits.</figcaption>
+      </figure>
+      <h3><span class="h3num">S.5</span>The Dual task, continued</h3>
+      <figure class="fig" id="fig-s10">
+        <div class="mat"><img src="{{FIG:dual_theory_supp}}" alt="The Dual task continued: the inputs against the modes under the Dual elements, and the table of the remaining predictions"></div>
+        <figcaption><span class="fignum">Figure S10.</span> <b>The Dual task, continued: rows F and G of the Dual theory figure.</b> Columns as in Figure 5. <b>F</b> The inputs against the modes under each surviving element, as predicted scatters; the inputs are frozen in Dual, so these are inherited from DPA and GNG and checked rather than trained. <b>G</b> The remaining predictions: memory and decision wells, trial trajectories, behavior, single units, and what the ledger shows.</figcaption>
+      </figure>
+      <h3><span class="h3num">S.6</span>The DPA predictions for the overlaps and the inputs, and the population grids</h3>
+      <p>Rows E&ndash;G of the DPA theory (the overlap scatters, the input scatters, the table of remaining predictions), and the two population grids at the DPA checkpoint, for the write vectors and for the read vectors.</p>
+      <figure class="fig" id="fig-s11">
+        <div class="mat"><img src="{{FIG:theory_pred}}" alt="What the group predicts for the overlaps, the inputs and the rest, per tie, as scatter schemes and a table"></div>
+        <figcaption><span class="fignum">Figure S11.</span> <b>What the group predicts for the overlaps, the inputs, and the rest, tie by tie.</b> <b>E</b> The overlaps as scatters: each input column, the other mode, and the marginal of <i>n</i>, against <i>n</i>&#8320; and <i>n</i>&#8321;. A column fixed by a tied element that flips the readout gives a mirror-symmetric cloud, so the overlap is zero (gray); a column exchanged with its partner gives a cloud that is the image of the partner&rsquo;s, a mirror image where the readout flips (the overlaps are opposite) or a copy where it is kept (they are equal); under &sigma;<sub>3</sub> alone nothing relates <i>w</i><sub>A</sub> to <i>w</i><sub>B</sub>. The cross-overlap panels show <i>m</i> of the other mode, forced to zero unless the tie is &sigma;<sub>2</sub>; the marginals show which readout means are forced to zero. <b>F</b> The inputs against the modes, as predicted scatters. Each input combination carries a character: the sample contrast <i>w</i><sub>A</sub> &minus; <i>w</i><sub>B</sub> transforms like <i>m</i>&#8320;, the sample mean like the bias, the test contrast <i>w</i><sub>C</sub> &minus; <i>w</i><sub>D</sub> like no mode at all (it flips under &sigma;<sub>1</sub> and &sigma;<sub>3</sub> and is even under &sigma;<sub>2</sub>), the GNG inputs like the bias. Each panel starts from one correlated cloud of units in the (mode, input) plane and adds the images the tie demands: an antipode keeps the correlation (teal, free), a mirror image forces it to zero (gray, 0). The same zeros hold with <i>n</i> in place of <i>m</i>. Under the whole group only the sample contrast against the memory mode survives: the test contrast is orthogonal to all four low-rank vectors, so the pairing can only be computed by gain modulation, and the sample mean is orthogonal too, so there is no common stimulus-on transient. <b>G</b> The remaining predictions: trial trajectories (the noise-averaged trajectory of a relabeled trial is the image of the original), rest state, invariant lines, the Jacobian at rest, attractor parity, equal depths and relaxation times of image wells, the input-driven fields, the input weights on image units, behavior, single-unit statistics, and what training preserves.</figcaption>
+      </figure>
+      <figure class="fig" id="fig-s12">
+        <div class="mat"><img src="{{FIG:mn_grid_dpa}}" alt="Predicted cluster lattice and three scatters of the low-rank vectors per condition at the DPA checkpoint"></div>
+        <figcaption><span class="fignum">Figure S12.</span> <b>The low-rank vectors at the DPA checkpoint, one row per condition.</b> First column: the cluster lattice each tie predicts in the (<i>m</i>&#8320;, <i>m</i>&#8321;) plane, a generic cluster with the images the group element demands: a mirror image across the <i>m</i>&#8321; axis under &sigma;<sub>1</sub>, an antipode under &sigma;<sub>2</sub>, a mirror image across the <i>m</i>&#8320; axis under &sigma;<sub>3</sub>, all three under the whole group. Then, for one seed, the three scatters that carry the argument: <i>m</i>&#8320; against <i>m</i>&#8321;, which shows the lattice, and the two same-mode panels, <i>m</i>&#8320; against <i>n</i>&#8320; and <i>m</i>&#8321; against <i>n</i>&#8321;, which show that write and read vectors share a sign within a mode. Points are colored by the sign quadrant of (<i>m</i>&#8320;, <i>m</i>&#8321;), so a tie's prediction reads as which colors mirror which. Every trained network has <em>six</em> populations, not four: the four lattice clusters at (&plusmn;2.5, &plusmn;1.2), about 200 units each, and a pair on the m&#8321; axis at (0, &plusmn;4.5), about 50 units each, with m&#8320; &asymp; 0 and the largest decision loadings in the network; these are the units of the decision wells, and the schemes draw them in gray. They are made by training, not inherited: the initialization is one isotropic Gaussian, and a unit's final position is uncorrelated with its initial one (<i>r</i> &asymp; 0). The free network (top, seed 1, the one tabulated below) shows the lattice with unequal magnitudes. The &sigma;<sub>1</sub> network is exactly mirror-symmetric across the m&#8321; axis, each axis cluster its own image. The &sigma;<sub>2</sub> network is exactly antipodal but its lattice has lost its right angles: the free cross-overlaps tilt it (J&#8321;&#8320; = &minus;0.35 in this seed, up to &minus;0.95 in another) and the clusters trail along the tilt. The &sigma;<sub>3</sub> network is exactly mirror-symmetric across the m&#8320; axis, the axis clusters exchanged; this seed's lattice is sharp, and in its other three seeds the memory clusters split only weakly along m&#8321;. The whole-group network is exactly symmetric under all three, with the cross-overlaps at 0.000.</figcaption>
+      </figure>
+      <figure class="fig" id="fig-s13">
+        <div class="mat"><img src="{{FIG:mn_grid_dpa_n}}" alt="The same grid for the read vectors n: predicted lattice in (n0, n1) and three scatters per condition at the DPA checkpoint"></div>
+        <figcaption><span class="fignum">Figure S13.</span> <b>The same grid for the read vectors.</b> Figure S12 with <i>n</i> in the role of <i>m</i>: the predicted lattice in the (<i>n</i>&#8320;, <i>n</i>&#8321;) plane, then <i>n</i>&#8320; against <i>n</i>&#8321;, and the two same-mode panels with the axes exchanged, colored by the sign quadrant of (<i>n</i>&#8320;, <i>n</i>&#8321;). The symmetry is the same, exact under each tie, but the lattice is not: the read vectors fill their four quadrants as continuous clouds, with magnitudes spread from 0 to 8 rather than concentrated at a few values, and the decision-axis pair is not separated. The same-mode panels say why: within each cluster of <i>m</i> the read weights keep a continuous spread along a line through the origin. The population structure of &sect;2.4 is a property of the write vectors; the read vectors are sign-locked to them and otherwise free.</figcaption>
       </figure>
     </div>
   </section>

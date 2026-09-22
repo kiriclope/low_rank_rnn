@@ -81,6 +81,7 @@ def generate_dpa_trials(
     decay_to_zero: bool = True,
     decay_onesided: bool = False,
     response_in_cue: bool = False,
+    post_response_window: float | None = None,   # seconds of pairing target AFTER test offset when response_in_cue=False (None = the legacy 0.25 s)
     prelick_free: bool = False,
     hold_window: float = 0.0,
     hold_anchor: str = "test",
@@ -152,7 +153,8 @@ def generate_dpa_trials(
         to   = int(n_off[1])
         # response_in_cue: score in the last 0.5 s of the TEST (test ON) so the match decision is
         # test-DRIVEN, not held from memory; else the legacy 0.25 s window starting at test-off.
-        r0, r1 = (to - half, to) if response_in_cue else (to, to + quarter)
+        post = quarter if post_response_window is None else int(round(post_response_window / timing.dt))
+        r0, r1 = (to - half, to) if response_in_cue else (to, to + post)
         targets[idx_pair,  r0:r1, -1] =  1.0
         targets[~idx_pair, r0:r1, -1] = -1.0
         if decay_to_zero:

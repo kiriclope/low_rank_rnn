@@ -128,6 +128,8 @@ All generators return `(inputs, targets[, trial_type, condition_names])` with sh
 
 `TaskTiming(stim_on, stim_off, t_steps, dt)`. Dual uses 4 epochs:
 `[sample, gng, cue, test]` at times `[2, 4, 6, 8]` s (on/off).
+DPA response window: `response_in_cue=True` scores the pairing in the last 0.5 s of the test (test ON); `False` scores it after test
+offset, for 0.25 s (legacy) or `dpa_post_response_window` seconds (2026-09-22, `generate_dpa_trials(post_response_window=)`).
 `"2afc"` (2026-09-21, `rule_timing="2afc"`): Leon's delayed two-alternative choice — stimulus L/R 2–3 s
 (channels 5/4), 3 s delay, response cue 6–7 s (channel 6), trial 8 s; with `afc_response_to_end=True` the
 response target κ₁ → ±1 runs from cue-off to trial end (`generate_gng_trials(response_to_end=True)`).

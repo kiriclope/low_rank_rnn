@@ -199,6 +199,7 @@ class RunConfig:
     gng_decay_to_zero: bool = False       # GNG-STAGE-ONLY decay override (Leon 2026-08-12): pin the lick back to 0 on BOTH trial types from the response end to TRIAL END in the GNG stage (even when decay_to_zero=False globally) — full return-to-rest, the softplus epochs cannot park inflated up OR down structure for Dual to inherit; GNG nolick becomes inert under the pin. Down-seating then happens purely in the Dual delay term
     decay_to_zero: bool = True            # within windowed_targets: add explicit decay-back-to-0 targets after the expression window (gng response & pairing). False = express then leave free. Decay zeros are PINNED (MSE-to-0) at all stages (pin_decay_zeros in the GNG/Dual losses; DPA ThresholdLoss pins via dpa_zero_thresh=0) — pre-sample baseline keeps its own separate term
     decay_onesided: bool = False          # decay window scored ONE-SIDED at thresh 0 (go-decay penalises κ₁>0, nogo-decay penalises κ₁<0) instead of pin-to-0 — each trace relaxes to rest from its own side (transient decision). Needs windowed_targets + decay_to_zero
+    dpa_post_response_window: float | None = None   # DPA with response_in_cue=False: seconds of pairing target after test OFFSET (None = legacy 0.25 s); 0.5 = Leon's post-test choice (2026-09-22)
     response_in_cue: bool = False         # score the RESPONSE in the last 0.5 s of its triggering stimulus (gng response cue / DPA test) — cue ON — so the lick is input-DRIVEN, not held from memory. Removes the source of the go-rule "up copies". Needs windowed_targets
     dpa_prelick_free: bool = False        # DPA: pin the readout only PRE-SAMPLE; sample→test FREE (no delay no-lick supervision at all — wells placed by pairing training alone). Default False = legacy two-sided 0-pin to test-on
     hinge_shape: str = "relu2"            # unified loss hinge form — how force scales with violation size x: "relu2" (legacy, force 2x → vanishes near the threshold, so straddling is nearly free), "relu" (force 1 up to the threshold then 0 — the hinge/SVM form: every violation counts equally, crisp satisfaction; right shape for a BOUNDARY target like "don't lick"), or "softplus" (force σ(x) never vanishes on the correct side, depth keeps being rewarded; positive loss floor → stop_loss effectively disabled). relu2/relu share the same equilibrium (zero gradient once satisfied) — to sit strictly BEYOND a threshold, displace the threshold rather than change the shape
@@ -846,7 +847,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         dpa_freeze_cols = [1] if config.rank >= 3 else None
         _stage_header("DPA", config.epochs_dpa, dpa_freeze_input, dpa_freeze_cols or [])
         t0 = time.time()
-        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, prelick_free=config.dpa_prelick_free, hold_window=config.dpa_hold_window, hold_anchor=config.dpa_hold_anchor)
+        X, y   = generate_dpa_trials(config.n_batch, dpa_timing, config.input_size, noise=noise, target_rank=config.target_rank, input_scale=config.input_scale, attention_input=config.attention_input, attention_gated=config.attention_gated, attention_scale=config.attention_scale, windowed_targets=config.windowed_targets, decay_to_zero=config.decay_to_zero, decay_onesided=config.decay_onesided, response_in_cue=config.response_in_cue, prelick_free=config.dpa_prelick_free, hold_window=config.dpa_hold_window, hold_anchor=config.dpa_hold_anchor, post_response_window=config.dpa_post_response_window)
         print(f"[{rid}]  data: {list(X.shape)} → {list(y.shape)}", flush=True)
         tl, vl     = train_val_split(X.to(device), y.to(device), config.batch_size)
         opt, sched = _opt_and_sched()
@@ -3325,6 +3326,87 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                         "readout_scale": 7.0 ** 0.5,
                                         "cue_scale": 2.0,
                                         "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "dual_nolick_shape": "softplus",
+                                        "nolick_weight": 1.0, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+    # memonly_* (2026-09-22, Leon's hypothesis, ring log §36e): the DPA stage with the pre-sample baseline pin
+    # KEPT (bl_weight 1: κ = 0 before the sample) but no hinge or pin on κ₁ after it — pairing weight 0, so the
+    # test window has no target; the memory hold (aux) is the only target after the baseline. Does the memory then split into the quadruple (±a, ±w) under the
+    # whole-group or σ₃ tie, where the constrained DPA keeps it on the κ₀ axis? DPA only. --run_filter memonly
+    for tag, sym in (("memonly_klein", "klein"), ("memonly_test", "test"), ("memonly_free", "")):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     symmetry=sym, symmetry_stages=(["dpa"] if sym else []),
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "dpa_weight": 0.0, "bl_weight": 1.0,
+                                        "memory_lambda": 7.0, "decision_lambda": 7.0,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": 7.0 ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 0, "epochs_dual": 0,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "dual_nolick_shape": "softplus",
+                                        "nolick_weight": 1.0, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+    # memhold_* (2026-09-22, Leon): the full DPA task (pairing kept, dpa_weight 1) with the A/B hold on κ₀ extended
+    # across the whole delay (dpa_hold_window 0.0 = legacy: sample onset → test onset) instead of 0.5 s after the
+    # sample. The published symdpa runs already have nothing on κ₁ besides the baseline pin and the pairing; this
+    # asks whether an explicit full-delay memory changes where the memory sits (on the axis vs the quadruple).
+    # The memonly_* arms above (pairing weight 0) were a misreading and are kept only as the record of that run.
+    for tag, sym in (("memhold_klein", "klein"), ("memhold_test", "test"), ("memhold_free", "")):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     symmetry=sym, symmetry_stages=(["dpa"] if sym else []),
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.0, "dpa_hold_anchor": "test",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "dpa_weight": 1.0, "bl_weight": 1.0,
+                                        "memory_lambda": 7.0, "decision_lambda": 7.0,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": 7.0 ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 0, "epochs_dual": 0,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "dual_nolick_shape": "softplus",
+                                        "nolick_weight": 1.0, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+    # postresp_* (2026-09-22, Leon): DPA with the choice scored in the 0.5 s AFTER test offset (response_in_cue False,
+    # dpa_post_response_window 0.5) instead of the last 0.5 s of the test: the decision must be HELD with the odor
+    # gone. Does a held choice change where the memory sits (axis vs quadruple) and which decision wells form?
+    # DPA only, whole-group / σ₃ tie / free. --run_filter postresp
+    for tag, sym in (("postresp_klein", "klein"), ("postresp_test", "test"), ("postresp_free", "")):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     symmetry=sym, symmetry_stages=(["dpa"] if sym else []),
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": False, "dpa_post_response_window": 0.5,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": 7.0, "decision_lambda": 7.0,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": 7.0 ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 0, "epochs_dual": 0,
                                         "gng_weight": 0.0, "gng_response": True,
                                         "pair_pin": True, "dual_nolick_shape": "softplus",
                                         "nolick_weight": 1.0, "nolick_split_sample": True,

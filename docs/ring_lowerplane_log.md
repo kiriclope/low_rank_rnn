@@ -3160,6 +3160,197 @@ after the 2AFC waves (before the bias-fix rerun). Predictions:
   σ₁/σ₂ (free: ⟨n₁⟩ −0.01…−0.18, J₀₁ up to 0.73, n₁·w_B up to 0.78); what σ₃ leaves open (⟨n₀⟩: ±0.015; a′ ≠ −a:
   ≤ 0.01) the A/B-symmetric objective does not drive. Prediction: the σ₃ column tracks the whole-group column
   after release. Derivations §12 (remark after Prop. 12.5) and the Fig. 1 caption updated (v3.9).
+- **§36e scored — the σ₂/σ₃ curricula complete (2026-09-21 evening, `symdpa_inv`/`symdpa_test`, expert ckpt;
+  Fig. 1 bottom row, Figs S7/S8)**. Geometry: **both memories below the line 4/4 in BOTH scaffolds** (σ₂:
+  −0.74…−1.38η; σ₃: −1.21…−1.67η; landings on the wells, d ≤ 0.04 except s1_inv A d = 0.14), as a single level
+  pair (±0.9, −0.45…−0.5) with **no decision well left** (2 attractors in 8/8), against σ₁ 4/4 (4,4,3,4
+  attractors), V 4/4 (4,2,2,2), free 6/8. Predictions: σ₂ "one-up-one-down start → both-below or lopsided" —
+  the start was on the line (w = 0, ±0.1η) and the end is both-below; σ₃ "starts on the line; whether both
+  descend depends on the σ₁ residual" — both descend in 4/4 with σ₁ residual 0.12–0.19 at the end. Ledger:
+  expert ⟨n₁⟩ = −0.06…−0.125 in all 8 (vs −0.04…−0.42 in the free bfix seeds), inversion residual 0.35–0.51,
+  bias rms frozen at its GNG value (0.15–0.58).
+  **Task: nogo FAILS in Dual.** dual_go 1.000 everywhere, dual_nogo σ₃ = 0.91, 0.72, 0.18, 0.18; σ₂ = 0.55, 0.76,
+  0.62, 0.60 (σ₁/V 0.947–0.997; recipe7 0.93–1.00; recipe7_bfix 0.96–1.00). Trajectories (s3_symdpa_test): nogo
+  stimulus takes κ₁ to −0.5, the cue (go channel, cue_on_go_input) lifts it to +0.4 and it stays there; the
+  cue-driven field has a single well at (0, +1.7). Go/nogo overlaps are NOT smaller than in the passing nets
+  (n₁·go +2.5…+3.3, n₁·nogo −2.1…−3.2). Not explained by "no decision well" either (V seeds 1–3 also have 2
+  attractors and pass). CONFOUND: σ₂/σ₃ ran on the post-fix code (bias frozen in Dual), σ₁/V on the old code;
+  the free bfix rerun passes nogo, so the freeze alone is not it; the scaffold × freeze cell is untested →
+  proposed `symdpa_pair_bfix` + `symdpa_klein_bfix` (8 runs, recipe base, tie in DPA only) to put every Fig. 1
+  column on the same code. Until then Fig. 1's σ₁/V columns are pre-fix, σ₂/σ₃ post-fix (stated in the caption).
+- **`sweep_lif_recipe7_bfix` (2026-09-21 night, 8 seeds, the bias-freeze check of §37h) — 8/8 both below.**
+  Same seeds and configs as `sweep_lif_recipe7`; DPA and GNG replicate exactly (identical after_dpa/after_gng
+  accuracies), only Dual differs (bias frozen with the inputs). Expert: both memories below the line **8/8**
+  (recipe7: 6/8), depths −0.6…−1.9η (s0 −1.0/−0.6, s1 −1.2/−1.1, s2 −1.5/−1.4, s3 −1.9/−1.8, s4 −1.6/−1.4,
+  s5 −1.1/−1.0, s6 −1.6/−1.5, s7 −1.6/−1.5), NO upper well in any seed (recipe7 s0/s3 had one at +0.9/+1.0η,
+  s1/s6 an unoccupied one), landings on the wells, dual_dpa 0.993–1.000, dual go 1.000, nogo 0.958–0.998.
+  Ledger (expert): ⟨n₁⟩ −0.04…−0.42, inversion residual 0.34–1.19, bias rms = its GNG value (0.21–0.94).
+  Reading: by Theorem 6.1 only ⟨n⟩ and b break the inversion; with b frozen the Dual cost has ⟨n₁⟩ only and
+  drives it down; the Dual-trained bias was what let s0/s3 keep a well above. Every pre-fix Dual result
+  (recipe7, symdpa_pair/klein, dualscan) carries this caveat; the σ₂/σ₃ curricula are post-fix. Note §4.2
+  callout (v3.15). Gallery `lif_recipe7_bfix/`.
+- **Figure 3 = Figure 2 for the read vectors (Leon, 2026-09-22; `MODE=n mn_grid_fig.py`)**: the (n₀, n₁) plane
+  has NO lattice — the read vectors fill the four sign quadrants as continuous clouds (|n| spread 0–8), the
+  decision-axis pair is not separated, and within each m-cluster n keeps a continuous spread along a line
+  through the origin. The population structure is a property of m; n is sign-locked to m and otherwise free.
+  Symmetry (exact quadrant images under each tie) holds in both planes.
+- **Interpretation: m categorical, n continuous (2026-09-22, Leon asked for a literature-based reading).**
+  (1) In a low-rank net r_i = φ(g m_i·κ + w_i·x + b_i), κ = nᵀr/N (Mastrogiuseppe & Ostojic, Neuron 2018): m_i is a
+  unit's TUNING (receptive field over the κ-plane, what an experimenter regresses rates on), n_i its CONTRIBUTION
+  (decoding weight, invisible to single-unit analyses). (2) The six m-clusters are Dubreuil–Ostojic population
+  structure in hard form (Dubreuil, Valente, Beiran, Mastrogiuseppe & Ostojic, Nat Neurosci 2022: flexible
+  input–output maps need multiple populations = clusters in the joint (m, n, I) loading space, mechanism = gain
+  modulation of ⟨φ'⟩_p; Beiran et al., Neural Comput 2021: multiple populations let rank 2 hold more than one
+  pair of fixed points). Four mixed populations carry memory × decision sign conjunctions (the pairing), one pure
+  population the decision attractor. Their mean-field reduction needs each population's ⟨φ'⟩_p and ⟨n m⟩_p only —
+  shared tuning, but only the MEAN of n. (3) Why training quantizes m and not n: exact — the field is linear in n,
+  so units with the same (m_i, b_i) have identical rates and identical ∂L/∂n_i = (1/N)Σ_t δ(t)φ_i(t): a tuning
+  class's n-cloud is translated rigidly and keeps its Gaussian-init spread (sign-locked to m, otherwise
+  continuous); ∂L/∂m_i is weighted by n_i·δ and φ'_i and points along κ(t), the well directions, so m is shaped.
+  Mechanistic — the saturating φ is a stop on m: at the memory well lattice units sit at |drive| 2.4–2.7 (63–90%
+  within 0.05 of rate 0/1), axis units at the decision wells at |drive| 3–5.7 (100% saturated); once saturated
+  φ' ≈ 0 and m stops → common magnitude per class (CV of |m| 0.18–0.27 vs 0.34 for |n|; |n| runs 0–8 with no
+  structure). Hopfield/Amit picture: units become ±1 at the attractors, class means of n (population counts) set
+  the wells. (4) Categorical-vs-continuous debate (Rigotti et al. Nature 2013 mixed selectivity; Raposo, Kaufman
+  & Churchland Nat Neurosci 2014 category-free PPC; Hirokawa et al. Nature 2019 discrete OFC clusters): the
+  network is both — tuning categorical (6 classes, mixed in 4, pure in 2), contribution continuous. PREDICTION:
+  on data with both, cluster the tuning coefficients and the decoding weights of the same neurons; clusters in
+  the first only. (5) Caveats: class sharpness is seed-dependent (corrugation depth); the bias broadens the
+  within-class drive (IQR 1.2–3.5); the m-vs-n asymmetry itself is not stated in the low-rank literature I know
+  (closest: Schuessler et al. NeurIPS 2020, learned n aligns with inputs, m with outputs). Numbers from
+  s0_symdpa_klein and s1_recipe7 DPA ckpts. Not yet in the note (offered as a §2.3 paragraph).
+- **Could the group have predicted the six? (Leon, 2026-09-22) — new Fig. 2 `scratchpad/group_predictions_fig.py`.**
+  The unit ensemble transforms as the plane (ρm = mD), so the fixed-point orbit table applies to units: orbits
+  of 4 (generic), 2 (axes), 1 (origin) ⇒ population counts 4a + 2b + c, c ≤ 1 — even without an origin
+  population; 4 and 6 equally allowed (we read the 4 tied BLOCKS as 4 populations; the axis orbit was in the
+  table). Angular density of units: p(θ) = Σ a₂ⱼ cos 2jθ only (reflection kills sines, inversion odd orders).
+  Measured (DPA ckpt): whole-group s0 → a₂ +0.72, a₄ −0.24, all forbidden coefficients 0.00; free s1 → a₂ +1.13,
+  forbidden ≤ 0.06; init → all ≈ 0 (isotropic, K = 1, invariant without clusters). NOT predictable from the group:
+  existence of clusters, number of generic orbits, which axis, m vs n (identical transformation). Those come from
+  the task (pairing on memory units) and the nonlinearity (saturation stop on m; field linear in n). Note v3.17:
+  §2.3 paragraph + Fig. 2; main figures now 1–14.
+- **Note v3.18 (2026-09-22): Figure 1 = the theory, Figure 2 = the simulations (Leon).** `scratchpad/theory_fig.py`:
+  A the truth table + the three relabelings + Cayley table; B the plane actions and the unit permutation (four
+  blocks); then per tie (σ₁, σ₂, σ₃, V): C autonomous-flow schemes, D trial-trajectory schemes (κ̄_B = Dκ̄_A;
+  test responses are images), E unit-ensemble orbit schemes (with the axis pair), F the overlap table (forced
+  zeros vs relations), G a table of the remaining predictions. **Predictions we had not written down before**
+  (now in Fig. 1 D/G, to be checked): (i) trial-level — κ̄_B(t) = D κ̄_A(t) for the WHOLE trial, so the A·C and
+  B·D lick time courses are identical under σ₁, the B·C response is minus the A·C response under σ₂, the A·D
+  response is the mirror of the A·C response under σ₃; (ii) input-driven fields are images of each other
+  (A-field = D₁(B-field), C-field = D₃(D-field); under σ₂/V the C, D, go fields are odd so they cannot move the
+  rest state; under σ₃/V a go pulse at rest cannot lick); (iii) image wells have equal depth AND equal
+  relaxation time τ and equal landing spread; (iv) Jacobian at rest diagonal under σ₁/σ₃/V (modes are exact
+  eigendirections), complex pair possible under σ₂ only; (v) behavior — acc(A·C) = acc(B·D) & acc(A·D) = acc(B·C)
+  under σ₁, misses = false alarms under σ₂ (boundary at 0), acc(C tests) = acc(D tests) under σ₃; (vi) single
+  units — exactly as many A- as B-preferring units under σ₁, lick- as no-lick-preferring under σ₃, and under V
+  the memory and decision preferences are INDEPENDENT across units (zero mixed-selectivity correlation).
+  `dpa_summary_fig.py` now renders the two data rows only (SCHEMES=1 restores the scheme row). Main figs 1–15.
+- **Predictions about m and the inputs (Leon, 2026-09-22; Fig. 1 row H, v3.19).** Input combinations carry
+  characters (χ(σ₁), χ(σ₃)): A−B (−,+) = m₀'s; A+B (+,+) = the bias's; C−D (−,−) = NO mode's (flips under σ₁ and
+  σ₃, even under σ₂); go/nogo/cue (+,+). An overlap ⟨mode, input⟩ is forced to 0 whenever the characters differ
+  on a tied element. Consequences: V — the test contrast is orthogonal to m₀, n₀, m₁, n₁ (the pairing is gain
+  modulation ONLY) and so is the sample mean (no common stimulus-on transient; the 2AFC free nets' shared κ₀ dip
+  is a V-breaking signature); σ₁ — C−D may write on the memory readout (n₀·(C−D) free), never on n₁; σ₃ — C−D may
+  drive n₁ directly (allowed, useless), never n₀; σ₂ — both readouts deaf to C, D and the rule. Also: swapped
+  columns on a unit = partner columns on the image unit, unswapped columns constant on orbits ⇒ each lattice
+  population's input weights are set by one prototype; the axis population has ⟨w_A⟩ = ⟨w_B⟩ under σ₁/V.
+  **Checked (DPA ckpts, seed 0):** V: corr(m₀, A−B) = +0.80 (the only allowed one), every other correlation and
+  n·(C−D) = 0.00 exactly, axis pop ⟨w_A⟩ = ⟨w_B⟩ = +0.01; σ₁: n₀·(C−D) = −0.28 (allowed, used), n₁·(C−D) = 0.00;
+  σ₃: n₀·(C−D) = 0.00, n₁·(C−D) = +0.02 (allowed, unused), axis pop ⟨w_A⟩ +0.15 vs ⟨w_B⟩ −0.21 (allowed); free
+  s1: n₀·(C−D) −0.28 AND n₁·(C−D) −0.23 (both broken), corr(m₁, go) −0.12.
+- **Fig. 1 v3.20 (Leon's edits, 2026-09-22):** trajectory row removed (its content is now the first row of the
+  predictions table); the unit-orbit row draws populations as clouds (a generic cloud + its images, gray axis
+  pair); new row G = predicted (m, input) scatters generated from the characters — a correlated cloud in the
+  (m₀, A−B), (m₀, C−D), (m₁, C−D) planes plus the images the tie demands: an antipode keeps the correlation, a
+  mirror image forces it to 0 (V: only (m₀, A−B) survives). `theory_fig.py` computes zeros and images from the
+  character table, so the figure is a function of the group, not hand-drawn.
+- **Fig. 1 v3.22:** the input-character table (F) is now the full 5 × 2 grid of predicted (input combination, mode)
+  scatters per tie (A−B, A+B, C−D, C+D, go/nogo/cue against m₀ and m₁), generated from the characters — the
+  former G row is subsumed; the predictions table is G. σ₃ flow scheme: brackets a and a′ from the origin.
+- **Fig. 1 v3.23:** the overlap table (E) is now scatters too: per tie, n₀ and n₁ against w_A, w_B, w_C, w_D, w_go, the
+  other mode's m (J₀₁, J₁₀), and the marginal histogram of n. Rules encoded in `theory_fig.py`: a column fixed by
+  an element that flips the readout → mirror-symmetric cloud (overlap 0); a swapped column → its cloud is the
+  image of the partner's (mirror where the readout flips ⇒ opposite overlaps; copy where kept ⇒ equal); no
+  relating element (σ₃ alone for A/B) → unrelated cloud; ⟨n_j⟩ = 0 iff some element flips n_j.
+- **v3.24 (Leon): Fig. 1 = A–D (task, group, actions, wells, populations); Fig. 2 = E–G (overlap scatters, input
+  scatters, remaining-predictions table); simulations = Fig. 3; main figures 1–16. `theory_fig.py <fig1> <fig2>`.
+- **v3.25 (Leon): new Fig. 2 = rows C/D of Fig. 1 in the simulations** (`ROWS=dpa,mn dpa_summary_fig.py`: DPA-ckpt flows +
+  (m₀, m₁) populations per column, free/σ₁/σ₂/σ₃/V); the predictions figure is Fig. 3; the released-networks flows
+  are Fig. 4 (`ROWS=expert`). Main figures 1–17. `dpa_summary_fig.py` takes ROWS ∈ {dpa, expert, mn}.
+- **v3.26–3.27 (2026-09-22):** Fig. 2 = ties only (free column dropped; `NOFREE=1`), caption records the three
+  "allowed but unused" facts: σ₂ pair never off the line (tilt ≤ 4°, though the lattice tilts, J₁₀ to −0.95); σ₃
+  never a ≠ a′ (≤ 0.02); no quadruple with the tie held (extras = decision pair on the κ₁ axis); the quadruple
+  appears after release only — V s0 expert (±1.05, +0.58)/(±1.0, −0.57); σ₁ expert seeds 0, 1, 3 have an upper
+  pair (+0.3…+0.5) above the lower pair (−0.4…−0.65); σ₂/σ₃ expert: lower pair only. **Leon's hypothesis:** the
+  memory stays on the axis because the DPA loss constrains κ₁ (the baseline pin on both components and the
+  pairing hinge |κ₁| ≥ 1 at test); with κ₁ unconstrained some seeds should show the quadruple at the DPA ckpt.
+  Proposed test: memory-only DPA (pairing weight 0, baseline pin on κ₀ only — needs a `bl_dims` flag), V tie and
+  σ₃ tie and free, 4 seeds each, DPA only. **New Fig. 3 = the rule-stage theory figure** (`gng_theory_fig.py`):
+  A the rule task and τ (go↔nogo, response flipped; the one-sided objective breaks it — an explicit breaking
+  field; two-sided would be τ-invariant); B τ acts as σ₃; deafness sorts V: σ₁ compatible and protects the
+  memory (n₀·w_go = n₀·w_nogo = n₀·w_cue = 0), σ₂/σ₃ incompatible with any rule (n₁·w_rule = 0), τ compatible
+  with two-sided only; C input-driven fields per element (σ₁: rule wells ON the κ₁ axis; τ: go-field =
+  mirror of nogo-field; σ₂/σ₃ kept: no lick from rest; free: unpinned); D what the stage can/cannot change;
+  E lattice images; F rule columns vs modes scatters; G table (survivors, field, trajectories, retention,
+  behavior, units, what Dual inherits). Main figures 1–18.
+- **Naming (Leon, 2026-09-22): the tasks are DPA and GNG**, not "the memory task"/"the rule task"; note v3.28 and
+  derivations v1.4 renamed throughout (memory stage → DPA stage, rule stage → GNG stage, rule columns → GNG
+  columns, "the rule" → GNG); κ₀ objects keep "memory" (memory mode, memory wells, memory readout). Figure
+  scripts renamed likewise (theory, gng_theory, dpa_summary, rulesym/afc2 summaries); S7/S8 and the GNG-task
+  validation figure re-rendered with new titles. **memonly arms revised (Leon):** keep the pre-sample baseline
+  pin (bl_weight 1) and remove only the hinge/pin after it (dpa_weight 0) — `memonly_klein/test/free` in
+  sweep.py, DPA only, 4 seeds each; awaiting 'launch'.
+- **`sweep_lif_memonly` wave 1 (2026-09-22, klein + test, DPA only, pairing weight 0, baseline pin kept): the memory
+  DISAPPEARS.** DPA-ckpt attractors in all 8 seeds = the decision pair (0, ±0.8–0.9) only (τ_slow 1.6–3.3 s); no
+  memory wells at all. With the pairing gone the 0.5 s post-sample hold is satisfied transiently and nothing
+  requires the memory to persist. So the test is not yet the quadruple test: it needs a memory that persists
+  without a κ₁ term → arms `memhold_klein/test/free` added (dpa_hold_window 0.0 = legacy hold from sample onset
+  to test onset, dpa_weight 0, bl_weight 1), awaiting 'launch'. The free memonly wave (early-stopped at loss < 0.1, epoch 35; the tied ones at ~60): DPA-ckpt attractors are an
+  oblique antipodal pair, e.g. (−0.64, +0.51)/(+0.66, −0.47), slow (τ_slow 3.6–6.7 s, a ring remnant), s3 a single
+  well — neither a memory on κ₀ nor the decision pair: with no test the untied net has no reason to separate the
+  modes. All 12 memonly checkpoints in `results/dual/sweep_lif_memonly/`; gallery `lif_memonly/`.
+- **v3.31: Fig. 4 = GNG sims (`gng_sim_fig.py`: autonomous / go-driven / nogo-driven fields + populations after
+  GNG for σ₁-released, τ-tied GNG-alone, σ₃-released, free recipe): every column has exactly ONE attractor under
+  go and one under nogo per seed; τ column: go/nogo fields mirror images; autonomous field = the DPA pair (+ a
+  decision well in some seeds); lattice intact. Fig. 5 = Dual theory (`dual_theory_fig.py`): two responses on one
+  κ₁ ⇒ σ₃ alone deaf to GNG, τ alone deaf to the test odors; two-sided Dual group V′ = {e, σ₁, σ₂τ, σ₃τ}; real
+  Dual (one-sided nogo + no-lick) ⇒ Z₂ = {e, σ₁}; C flows after Dual per element (level pair descends together
+  under σ₁; cannot leave the line under σ₃τ; antipodes under σ₂τ forbidden by no-lick; free: both below iff σ₁
+  survived), D populations, E what Dual can change; F/G = Fig. S10. Main figures 1–20, S1–S10.
+- **What constrains κ₁ in the published DPA stage — checked on the generated targets (2026-09-22).** With
+  `dpa_prelick_free=True` (recipe7, symdpa): κ₁ target = 0 ONLY in the baseline (t < sample onset); sample, delay
+  and post-test are NaN (free); the only other κ₁ target is the pairing ±1 in the last 0.5 s of the test
+  (`response_in_cue`). κ₀: baseline 0, the 0.5 s hold after the sample (10% of the delay), free otherwise. So
+  there is NO κ₁ ≤ 0 hinge and NO κ₁ = 0 pin during the delay in DPA (the legacy `prelick_free=False` pinned κ₁ = 0
+  over the whole pre-test span — the "clamps wells on the line" term the recipe removed in §32). Leon's hypothesis
+  (a delay hinge keeps the memory on the axis) therefore cannot explain the on-axis memory at the DPA checkpoint;
+  the memory sits on the κ₀ axis with κ₁ free. The κ₁ ≤ 0 hinge over the delay exists in DUAL (`nolick_full_delay`),
+  which is where the wells move off the axis (downward). `memonly` (pairing off) was a misreading; `memhold` (full-
+  delay κ₀ hold, pairing kept) remains available but tests the memory requirement, not κ₁'s freedom. Fig. 4 (v3.32):
+  autonomous field + populations only (`DRIVEN=1` restores the go/nogo-driven rows).
+- **v3.33 (Leon): the DPA predictions figure (E–G) and the two population grids (m and n) moved to the supplement as
+  S11–S13 under S.6; main figures now 1–17 (1 DPA theory, 2 DPA sims, 3 GNG theory, 4 GNG sims, 5 Dual theory, 6
+  released flows, 7 n-vs-inputs, 8–… the GNG/Dual story, GNG-alone and 2AFC validations). `postresp_*` arms
+  (choice scored 0.5 s after test offset; `dpa_post_response_window`) added, awaiting 'launch'.
+- **Tie implementation verified against the intended group action (Leon asked, 2026-09-22;
+  `scratchpad/test_symmetry_ties.py`, exit 0 = all pass).** For every kind (pair, test, inv, gng, gng_dec, gng_mem,
+  klein, gng_klein): random N = 64 model with random m, n, W_in AND bias → `project_symmetry` → F(Dκ; Sx) = D F(κ; x)
+  for random κ and random INPUTS x with the intended D and channel permutation S, per generator: 2–5 × 10⁻⁸
+  (float32 round-off); same after `symmetrize_init`; idempotent (P² = P, 0.0); orthogonal (⟨θ − Pθ, Pθ′⟩ cos ≈ 1e-9)
+  ⇒ the orthogonal projection onto the equivariant subspace, as the note claims. Untied control: 0.25 (the test
+  has teeth). Training loop order per step: optimizer.step → _restore_frozen_weights → _mirror_tie (projection) →
+  optional hooks (_orthogonalize_cols, _clamp_kappa1_gain, _pin_kappa_gains — off in every symmetry config; they
+  would break exactness if enabled with a tie); `symmetry_stages` gates the projection per stage; `_check_blocks`
+  asserts N divisible by the block count. Trained tied checkpoints show residual 0.000 at three decimals; runs
+  before 2026-09-21 (symdpa_pair/klein, mirror_dpa) predate the bias tie (0.02–0.05).
+- **v3.34 (Leon: "derivations explicit as equations"):** the note now loads MathJax and carries numbered derivations
+  of the theory figures' predictions — §2.2 (Fig. 1: field (2.1), tie (2.2), equivariance (2.3), orbits (2.4),
+  trajectory images (2.5), invariant lines (2.6), even part / height (2.7), populations 4a+2b+c and harmonics (2.8),
+  overlap relabeling n_jᵀw_c = χ_j n_jᵀw_{Sc} and J (2.9), the character table (2.10), what Adam preserves);
+  §3.1 (Fig. 3: the one-sided vs two-sided objective under τ (3.1), the deafness lemma (3.2), σ₁ protects the
+  memory (3.3), τ-tied mirror fields and trajectories (3.4)); §4.1 (Fig. 5: consistent elements and V′ (4.1), the
+  no-lick cost and its one-signed gradient (4.2), Z₂ = {e, σ₁} (4.3), common height w_A = w_B (4.4)). Old
+  subsections shifted (2.2→2.3 … 4.4→4.5). `head.part` carries the MathJax config (same macros as the companion).
 - **Six populations, not four (Leon, 2026-09-21, v3.12)**: every trained DPA network (free, σ₁, σ₃, V) has the four
   lattice clusters (±2.5, ±1.2; ~200 units each) PLUS a pair on the decision axis (0, ±4.5) in (m₀, m₁), ~50 units
   each (6–11% of units), m₀ ≈ 0, n₁ ≈ ±4–5: the units of the decision wells. A BIC-free GMM finds 6–8 components;

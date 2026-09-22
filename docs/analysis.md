@@ -462,6 +462,17 @@ network OCCUPIES. Each rule below names the error that motivated it.
 - `scratchpad/dpa_summary_fig.py <out>` — artifact Fig. 1: the DPA symmetries → predicted wells per tie (scheme) →
   free (recipe7, 8 seeds) / σ₁ / σ₂ / σ₃ / whole group at the DPA and expert checkpoints. `afc2_summary_fig.py`
   is the same for Leon's 2AFC (§39).
+- `scratchpad/theory_fig.py <fig1.png> <fig2.png>` — note Figures 1 and S11: the DPA group (task, actions), and per tie the well schemes, population
+  clouds, overlap scatters, input-vs-mode scatters and the predictions table; zeros and images are computed from the character table.
+- `scratchpad/gng_theory_fig.py <fig.png> <supp.png>` — Figure 3 / S9: the GNG stage (τ, the deafness lemma, per-element fields, what the stage
+  can change, lattice images; supp: GNG columns vs modes and the table). `dual_theory_fig.py` — Figure 5 / S10, the Dual task likewise.
+- `scratchpad/gng_sim_fig.py <out.png>` — Figure 4: autonomous field + populations after GNG (σ₁-released, τ-tied GNG-alone `afc_dec`,
+  σ₃-released, free recipe); `DRIVEN=1` adds the go- and nogo-driven fields.
+- `scratchpad/group_predictions_fig.py <out.png>` — orbit types, allowed population counts, allowed angular harmonics, against tied/free/init.
+- `dpa_summary_fig.py` env: `ROWS=dpa,mn` (Figure 2: DPA-ckpt flow + populations), `ROWS=expert` (Figure 6), `NOFREE=1` (ties only),
+  `SCHEMES=1` (prediction row). `mn_grid_fig.py` env `MODE=n` swaps m and n (Figure S13).
+- `scratchpad/test_symmetry_ties.py` — checks every `project_symmetry` / `symmetrize_init` kind against its intended group action
+  (exact field equivariance with random inputs and bias, idempotence, orthogonality, untied control); exit 0 = all pass.
 - `scratchpad/afc2_traj.py <sweep> <out> run_id...` — κ(t) on L and R trials (twelve traces + mean) and the κ-plane path
   for 2AFC runs (artifact Fig. 13). Input noise must be η = noise·√(1−e^{−2α}), not the raw `noise` field.
 - `scratchpad/mn_grid_fig.py <out> <stage> <title> 'label|sweep|arm|scheme|seed'...` — artifact Fig. 2: rows = conditions,

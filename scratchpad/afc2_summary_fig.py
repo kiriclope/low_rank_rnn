@@ -1,7 +1,7 @@
 """ONE figure for the 2AFC check (§39): row 1 = the task symmetry and predicted wells per tie (scheme); row 2 =
 simulations (seed-0 flow, attractors of seeds 1-3 overlaid, residuals, task accuracy); row 3 = where L and R
 write (overlaps of the L/R columns on the two readouts, all seeds). Columns: free | -I | diag(+1,-1) | diag(-1,+1) | group.
-Original docstring: ONE figure for the rule-task check: row 1 = the task's symmetry and the predicted wells (scheme) for
+Original docstring: ONE figure for GNG-task check: row 1 = the task's symmetry and the predicted wells (scheme) for
 each tie; rows 2-3 = simulations (two-sided / one-sided objective): seed-0 flow with the attractors of all
 four seeds overlaid, and the equivariance residuals. Columns: free | tied -I | tied diag(+1,-1) | tied group.
 Usage: afc2_summary_fig.py <sweep_dir> <out.png>"""
