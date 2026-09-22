@@ -3587,4 +3587,4 @@ s3 lopsided (0.39, −0.95)/(−0.88, −0.12)) while every scaffold pushes both
 delay is the same but the pairing target moves after the test, and the free networks settle shallower.
 
 **Open / running:** postresp plots + gallery (queue, automatic); `memhold_*` arms not launched; nothing committed since
-`436f9bd` (paper scripts, draft, build script, sweep arms, tasks.py post window, all docs of the day are dirty).
+`436f9bd` — now committed as `f157cb0` (rnn) and `9198c34` (dual, draft v1.4 + builder); not pushed.
