@@ -73,7 +73,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
 
 <div class="wrap">
   <header class="mast">
-    <p class="kicker">Companion to &ldquo;Three Tasks, Three Groups&rdquo; &middot; 2026-09-21</p>
+    <p class="kicker">Companion to &ldquo;Three Tasks, Three Groups&rdquo; &middot; 2026-09-23</p>
     <h1>Klein Group Derivations</h1>
     <p class="standfirst">
       The full derivations behind the symmetry note, with the group-theoretic tools recalled from their
@@ -96,6 +96,7 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
     <li><a href="#s10">The accidental \(O(2)\): ring, zero mode, corrugation</a></li>
     <li><a href="#s11">What is measured</a></li>
     <li><a href="#s12">The wells, case by case</a></li>
+    <li><a href="#s13">The likelihood of the lick</a></li>
   </ol>
 
   <!-- ─────────────────────────── 0 ─────────────────────────── -->
@@ -531,10 +532,44 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
         <tr><td>GNG task / 2AFC, \(\diag(+1,-1)\)</td><td>\((a,w),\ (a,-w)\), \(a\) small</td><td>\(\kappa_0\) axis</td><td>on the \(\kappa_0\) axis</td><td>&mdash;</td><td>0</td></tr>
         <tr><td>2AFC, \(\diag(-1,+1)\) with swap</td><td>\((a,w),\ (-a,w)\): same \(\kappa_1\), chance</td><td>\(\kappa_1\) axis</td><td>on the \(\kappa_1\) axis</td><td>&mdash;</td><td>0</td></tr>
         <tr><td>2AFC, whole group</td><td>\((0,w),\ (0,-w)\), exact per trial</td><td>both axes</td><td>origin</td><td>&mdash;</td><td>0</td></tr>
-      </tbody></table></div>
+              <tr><td>DMS, \(\sigma_1\): \(\diag(-1,+1)\), A↔B</td><td>\((a,w),\ (-a,w)\): one height, free</td><td>\(\kappa_1\) axis</td><td>on the \(\kappa_1\) axis</td><td>&mdash;</td><td>0</td></tr>
+        <tr><td>DMS, \(-I\) with swap</td><td>\((a,w),\ (-a,-w)\): chance (12.9)</td><td>origin</td><td>origin</td><td>&mdash;</td><td>free</td></tr>
+        <tr><td>DMS, \(\diag(+1,-1)\) with swap</td><td>\((a,w),\ (a,-w)\): chance (12.9)</td><td>\(\kappa_0\) axis</td><td>on the \(\kappa_0\) axis</td><td>&mdash;</td><td>0</td></tr>
+</tbody></table></div>
   </div>
 
-  <h2 id="s13">13. The likelihood of the lick: what the cross-entropy objective makes computable</h2>
+    <h3>12.3 The delayed match-to-sample: one relabeling fewer, and the ties that must fail</h3>
+  <p>
+    Sample \(s\in\{A,B\}\), a delay, test \(t\in\{A,B\}\) presented on the <em>same</em> two input channels as the sample; lick iff \(s = t\). The truth table is (3.1). What changes is the realization: a relabeling acts on the network through one channel permutation \(S\), which acts on both epochs at once.
+  </p>
+  <div class="box thm"><span class="tag">Proposition 12.8 &mdash; the group of the match-to-sample</span>
+    <p>Of the four relabelings \((\alpha,\beta)\) of Proposition 3.1, only \((0,0)\) and \((1,1)\) are realizable as channel permutations of the match-to-sample. Its group is \(\{e,\sigma_1\}\cong\mathbb Z_2\), with \(S_{\sigma_1} = (A\,B)\) and the response preserved. With the sample in the sign of \(\kappa_0\) and the response in the sign of \(\kappa_1\), \(D_{\sigma_1} = \diag(-1,+1)\).</p>
+  </div>
+  <div class="proof"><p>The channel of odor A carries the sample value A and the test value A. A channel permutation therefore applies the same permutation \(\pi\) to \(s\) and to \(t\): \(\alpha = \beta\). Both realizable relabelings satisfy (3.1) with the response preserved, since \(\alpha\oplus\beta = 0\). The plane action is Proposition 3.2 with \(\alpha = 1\), \(\alpha\oplus\beta = 0\). <span class="qed">&#8718;</span></p></div>
+
+  <div class="box thm"><span class="tag">Proposition 12.9 &mdash; the sign-mismatch rule: a tie forces chance iff the relabeling and \(D\) disagree on the response</span>
+    <p>Let a tie \((\rho, S, D)\) be imposed on the parameters, with \(D\) mapping the response coordinate \(\kappa_1\) to \(\epsilon_D\,\kappa_1\), \(\epsilon_D\in\{+1,-1\}\), and let the channel relabeling \(S\) send every trial to a trial whose required response is \(\epsilon_S\) times the original, \(\epsilon_S\in\{+1,-1\}\). If \(\epsilon_S\ne\epsilon_D\), then for every network in the tied subspace the mean response on a trial and on its relabeled image have the wrong relative sign, and the accuracy on the pair is at most one half; if the relabeling pairs all trials, the task accuracy is at most one half. If \(\epsilon_S = \epsilon_D\), the tie is consistent with the task.</p>
+  </div>
+  <div class="proof"><p>By the trajectory remark of &sect;4, the relabeled trial with relabeled noise runs through \(D\kappa(t)\) from the permuted rest state, which is the rest state; averaging over the noise, whose law is \(S\)-invariant, \(\bar\kappa_1'(t) = \epsilon_D\,\bar\kappa_1(t)\). The targets are \(y' = \epsilon_S\,y\). If \(\epsilon_S\ne\epsilon_D\) then \(\operatorname{sgn}\bar\kappa_1'\cdot y' = -\operatorname{sgn}\bar\kappa_1\cdot y\): at most one of the two mean responses has the sign of its target. A trial that is its own image has \(\bar\kappa_1 = -\bar\kappa_1 = 0\) and is wrong either way. Equivariance of the parameters is a linear constraint and does not require the objective to be invariant, so this holds for every point of the tied subspace, whatever training does. <span class="qed">&#8718;</span></p></div>
+
+  <div class="box rem"><span class="tag">Remark &mdash; the two failures seen so far, and the two predicted</span>
+    <p>The 2AFC tie \(\diag(-1,+1)\) with L\(\,\leftrightarrow\,\)R (Proposition 12.7(3)) has \(\epsilon_S = -1\) (the relabeling flips the required lick side) and \(\epsilon_D = +1\): chance, observed 0.48&ndash;0.53. For the match-to-sample, \(-I\) and \(\diag(+1,-1)\) with A\(\,\leftrightarrow\,\)B have \(\epsilon_S = +1\) (a match stays a match) and \(\epsilon_D = -1\): chance predicted. The DPA elements are all consistent: \(\sigma_2\), \(\sigma_3\) flip the response and \(\kappa_1\) alike, \(\sigma_1\) preserves both.</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Corollary 12.10 &mdash; the inversion must be broken by the memory stage</span>
+    <p>The initialization is exactly inversion-symmetric (Theorem 6.1: \(\langle n\rangle = 0\), \(b = 0\), \(\varphi\) a constant plus an odd function). For the match-to-sample, \(-I\) with the swap has \(\epsilon_S\ne\epsilon_D\), so by Proposition 12.9 no inversion-symmetric network exceeds one half. Any network that learns the task has therefore left the \(\sigma_2\)-equivariant subspace, and it leaves it under the gradient of a non-invariant objective, not spontaneously: the \(\sigma_2\) residual after the memory stage is bounded away from zero in every seed. The same holds for \(\diag(+1,-1)\) with the swap. In DPA, by contrast, both elements are symmetries of the memory-stage objective (Proposition 9.2) and Theorem 9.1 keeps them until GNG.</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Proposition 12.11 &mdash; the pair tie on the match-to-sample</span>
+    <p>Under \(\{e,\sigma_1\}\), \(D = \diag(-1,+1)\), \(S = (A\,B)\): (1) the B memory is \((-a, w)\) when the A memory is \((a, w)\), with \(w\) unconstrained; (2) the \(\kappa_1\) axis is invariant and carries the rest state; (3) \(J_{01} = J_{10} = 0\); (4) \(n_0\cdot w_A = -\,n_0\cdot w_B\) and \(n_1\cdot w_A = n_1\cdot w_B\); \(n_0\cdot w_{\rm go} = n_0\cdot w_{\rm nogo} = n_0\cdot w_{\rm cue} = n_0\cdot b = 0\); \(n_1\) is unconstrained against the fixed channels, so the tied network is not deaf to GNG; (5) attractors off the \(\kappa_1\) axis come in mirror pairs, those on it may be alone; (6) the Dual-stage no-lick term is invariant under \(\sigma_1\), so the two memory wells keep a common height throughout Dual.</p>
+  </div>
+  <div class="proof"><p>(1)&ndash;(3) and (5) are Lemma 12.1, Corollary 6.4 and Theorem 1.5 with this \(D\); (4) is Theorem 7.1 with \(n_0\in U_{\chi = -1}\), \(n_1\in U_{\chi = +1}\), the fixed channels and the bias in \(U_{\chi = +1}\), and \(w_A\pm w_B\) in the even and odd components; (6) is Proposition 9.2, first column, with Theorem 9.1. <span class="qed">&#8718;</span></p></div>
+
+  <div class="box rem"><span class="tag">Remark &mdash; the sample column is the test column</span>
+    <p>In DPA the test channels C, D need no overlap with \(n_0\). Here \(n_0\cdot w_A\) is the overlap that writes the sample, so it is nonzero, and the same column arrives at the test: a match test drives \(\kappa_0\) further into its well, a nonmatch test toward the other well, by the same amount. With \(J_{10} = 0\) under the pair tie the response cannot be read off \(\kappa_0\) linearly; it must come through the state dependence of \(\varphi'\) along the transient. That is a prediction about the \(\kappa_0\) traces and about where the discrimination lives, and it is what the runs will test.</p>
+  </div>
+
+<h2 id="s13">13. The likelihood of the lick: what the cross-entropy objective makes computable</h2>
   <p>From the <em>log</em> recipe on, every event the animal is scored on is priced by the likelihood of a probit lick model, with the
     network's own state noise as its scale. This section collects what that choice makes explicit: the depth of the wells, the
     behavior implied by a geometry, the drift of the carrier of the symmetry break, the uniqueness of the optimum on the choice

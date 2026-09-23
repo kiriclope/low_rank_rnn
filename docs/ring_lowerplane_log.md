@@ -3692,3 +3692,58 @@ flagged for re-anchoring on `sweep_lif_log`). Artifact v1.7 published.
 
 **Open / running:** postresp plots + gallery (queue, automatic); `memhold_*` arms not launched; nothing committed since
 `436f9bd` — now committed as `f157cb0` (rnn) and `9198c34` (dual, draft v1.4 + builder); not pushed.
+
+## §41 — Fourth check: the delayed match-to-sample (predictions before the runs, 2026-09-23)
+
+**Artifact revision first (2026-09-23, "Three Tasks, Three Groups" v4 → v4.2, Versions 58–60; derivations Version 7).** §1 of the
+note is now the general method, stated for an arbitrary task in six steps: (1) read the group off the truth table (automorphisms of
+the table; the trial's timing and shared channels can remove candidates), (2) choose the representation — S forced by the relabeling,
+D the encoding hypothesis, P free, (3) flow: orbits with shared stability, orbit–stabilizer counting, Fix(H) invariant/pinning (exact
+per trial only when the elements relabel nothing), inputs, odd-field obstruction, (4) population: isotypic components, overlaps that
+vanish identically (deafness), the sign lattice, allowed harmonics, (5) training: per-term invariance test, must-break rule, spontaneous
+vs driven breaking, ties that must fail, hold-then-release, the breaking field, (6) predictions written first and scored by kind.
+§1.8 extends to S_k (simplex of wells, Schur ⇒ isotropic origin and nᵀm/N = λI on the memory modes), non-abelian irreps (Jacobian at a
+group-fixed point in the commutant: cI dihedral, aI + bR₉₀ rotations), SO(2) (a forced ring, residual = corrugation), rank r.
+Leon's correction applied: the single-relabeling example is the 2AFC (L/R, lick left/right), not a "two-sided go/nogo".
+The DMS section below (§S.10 of the note, §12.3 of the derivations) is the first new task written under that method.
+
+Written into the symmetry artifact as §S.10 (v4.2) and the derivations companion §12.3 (Props 12.8–12.11) BEFORE any run.
+Runs to follow (need a DMS task in `src/tasks.py`: test odor drawn from {A, B} on the SAME two channels as the sample —
+separate test channels would just be DPA renamed).
+
+**Task.** Sample A/B, delay, test A/B on the same channels, lick iff match. Truth table = DPA's, r = ¬(s⊕t).
+
+**Group.** The four DPA candidates shrink to two: a channel permutation relabels sample and test together (α = β), so
+G = {e, σ₁} (A↔B on both epochs, response preserved), D₁ = diag(−1,+1). σ₂ (−I) and σ₃ (diag(+1,−1)) with the swap
+are NOT symmetries — they flip κ₁ while the relabeling keeps a match a match.
+
+**Sign-mismatch rule (Prop 12.9, general).** A tie (S, D) is consistent with a task iff ε_S = ε_D, where ε_S is the sign
+the relabeling puts on the required response and ε_D the sign D puts on κ₁. Mismatch ⇒ mean responses of a trial and its
+image have the wrong relative sign ⇒ accuracy ≤ ½ for every point of the tied subspace. Covers the 2AFC failure
+(§39b: ε_S = −1, ε_D = +1) and predicts the DMS failures (ε_S = +1, ε_D = −1 for −I and diag(+1,−1)).
+
+**Corollary 12.10.** The init is exactly inversion-symmetric (§35); for DMS the inversion has the wrong sign, so the
+MEMORY STAGE must break it, by the gradient, in every seed (in DPA it is a symmetry of the objective and survives to GNG).
+
+**Design.** 4 seeds × {free, pair (σ₁), inv (−I + swap), test (diag(+1,−1) + swap)} = 16 runs (two waves of 8), three
+stages DMS → GNG → Dual, log objective, same freezing.
+
+**Predictions.**
+1. pair tie: wells (±a, w), common height free in value AND sign; κ₁ axis invariant, rest state on it (not necessarily
+   the origin); J₀₁ = J₁₀ = 0; n₀·w_A = −n₀·w_B ≠ 0 (it writes the sample), n₁·w_A = n₁·w_B; n₀·(go, nogo, cue, b) = 0;
+   n₁ unconstrained vs the fixed channels → NOT deaf → GNG learnable inside the tie; odd attractor counts allowed;
+   Dual no-lick is σ₁-invariant → both wells move together → both below 4/4.
+2. −I + swap: antipodal pair, origin exact rest state, rotation allowed (limit cycle possible as in 2AFC s2); accuracy
+   0.5 in 4/4 ((A,A) and (B,B) get opposite answers).
+3. diag(+1,−1) + swap: sample in the sign of κ₁, κ₀ axis invariant, deaf to GNG; accuracy 0.5 in 4/4.
+4. free: σ₁ residual a few % (spontaneous, drifting); σ₂- and σ₃-type residuals bounded away from zero after the memory
+   stage in 4/4 seeds, appearing FIRST in the input-driven fields (odor-A field vs reflected odor-B field, mechanism of
+   §3.2 / §37) and only then in the autonomous field; DPA's one-up-one-down failure mode (§36) has no protection here
+   and should not occur.
+5. Kinematics (pair tie and free): the test column is the sample column, so a match test kicks κ₀ INTO the well and a
+   nonmatch test kicks it toward the other well, equal size; with J₁₀ = 0 the response cannot be read linearly from κ₀ —
+   it lives in the transient through φ′.
+6. Soft: after_gng retention ≥ DPA's, since GNG has no memory-stage symmetry left to break (magnitude claim; measure).
+
+Score as §39b: exact zeros at machine precision (input_overlaps.py, mn_blocks.py), residuals with sym_violation2.py on
+the disk, attractor sets enumerated (find_wells), means on the noise-averaged field, kinematics on the κ₀ traces.

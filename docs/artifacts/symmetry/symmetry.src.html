@@ -169,12 +169,12 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
 <div class="wrap">
 
   <header class="mast">
-    <p class="kicker">Rank-2 RNN &middot; DPA &rarr; GNG &rarr; Dual &middot; revised 2026-09-21</p>
+    <p class="kicker">Rank-2 RNN &middot; DPA &rarr; GNG &rarr; Dual &middot; revised 2026-09-23</p>
     <h1>Three Tasks, Three Groups</h1>
     <p class="standfirst">
       Each stage of the curriculum has a symmetry group, and each group leaves a fingerprint that can be
       measured: in the flow field, in the number and placement of its fixed points, and in the population
-      structure of the low-rank vectors. <em>This note takes the stages in order. For each one: the group,
+      structure of the low-rank vectors. Section 1 states the procedure for an arbitrary task, in six steps, and what changes beyond two states and two modes. <em>The note then takes the stages in order. For each one: the group,
       what it forces, and what a network trained under that constraint actually looks like.</em> Every number
       here is measured on the networks named in the captions; figures are numbered in order and panels lettered. Section 5 runs the same machinery on two simpler tasks as a check; the initialization results are in the supplement, as Figures S1&ndash;S5. The full derivations, with the group-theory
       definitions and theorems recalled, are in the companion
@@ -232,18 +232,29 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
     </div>
   </section>
 
-  <!-- ══════════════════ SETUP ══════════════════ -->
+  <!-- ══════════════════ SETUP / METHOD ══════════════════ -->
   <section>
     <p class="sec-no">&sect; 1</p>
     <div class="sec-body">
-      <h2>Setup: what a symmetry acts on</h2>
+      <h2>The method: from the symmetries of a task to its flows and populations</h2>
       <p>
-        The network has <i>N</i> units, a rank-2 recurrent matrix <i>W</i><sub>rec</sub> = <i>m n</i><sup>T</sup>/<i>N</i>,
+        Everything in this note is one procedure applied three times. This section states the procedure
+        for an arbitrary task, so that the DPA, GNG and Dual sections can be read as instances of it and
+        so that it can be run on a task that is not in this paper. Six steps: read the group off the task;
+        decide how it acts on the network; derive what it forces on the flow; derive what it forces on the
+        population; ask which of it the objective keeps; write the predictions down and measure them.
+        Everything a step forces is exact; everything it leaves free must be measured. The proofs are in
+        the companion note, cited by number.
+      </p>
+
+      <h3><span class="h3num">1.1</span>What a symmetry acts on</h3>
+      <p>
+        The network has <i>N</i> units, a rank-<i>r</i> recurrent matrix <i>W</i><sub>rec</sub> = <i>m n</i><sup>T</sup>/<i>N</i>,
         input weights <i>W</i><sub>in</sub> with a per-unit bias <i>b</i>, a gain <i>g</i>, and a transfer
-        function &phi; applied unit by unit. Its state collapses onto two overlaps,
-        &kappa;<sub>j</sub> = <i>n</i><sub>j</sub><sup>T</sup><i>r</i>/<i>N</i>: &kappa;&#8320; is the
-        <strong>memory</strong>, &kappa;&#8321; the <strong>decision</strong>. A fixed point of the network
-        under a constant input <i>x</i> is a fixed point of the planar map
+        function &phi; applied unit by unit. Its state collapses onto <i>r</i> overlaps,
+        &kappa;<sub>j</sub> = <i>n</i><sub>j</sub><sup>T</sup> <i>r</i>/<i>N</i>; here <i>r</i> = 2, &kappa;&#8320; is the
+        <strong>memory</strong> and &kappa;&#8321; the <strong>decision</strong>. A fixed point of the network
+        under a constant input <i>x</i> is a fixed point of the map
       </p>
       <div class="eq">
         <span class="eq-row">&Psi;(&kappa;; <i>x</i>) = (1/<i>N</i>) <i>n</i><sup>T</sup> &phi;(<i>g</i>(<i>m</i>&kappa; + <i>W</i><sub>in</sub><i>x</i> + <i>b</i>)), &nbsp;&nbsp;&nbsp; <i>F</i> = &Psi; &minus; &kappa;</span>
@@ -252,12 +263,12 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
       <p>
         A task symmetry is a relabeling of the stimuli, with the response relabeled to match, that leaves the
         task unchanged. In the network it has to act in three places at once: a permutation <i>P</i> of the
-        units, a permutation <i>S</i> of the input channels, and a 2&times;2 sign matrix <i>D</i> on the
-        &kappa;-plane. The network is <em>equivariant</em> under the symmetry when
+        units, a permutation <i>S</i> of the input channels, and an orthogonal <i>r</i>&times;<i>r</i> matrix <i>D</i> on the
+        latent space, a sign matrix when the group is made of involutions. The network is <em>equivariant</em> under the symmetry when
       </p>
       <div class="eq">
         <span class="eq-row"><i>P m</i> = <i>m D</i> &nbsp;&nbsp;&nbsp; <i>P n</i> = <i>n D</i> &nbsp;&nbsp;&nbsp; <i>P W</i><sub>in</sub> = <i>W</i><sub>in</sub> <i>S</i> &nbsp;&nbsp;&nbsp; <i>P b</i> = <i>b</i></span>
-        <span class="note">four conditions: the write vectors, the read vectors, the input columns, and the bias. All the permutations below are involutions, so <i>P</i><sup>&minus;1</sup> = <i>P</i><sup>T</sup> = <i>P</i> and <i>D</i><sup>&minus;1</sup> = <i>D</i>.</span>
+        <span class="note">four conditions: the write vectors, the read vectors, the input columns, and the bias. All the permutations in this note are involutions, so <i>P</i><sup>&minus;1</sup> = <i>P</i><sup>T</sup> = <i>P</i> and <i>D</i><sup>&minus;1</sup> = <i>D</i>; the general case replaces <i>D</i> by <i>D</i><sup>&minus;1</sup> = <i>D</i><sup>T</sup> where it appears.</span>
       </div>
       <p>
         Three lines then give the whole engine. Substitute <i>D</i>&kappa; into the drive:
@@ -267,12 +278,253 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
       </p>
       <div class="eq">
         <span class="eq-row"><i>F</i>(<i>D</i>&kappa;; <i>x</i>) = <i>D</i> <i>F</i>(&kappa;; <i>S</i><sup>&minus;1</sup><i>x</i>)</span>
-        <span class="note">the field under a stimulus, reflected, equals the field under the relabeled stimulus. With no input the fixed-point set is mapped onto itself by <i>D</i>: wells come in orbits.</span>
+        <span class="note">the field under a stimulus, reflected, equals the field under the relabeled stimulus (companion, Theorem 4.2). The same substitution in the update equations shows that whole trajectories map: the trial with relabeled stimuli and relabeled noise runs through <i>D</i>&kappa;(<i>t</i>). Every prediction below is this identity read at a different level.</span>
       </div>
+
+      <h3><span class="h3num">1.2</span>Step 1 &mdash; read the group off the task</h3>
       <p>
-        Orbits have three possible sizes, and this is the counting rule used throughout. A point with both
-        coordinates nonzero has as many images as the group has elements. A point on an axis is fixed by the
-        reflection in that axis and has half as many. The origin is fixed by everything.
+        A task is a truth table: stimulus variables \(s_1,\dots,s_p\), each taking finitely many values, and
+        a correct response \(r(s_1,\dots,s_p)\). A <em>relabeling</em> chooses a permutation \(\pi_i\) of the
+        values of each variable and a permutation \(\pi_r\) of the response values. It is a symmetry of the task
+        when it maps the table onto itself,
+      </p>
+      \[ r(\pi_1 s_1,\dots,\pi_p s_p) \;=\; \pi_r\, r(s_1,\dots,s_p)\quad\text{for every row}, \tag{1.1} \]
+      <p>
+        and the symmetries form a group \(G\) under composition, the automorphism group of the table. The
+        procedure is mechanical: list the candidate relabelings (for \(p\) binary variables there are \(2^p\)
+        of them, each with or without the response flip), keep the ones that satisfy (1.1), and close under
+        composition. For DPA, \(r = \neg(s\oplus t)\), the four relabelings \((s,t)\mapsto(s\oplus\alpha,
+        t\oplus\beta)\) with the response flipped by \(\alpha\oplus\beta\) all pass, and they compose as
+        \(\mathbb Z_2\times\mathbb Z_2\): the Klein four-group (companion, Proposition 3.1). For a two-alternative
+        forced choice, stimulus left or right and a lick to the matching side, L\(\,\leftrightarrow\,\)R with
+        the response flipped passes and nothing else does: \(\mathbb Z_2\). For the go/nogo task, go above a
+        threshold and nogo at or below zero, the exchange go\(\,\leftrightarrow\,\)nogo fails (1.1) because
+        the two response values are not images of each other: the group is trivial.
+      </p>
+      <p>
+        Two refinements. First, the table lists the candidates; the trial decides. A symmetry has to preserve
+        the whole trial, its timing and the epochs in which the objective reads the state, not only the
+        input&ndash;output rule. Exchanging the sample with the test leaves \(\neg(s\oplus t)\) unchanged and is
+        not a symmetry of DPA, because the two arrive at different times and the response is read after the
+        second. The same rule works the other way: a candidate the table admits can be unrealizable, as when two
+        variables share the input channels and so cannot be relabeled separately; the delayed match-to-sample
+        keeps only the pair exchange of DPA&rsquo;s four-group for that reason (&sect;S.10). Second, a variable
+        the objective never reads is free: the network can carry a symmetry that
+        relabels nothing at all. In the delayed two-alternative choice the objective reads \(\kappa_1\) only, so
+        \(\kappa_0\mapsto-\kappa_0\) with the identity relabeling is a symmetry of the network, and it is what
+        makes the &ldquo;whole group&rdquo; of that task a four-group rather than a \(\mathbb Z_2\)
+        (&sect;S.9). It is worth separating the elements that leave the response alone (\(\sigma_1\) in DPA)
+        from those that flip it (\(\sigma_2,\sigma_3\)): only the second kind can be broken by a one-sided
+        cost, and step 5 turns on that distinction.
+      </p>
+
+      <h3><span class="h3num">1.3</span>Step 2 &mdash; decide how the group acts: the representation</h3>
+      <p>
+        The relabeling fixes the channel permutation: \(S_g\) sends the input column that codes value \(v\) of
+        variable \(i\) to the column of \(\pi_i(v)\), and leaves every other column alone. Everything else is a
+        choice, and the choice is the modelling hypothesis. The latent action \(D_g\) says which coordinate of
+        \(\kappa\) carries which variable and with which sign; it must be a representation, \(D_gD_h =
+        D_{gh}\), and orthogonal. For a group of commuting involutions every representation is diagonal in some
+        basis, so \(D_g = \diag(\pm1,\dots,\pm1)\): each mode carries a <em>character</em>, one sign per
+        generator, and the character table of \(G\) is the complete list of what a mode can do. For DPA the
+        encoding &ldquo;the sample is the sign of \(\kappa_0\), the response the sign of \(\kappa_1\)&rdquo;
+        fixes \(D\) outright (companion, Proposition 3.2). A single relabeling leaves more room: the same
+        \(\mathbb Z_2\) can act on the plane as \(-I\), as \(\diag(+1,-1)\) or as \(\diag(-1,+1)\), and the
+        three predict different things, one of them chance (&sect;S.9, companion Proposition 12.7). The
+        prediction is a property of the pair (relabeling, \(D\)), never of the relabeling alone.
+      </p>
+      <p>
+        The unit permutation \(P_g\) is the freest of the three, and the least consequential: any \(P\) whose
+        fixed structure can hold the characters the modes carry will do. The generic choice lets \(G\) act
+        freely, each prototype unit generating an orbit of \(|G|\) units (four blocks for the four-group,
+        &sect;5); a unit fixed by some element can only carry vectors with the trivial character on that
+        element. What the theory then predicts is a property of the triple \((P, S, D)\) through the four
+        equivariance conditions of &sect;1.1, and imposing a tie means projecting the parameters onto the
+        subspace those conditions cut out (companion, Proposition 8.3: the projection is the group average,
+        and it is orthogonal).
+      </p>
+
+      <h3><span class="h3num">1.4</span>Step 3 &mdash; what the flow must do</h3>
+      <p>
+        The identity \(F(D\kappa; Sx) = D\,F(\kappa; x)\) has four consequences for the field, and they are all
+        the flow predictions in this note.
+      </p>
+      <p>
+        <b>Orbits.</b> The zeros of the autonomous field form a set mapped onto itself by every \(D_g\), and
+        the Jacobian at \(D_g\kappa^*\) is \(D_g J(\kappa^*) D_g^{-1}\), so every point of an orbit has the same
+        eigenvalues and the same stability (companion, Theorem 1.5). Wells come in orbits, saddles come in
+        orbits, and their depths and relaxation times are shared along the orbit.
+      </p>
+      <p>
+        <b>Counting.</b> The size of an orbit is \(|G|\) divided by the order of the stabilizer, the subgroup
+        that fixes the point (orbit&ndash;stabilizer). On the plane under the four-group: a point with both
+        coordinates nonzero has four images, a point on an axis has two, the origin one. So the count of
+        attractors has a parity, a lone attractor can only sit where the whole group fixes it, and an
+        attractor with a nonzero coordinate that the group can flip brings its image with it. In \(r\)
+        dimensions the same rule reads off the fixed subspaces \(\mathrm{Fix}(H) = \{\kappa : D_h\kappa =
+        \kappa \ \forall h\in H\}\) of the subgroups \(H\).
+      </p>
+      <p>
+        <b>Invariant subspaces and pinning.</b> \(\mathrm{Fix}(H)\) is invariant under the autonomous flow:
+        \(F\) maps it into itself, so a state that is in it stays in it. The same holds under any input that
+        \(S_h\) leaves unchanged for every \(h\in H\). This is the pinning rule. A tie that contains an element
+        flipping \(\kappa_1\) alone puts the rest state and every stimulus-driven mean state on the
+        \(\kappa_0\) axis; a tie that contains an element flipping \(\kappa_0\) alone puts them on the
+        \(\kappa_1\) axis; the whole four-group forces a memory pair with \(\kappa_0\ne0\) to sit exactly on
+        the line, because a two-point orbit needs a stabilizer of order two, and with \(\kappa_0\ne0\) that
+        element is the one fixing \(\kappa_1 = 0\) (companion, Corollary 5.1). The statement is exact trial by
+        trial when the elements of \(H\) relabel nothing, so that the noise is fixed by \(S_h\) as well
+        (\(\kappa_0(t)\equiv0\) in the whole-group 2AFC, &sect;S.9); when they do relabel channels it holds
+        for the noise-averaged field and the mean trajectory, and single trials leave the subspace by the
+        noise alone.
+      </p>
+      <p>
+        <b>Inputs.</b> The field under the relabeled stimulus is the reflection of the field under the
+        original: the A and B fields are \(\sigma_1\)-images, the go and nogo fields are \(\tau\)-images when
+        \(\tau\) holds. A stimulus that every \(S_h\) fixes drives a field that is itself \(H\)-equivariant,
+        so its fixed points come in \(H\)-orbits too, which is how a tied network's response to the cue
+        (fixed by everything in the four-group) is predicted without any further assumption. And when the field
+        is odd, \(F(-\kappa) = -F(\kappa)\), every well has its antipode: two memory wells on the same side of
+        the line are impossible unless they are half of a quadruple (companion, Theorem 6.1). That is the
+        obstruction the whole Dual section is about.
+      </p>
+
+      <h3><span class="h3num">1.5</span>Step 4 &mdash; what the population must look like</h3>
+      <p>
+        The unit permutation splits \(\mathbb R^N\) into <em>isotypic components</em>, one per character of
+        \(G\) (for a non-abelian group, one per irreducible representation): \(U_\chi\) is the set of vectors on
+        which \(P_g\) acts as multiplication by \(\chi(g)\). The four conditions of &sect;1.1 place every
+        parameter vector in one of them. Column \(j\) of \(m\) and of \(n\) carries the character given by the
+        \(j\)-th diagonal entry of \(D_g\) as \(g\) runs over the group; the bias and every channel fixed by
+        all the relabelings carry the trivial character; a pair of channels exchanged by a relabeling splits
+        into an even sum and an odd difference. Three predictions follow.
+      </p>
+      <p>
+        <b>Overlaps that must vanish.</b> Vectors in different isotypic components are orthogonal (companion,
+        Theorem 2.4), so every overlap between two parameter vectors of different character is identically
+        zero, not small: the cross-overlaps \(n_i^{\Tr}m_j\) between modes of different character, the
+        overlaps \(n_j^{\Tr}w_c\) between a mode with a nontrivial character and any channel the group fixes,
+        and the overlap of any such mode with the bias. The second of these is the <em>deafness lemma</em>
+        (&sect;3, companion Theorem 7.1): a network equivariant under an element that flips \(\kappa_1\) has
+        \(n_1^{\Tr}w_{\rm go} = n_1^{\Tr}w_{\rm nogo} = 0\) exactly, whatever training does inside the tie. For
+        an exchanged pair the prediction is a relation rather than a zero: \(n_0\cdot w_A = -\,n_0\cdot w_B\)
+        and \(n_1\cdot w_A = n_1\cdot w_B\) under the pair exchange.
+      </p>
+      <p>
+        <b>The sign lattice.</b> Read unit by unit, equivariance says that across an orbit of units the
+        pair \((m_0, m_1)\) takes the values \((\chi_0(g)\,m_0,\ \chi_1(g)\,m_1)\): the population scatter of
+        the write vectors is a lattice of \(|G|\) clusters related by sign flips when the action is free, and
+        of mirror pairs when a single element is tied. The same holds for \((n_0, n_1)\) and for the input
+        columns with their characters. Which sign patterns can occur, and with what multiplicities, is the
+        character table; where within a cluster a unit sits is not predicted (Figure 7).
+      </p>
+      <p>
+        <b>Allowed harmonics.</b> When the initialization carries an accidental continuous symmetry, a ring in
+        the \(\kappa\)-plane with tuning curves around it (&sect;S.2, companion &sect;10), the group selects
+        which Fourier components of the tuning survive: those that transform under \(D_g\) the way the mode
+        does. It is the same isotypic statement, with the ring's angle as the index.
+      </p>
+
+      <h3><span class="h3num">1.6</span>Step 5 &mdash; what training keeps, what it must break, and what to build in</h3>
+      <p>
+        Two questions per element, per stage. <em>Does the objective respect it?</em> Relabel the trial and
+        replace \(\kappa\) by \(D_g\kappa\) along it; if the per-trial loss is unchanged for every term, the
+        stage objective is invariant under \(g\) (companion, Proposition 9.2, a table with one row per term).
+        Two-sided terms with mirror-image targets are invariant under the flip of the coordinate they read;
+        one-sided terms, a hinge above a threshold for one class and at or below zero for the other, are not.
+        <em>Does the task require something the element forbids?</em> If a stage has to build an overlap that
+        step 4 sets to zero, the stage must break every element that sets it to zero. The GNG stage has to
+        drive \(\kappa_1\) with the go and nogo channels, so it must break every element with a minus sign on
+        \(\kappa_1\); the shape of its cost decides the direction of the break, the group decides the fact of
+        it (&sect;3).
+      </p>
+      <p>
+        What an invariant objective does is exact but weaker than it sounds. Its gradient is equivariant, so
+        gradient descent, momentum and Adam all keep an equivariant network equivariant (companion, Theorem
+        9.1): the tied subspace is invariant under training. It is not attracting. A free network starts a
+        few percent off the subspace, because a finite sample of units is not exactly symmetric, and each
+        mini-batch is only invariant in expectation; if the symmetric solution has an unstable direction
+        transverse to the subspace, those seeds grow, in a direction the objective does not choose. That is
+        <em>spontaneous</em> breaking, and it is why free networks show seed-dependent residuals under an
+        exactly invariant loss (&sect;2.5). Projecting the parameters back onto the subspace after every
+        step removes the seed and holds the tie regardless of its stability; that is what &ldquo;tying&rdquo;
+        means in the experiments.
+      </p>
+      <p>
+        A tie need not be a symmetry of the objective to be a legitimate constraint, and the same identity
+        predicts what it will do. If \(D_g\) identifies two states the objective has to tell apart, no
+        parameter setting in the tied subspace separates them and the accuracy is chance; the delayed 2AFC
+        tied to \(\diag(-1,+1)\) is the worked case, predicted before the run and observed (&sect;S.9). The
+        rule is a sign test: a tie is consistent with the task if and only if the sign the relabeling puts on
+        the required response equals the sign \(D\) puts on the response coordinate (companion, Proposition
+        12.9); either mismatch forces chance, and an element the initialization supplies with the wrong sign
+        must be broken by the first stage that reads the response (&sect;S.10). If the
+        tie is a symmetry of one stage and not of the next, holding it through the first and releasing it in
+        the second produces a solution with the first stage's fingerprint, which the second stage's
+        non-invariant term then deforms as a whole rather than seed by seed; that is the curriculum rule of
+        &sect;4.4. The non-invariant term is also the <em>breaking field</em>: its gradient, projected off the
+        tied subspace onto the characters it moves, says which parameters carry the break, and the leading
+        components can be read off before training (the mean of \(n_1\), the bias, the input columns in
+        &sect;3.2).
+      </p>
+
+      <h3><span class="h3num">1.7</span>Step 6 &mdash; write the predictions down, then measure</h3>
+      <p>
+        Steps 3 to 5 produce, for each element and for the whole group, a list of statements of three kinds:
+        exact zeros and exact relations (overlaps, pinning to a subspace, orbit relations unit by unit),
+        integer statements (orbit sizes, parities, cluster counts), and qualitative statements about the free
+        network (which elements it will break, in a seed-dependent direction). They are written before the
+        runs, in three columns per element, tied alone, whole group, free, as in &sect;S.7&ndash;S.9. Each
+        kind is scored on its own terms. Exact statements are checked as numbers at machine precision: the
+        equivariance residual of the noise-averaged field, the unit-by-unit orbit check, the overlap table.
+        Integer statements are checked by enumerating the attractor set, all of it, not only the states the
+        trials occupy. Statements about the mean are checked on the mean trajectory or the noise-averaged
+        field, never on single trials. What the group leaves free is reported as a measurement, not
+        a prediction: depths, magnitudes of overlaps, relaxation times, which way a seed breaks. The
+        definitions and the tools are collected in the companion, &sect;11.
+      </p>
+
+      <h3><span class="h3num">1.8</span>Beyond two states and two modes</h3>
+      <p>
+        Nothing above used that the group is the four-group, that the modes are two, or that the group is
+        finite. Four extensions are immediate, and each is a prediction that could be tested on a task not in
+        this paper.
+      </p>
+      <p>
+        <b>More values per variable.</b> A match-to-sample with \(k\) samples has the symmetric group
+        \(S_k\) relabeling them. Its natural latent action is the standard representation, of dimension
+        \(k-1\), irreducible: the \(k\) memory states form one orbit, the vertices of a regular simplex, at
+        equal radius and equal depth, and a rank of \(k-1\) is needed for the memory alone. At the origin,
+        which every element fixes, the Jacobian commutes with the whole representation, and Schur's lemma
+        makes it a multiple of the identity on the memory subspace: the rest state is isotropic, and the
+        overlap matrix \(n^{\Tr}m/N\) restricted to the memory modes is \(\lambda I\), exactly.
+      </p>
+      <p>
+        <b>Non-abelian groups.</b> When \(G\) has an irreducible representation of dimension two or more, the
+        modes carrying it are tied to each other, not merely sign-locked. For a two-dimensional irreducible
+        \(D\) on the plane, the Jacobian at any point fixed by the whole group lies in the commutant of
+        \(D\): a multiple of the identity when the representation is of real type (the dihedral groups, with
+        reflections), and \(aI + bR_{90}\) when it is of complex type (pure rotations by \(2\pi/k\), \(k\ge3\)).
+        So \(n_0^{\Tr}m_0 = n_1^{\Tr}m_1\) exactly, and \(n_0^{\Tr}m_1 = \mp\,n_1^{\Tr}m_0\), with the minus
+        sign for rotations and zero for dihedral groups; wells lie on the vertices of a regular \(k\)-gon at
+        one radius and one depth. The counting rule is unchanged: orbit sizes divide \(|G|\).
+      </p>
+      <p>
+        <b>Continuous symmetries.</b> If a stimulus variable is continuous and the objective is invariant
+        under rotating it, equivariance under \(SO(2)\), \(F(R_\theta\kappa) = R_\theta F(\kappa)\), makes the
+        radial and tangential components of \(F\) functions of \(|\kappa|\) alone. Every zero is then a whole
+        circle of zeros: a ring attractor with a zero mode is forced, not found. A finite network is
+        equivariant only up to a residual, and the residual, which has the symmetry of whatever finite
+        subgroup survives, corrugates the ring into that subgroup's orbit of wells. This is the accidental
+        \(O(2)\) of the initialization (&sect;S.2, companion &sect;10) read as a design principle: the
+        equivariance residual is the corrugation, and it can be measured before training.
+      </p>
+      <p>
+        <b>Higher rank.</b> With \(r\) modes, \(D_g\in O(r)\) and every statement holds verbatim; the counting
+        rule is read off the lattice of fixed subspaces, the isotypic placement of the columns off the
+        decomposition of \(D\) into irreducibles, and a task with several read-out variables gives each its
+        own character. What the group can never fix is unchanged too: how deep, how far, how fast, and which
+        way a free seed goes. Those are measured (&sect;6).
       </p>
     </div>
   </section>
@@ -1014,6 +1266,8 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
       </p>
       <h3><span class="h3num">6.1</span>What changed in this revision</h3>
       <ul>
+        <li>&sect;S.10: the delayed match-to-sample, predictions before the runs. Same truth table as DPA, but the shared channels leave only the pair exchange; the inversion is not a symmetry and must be broken by the memory stage (Corollary 12.10); the sign-mismatch rule (Proposition 12.9) says which ties fail at chance, here \(-I\) and \(\diag(+1,-1)\) with the swap; the pair tie is predicted to learn all three stages with a common well height and both wells below after Dual.</li>
+        <li>Section 1 is now the method itself, stated for an arbitrary task: read the group off the truth table, choose its representation on channels, latent space and units, derive the flow (orbits, counting, invariant subspaces, pinning), derive the population (isotypic components, zero overlaps, the sign lattice, allowed harmonics), decide what the objective keeps and what it must break, write the predictions first and score each kind on its own terms; and the extensions to \(S_k\), non-abelian groups (Schur: isotropy and tied overlaps), continuous symmetries (a forced ring) and higher rank. The three tasks are its instances; nothing else in the note changed.</li>
         <li>The inversion at initialization is exact because &phi; is a constant plus an odd function and both &lang;<i>n</i>&rang; and the bias start at zero, not because of an ensemble symmetry that a finite sample does not have. Measured 0.000 in all eight seeds; the ensemble argument is kept as the general case.</li>
         <li>The bias is a fourth equivariance condition. The projection used for the published runs did not tie it; the low-rank structure is exact and the field carries a 1&ndash;5% residual. The projection now ties the bias and the residual is 10<sup>&minus;15</sup>.</li>
         <li>The deafness lemma: a network equivariant under any element with a minus sign on &kappa;&#8321; has zero go and nogo overlap on the decision readout. Verified as an exact zero at the tied DPA checkpoint.</li>
@@ -1362,6 +1616,91 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
           memory on an invariant axis that is unstable, by exactness alone.
         </p>
       </div>
+      <h3><span class="h3num">S.10</span>A delayed match-to-sample: the same table, one relabeling fewer, and the inversion broken by the objective (predictions; runs to follow)</h3>
+      <p>
+        The task: sample A or B, a delay, then a test odor drawn from the <em>same</em> pair, A or B, on the
+        <em>same</em> two channels; lick if the test matches the sample. The truth table is DPA&rsquo;s,
+        \(r = \neg(s\oplus t)\), so step 1 of &sect;1 lists the same four candidate relabelings. Step 2 removes two
+        of them. A relabeling acts through the channel permutation \(S\), and the sample and the test enter
+        through the same wires, so the sample values cannot be exchanged without exchanging the test values:
+        of the four candidates only \((\alpha,\beta) = (1,1)\) is realizable, A\(\,\leftrightarrow\,\)B on both
+        epochs with the response preserved. The group of the match-to-sample is \(\{e,\sigma_1\}\), the pair
+        exchange alone, and it is the subgroup of the DPA four-group that survives identifying the test channels
+        with the sample channels (companion, Proposition 12.8). The two elements that flip the response,
+        \(\sigma_2\) and \(\sigma_3\), are not symmetries of this task. If the task is implemented with separate
+        channels for the test epoch it is DPA under another name, and none of this section applies.
+      </p>
+      <p>
+        That one deletion changes the story of the inversion. In DPA the inversion is a symmetry of the memory
+        stage, exact at initialization, preserved by the objective, and only broken later, by GNG and Dual or
+        spontaneously by a seed (&sect;2.5, &sect;3). In the match-to-sample the initialization is the same,
+        so the field is exactly odd when training starts, but the objective is <em>not</em> invariant under it:
+        the trial (B, B) is the image of (A, A) under A\(\,\leftrightarrow\,\)B with \(\kappa\mapsto-\kappa\), so
+        an inversion-symmetric network answers the two match trials with opposite signs of \(\kappa_1\), and
+        likewise the two nonmatch trials. It is right on exactly half of the trials whatever its parameters. The
+        memory stage therefore has to break the inversion, in every seed, by the gradient rather than by chance;
+        the same holds for \(\diag(+1,-1)\) with the swap. This is the general rule behind the 2AFC tie that
+        failed in &sect;S.9: a tie \((S, D)\) is consistent with a task if and only if the sign the relabeling
+        puts on the required response equals the sign \(D\) puts on the response coordinate. In the 2AFC the
+        relabeling flipped the response and \(\diag(-1,+1)\) did not; here the relabeling preserves it and
+        \(-I\), \(\diag(+1,-1)\) do not. Either mismatch forces chance (companion, Proposition 12.9).
+      </p>
+      <p>
+        The design, to be run on the fixed code with the <em>log</em> objective: four seeds each of the free
+        network, the pair tie \(\sigma_1\) (the task&rsquo;s whole group), and the two ties that must fail,
+        \(-I\) and \(\diag(+1,-1)\) with the swap; the same three stages, match-to-sample, GNG, Dual, with the
+        same freezing. Predictions, written before the runs:
+      </p>
+      <div class="tbl-scroll">
+        <table>
+          <thead><tr><th>Tie</th><th>Symmetry of the task?</th><th>Memory states (mean)</th><th>Invariant set, rest state</th><th>Overlaps forced</th><th>Attractor count</th><th>Task</th></tr></thead>
+          <tbody>
+            <tr><td class="sym">&sigma;<sub>1</sub>: diag(&minus;1, +1), A&harr;B</td><td class="yes">yes, the whole group</td>
+                <td>(<i>a</i>, <i>w</i>), (&minus;<i>a</i>, <i>w</i>): one height, free in value and in sign</td>
+                <td>the &kappa;&#8321; axis; rest state on it, not necessarily the origin</td>
+                <td class="num"><i>J</i>&#8320;&#8321; = <i>J</i>&#8321;&#8320; = 0; <i>n</i>&#8320;&middot;<i>w</i><sub>A</sub> = &minus;<i>n</i>&#8320;&middot;<i>w</i><sub>B</sub> &ne; 0; <i>n</i>&#8321;&middot;<i>w</i><sub>A</sub> = <i>n</i>&#8321;&middot;<i>w</i><sub>B</sub>; <i>n</i>&#8320;&middot;<i>w</i><sub>go</sub> = <i>n</i>&#8320;&middot;<i>w</i><sub>nogo</sub> = <i>n</i>&#8320;&middot;<i>w</i><sub>cue</sub> = <i>n</i>&#8320;&middot;<i>b</i> = 0</td>
+                <td>pairs off the axis, singletons on it; odd counts allowed</td>
+                <td class="yes">learns; not deaf to GNG; both wells move together in Dual: both below 4/4</td></tr>
+            <tr><td class="sym">&minus;<i>I</i>, A&harr;B</td><td class="no">no</td>
+                <td>(<i>a</i>, <i>w</i>), (&minus;<i>a</i>, &minus;<i>w</i>): antipodes, angle free</td>
+                <td>the origin, exactly</td>
+                <td class="num">none between the modes; rotation allowed</td>
+                <td>even, or a limit cycle</td>
+                <td class="no">chance, 0.5 in every seed: (A, A) and (B, B) get opposite answers</td></tr>
+            <tr><td class="sym">diag(+1, &minus;1), A&harr;B</td><td class="no">no</td>
+                <td>(<i>a</i>, <i>w</i>), (<i>a</i>, &minus;<i>w</i>): the sample in the sign of &kappa;&#8321;</td>
+                <td>the &kappa;&#8320; axis; rest state on it</td>
+                <td class="num"><i>J</i>&#8320;&#8321; = <i>J</i>&#8321;&#8320; = 0; <i>n</i>&#8321;&middot;<i>w</i><sub>A</sub> = &minus;<i>n</i>&#8321;&middot;<i>w</i><sub>B</sub>; <i>n</i>&#8321;&middot;<i>w</i><sub>go</sub> = <i>n</i>&#8321;&middot;<i>w</i><sub>nogo</sub> = 0: deaf</td>
+                <td>pairs across the line</td>
+                <td class="no">chance, 0.5: the same mismatch, the memory it builds is read with the wrong sign on half the trials</td></tr>
+            <tr><td class="sym">free</td><td>&mdash;</td>
+                <td>a mirror pair up to the &sigma;<sub>1</sub> residual; heights decoupled from any inversion</td>
+                <td>&mdash;</td>
+                <td class="num">&sigma;<sub>1</sub> residual a few percent, drifting; &sigma;<sub>2</sub>- and &sigma;<sub>3</sub>-type residuals bounded away from zero after the memory stage in every seed, carried first by the input columns</td>
+                <td>2 or 3</td>
+                <td class="yes">learns; the one-up-one-down outcome of DPA has no protection and should not occur</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Three of these are worth spelling out. <b>The inversion residual after the memory stage.</b> In the
+        free DPA networks it is seed-dependent, 0.1 to 0.95 after DPA, because nothing in the DPA objective
+        pushes on it (&sect;2.5). Here it is driven: the prediction is a nonzero \(\sigma_2\) residual in four
+        seeds of four, and, by the mechanism of &sect;3.2, one that appears first in the input-driven fields
+        (the field under odor A against the reflected field under odor B) and only then in the autonomous
+        field. <b>The test writes as well as reads.</b> Under the pair tie \(n_0\cdot w_A = -\,n_0\cdot w_B\)
+        is not a free number: it is the overlap that writes the sample, so it is nonzero, and the same column
+        arrives again at the test. A match test pushes the state further into its own well, a nonmatch test
+        pulls it toward the other one; the response has to be read off that transient, through the
+        nonlinearity, since \(J_{10} = 0\) forbids a linear route from \(\kappa_0\) to \(\kappa_1\). The
+        \(\kappa_0\) traces should show it: a kick toward the well on match trials, away from it on nonmatch
+        trials, of equal size. <b>GNG has nothing to break.</b> The deafness lemma needs an element with a
+        minus sign on \(\kappa_1\), and this task has none; the GNG stage can be learned inside the pair tie
+        and, in the free network, finds the inversion already broken. The soft expectation that follows is
+        that retention through GNG is at least what it is for DPA, because the breaking field of GNG has no
+        symmetry of the memory stage left to remove; that is a claim about magnitudes, and it is a
+        measurement. Figures for this section will be S20 and S21 when the runs are in.
+      </p>
     </div>
   </section>
 
