@@ -3586,5 +3586,109 @@ s3 lopsided (0.39, −0.95)/(−0.88, −0.12)) while every scaffold pushes both
 σ₂ −0.13…−0.43, σ₃ −0.23…−0.47, V −0.17…−0.32). With the response read after the stimulus the no-lick pressure on the
 delay is the same but the pairing target moves after the test, and the free networks settle shallower.
 
+**NoGo rescored with an ANY-TIME lick criterion (Leon, 2026-09-22 late).** `_dual_accuracy` scores NoGo as window-MEAN κ₁ ≤ 0
+(threshold 0 = midpoint of go_hinge 1.0 and nogo_hinge −1.0; in-cue = last 0.5 s of the cue, post = 0.5 s after cue-off).
+Rescored as "no step above 0 in the window" (and with a 100-ms running mean), 1024 dual trials per expert net
+(`$CLAUDE_JOB_DIR/tmp/anytime_nogo.py`, results `~/dual/figures/paper_share/modelling/anytime_nogo.json`): **NoGo ≈ 0 everywhere** —
+free bfix 0.00–0.25 in-cue (any-step), 0.00–0.26 post; σ₁/V bfix 0.00–0.10; postresp free 0.00–0.51, scaffolds 0.00–0.55 (σ₁ s3 the
+only net above 0.5). Go 1.00 under every criterion. NOT a noise artefact: κ₁'s per-step noise is 0.03–0.05 η (the readout averages
+N = 1024 units) and DPA unpaired trials give 0.00 false alarms under the same any-time rule (window mean −2.0…−2.9 η). It is a
+real TRANSIENT: on NoGo trials κ₁ rises from −1…−2.6 η pre-cue, crosses 0 at ~0.35 s after cue onset in 70–100 % of trials, peaks
+at +0.4…+0.9 η (Go peaks +2.2…+3.0 η) and is above 0 for 16–40 % of the cue steps and 46–96 % of the post-cue steps. The
+window-mean criterion averages this excursion away; an any-time (mouse-like) criterion counts it as a lick. So the model's
+"NoGo" is a reduced-amplitude go transient, not a withheld lick — the cue on the Go channel (scale 2) drives every trial up and
+the network only lowers the starting point. Figure: `nogo_cue_transient.png` (κ₁ around the cue, NoGo vs Go, 8 free + 4 postresp
+nets). Implication for the paper: the NoGo claims must state the criterion; with the mouse criterion the model does not do NoGo.
+
+**Accuracy figures rescored with the any-time criterion (Leon: "did you update the accuracy figures?", 2026-09-23).**
+`paper/perturb_depth.py` and `fig5_model.py` (`lick_probs`) now score a lick as κ₁ > 0 at ANY step of the response window
+(`LICK=any`, default; `LICK=mean` reproduces the sweep criterion), applied to every response (DPA, Go, NoGo). Consequence
+for the perturbation: with the dual-trial drive stopping at the ODOR (the first design) NoGo is 0.00–0.20 at every well
+position — the state relaxes to the trained well in the 2 s before the cue, so the well at the odor cannot affect the cue
+transient; GNG flat at chance, dual = DPA × 0.5 (kept as `perturb_depth_81x2048_anytime_odorwin.json`). Redesigned to the
+consistent rule "drive until the stimulus that triggers the response" (`DUALWIN=cue`, default: sample offset → cue onset on
+dual trials, as sample offset → test onset on DPA trials): **NoGo appears only when the well the cue finds is deep** — 0.02
+at the trained −0.9 η, 0.31 at −2…−2.5 η, 0.61 at −2.5…−3, 0.78–0.89 beyond −3 (where Go drops to 0.77–0.88: the cue no longer
+lifts the state across the line); DPA unchanged (plateau −1.8…+2 η, 0.73 below −2.4). Dual (product) is 0.51 at the trained
+position and peaks at 0.64 for wells 2–3 η deep. ⇒ **the trained wells are the optimum of the training objective (softplus
+on the mean excursion) but NOT of the animals' lick-event criterion, which would want the wells 2–3 η deep at the price of
+DPA misses.** Mean-criterion results kept as `perturb_depth_81x2048_meancrit.json`. Draft v1.5: Readouts (criterion stated,
+sweep numbers flagged as window-mean), perturbation paragraph and Fig. 5 f–h legend rewritten; ED 17/18 re-rendered.
+
+**Fig. 5 compacted (Leon, 2026-09-23):** six rows, height 13.8 in (was 18.2), hspace 0.42, row heights 0.75/0.6/0.72/0.6/0.72/0.9; d has the free network's checkpoint flows under its DPA/GNG/Dual columns with the overlap and residual panels stacked on the right.
+
+**`sweep_lif_nolick0` (Leon's question, 2026-09-23): "do we need the no-lick to get our results, or is tying σ₁ enough?"**
+Where the no-lick term acts (code): Dual stage only for the wells — softplus on κ₁ > 0 (weight 1, threshold 0) on the FREE steps
+of the DPA-type dual trials over the whole delay (sample-off → test-on; these rows sit on the memory wells, so this term grades the
+well height directly; split by sample) and on NoGo rows from cue onset to test onset; nothing on Go rows; nothing in DPA
+(`dpa_nolick_weight` 0); in GNG only the NoGo rows cue-on → end (relu², off the wells). New field `dual_nolick_weight` (None =
+`nolick_weight`) zeroes it in Dual alone. Arms ×4 seeds: free, σ₁ tied in DPA, σ₁ held through all stages; otherwise =
+recipe7_bfix. **Result: the wells go UP in 12/12** — after Dual κ₁/η free +0.55…+1.52, σ₁-in-DPA +0.15…+1.51 (s2 one well,
+s3 lopsided), σ₁-all +0.81…+1.43 with A = B exactly; reference (cost on) −0.61…−1.89. The DPA/GNG checkpoints are identical to
+the reference. NoGo (window mean) 0.00 in 11/12. ⇒ **the no-lick cost is the push; the σ₁ tie only makes it rigid.** Without the
+cost the Dual objective is not neutral on κ₁: the Go response hinge (+1 in the cue) and the pairing bowl leave a net UPWARD
+pull on the delay state, so the wells drift into the lick region — the symmetry argument (σ₃ broken by a one-signed cost) has
+its sign fixed by which term is present. Gallery `lif_nolick0` (+ `misc/summary_grid_expert_ckpt.png`, rows reference / free /
+σ₁-DPA / σ₁-all). Gotcha recorded: `--run_filter` is a substring match.
+
+**"Do the free networks inherit the push from GNG?" (Leon, 2026-09-23) — no.** Mean well height κ₁/η of the 8 reference nets:
+DPA +0.19 (−0.22…+0.40) → GNG +0.17 (−0.22…+0.50) → Dual −1.37; the GNG step is −0.02 on average (−0.55…+0.38, Wilcoxon vs 0
+p = 0.95), the Dual step −1.54 (−0.94…−1.92); no relation between the height after GNG and the Dual step (ρ = −0.19). The
+same GNG checkpoints, continued into Dual WITHOUT the no-lick term (nolick0_free), move UP by +0.71…+1.72. So the sign and size
+of the push are decided in Dual by the no-lick term; GNG leaves the wells where DPA put them (rank 0 frozen, no DPA trial in the
+stage, the NoGo hinge acting off the wells). What GNG does install is on the input side — the choice readout's coupling to the
+Go/NoGo columns (Fig. 5d middle) — i.e. the interference the dual stage then has to live with, not a push.
+
+**"Can't we build a symmetry break that pushes the wells?" (Leon, 2026-09-23).** The theory names the carriers: the even part of
+the field is exactly ⟨n⟩ + a bias term (§37), and the trained push uses both (⟨n₁⟩ −0.10 → −0.22 across Dual; even part 0.05 →
+0.08, half constant, half structured). The §20 attempt (a negative ⟨n₁⟩ at init, no cost, old recipe) produced up/down copies
+(the quadruple) rather than a translation, and the baseline pin eroded the mean. I implemented a Dual-stage hard pin of ⟨n₁⟩
+(`Trainer._pin_n1_mean`, `RunConfig.dual_n1_mean_pin`; a uniform shift of n₁, λ₁ unchanged 6.13 → 6.14) and the `dcpin022/050/100`
+arms (no-lick OFF + pin at −0.22 / −0.5 / −1.0, 4 seeds each) — **Leon: "too artificial to pin n₁"; NOT launched**, kept in the
+code as a record. Resolution: any built-in break needs its sign chosen by hand, and the ablation shows that with no sign-setter in
+the objective the wells drift UP. The only non-artificial sign-setter is the task's own asymmetry — a wrong lick costs, a withheld
+lick in the delay does not — which is the no-lick term (Leon's safeguard rule). So the no-lick cost IS the natural symmetry break;
+⟨n₁⟩ and the bias are its carriers, σ₁ its geometry.
+
+**`sweep_lif_pnl` (2026-09-23): the no-lick SHAPE, and the cue-off control.** New shapes in `UnifiedLoss` (`nolick_scale` = η
+passed from the sweep): `pcdf` = P(lick) = Φ(κ₁/η) per step, `pnll` = −log(1 − Φ(κ₁/η)) (cross-entropy of not licking),
+`softplus_s` = s·softplus(κ₁/s). Forces at −1.5 η: softplus (current, unit scale = a logistic model at ~2.7 η) 0.36, pcdf 0.35,
+pnll 0.37, but pcdf/pnll fall to 0.01 by −3 η where softplus still has 0.25. Arms ×4 seeds, free nets: pnl_pcdf, pnl_pnll (cue
+on), nocue_softplus, nocue_pcdf (`cue_scale` 0). **Results:** (i) wells after Dual: pcdf −1.20…−1.76, pnll −1.18…−2.05 (8/8
+below each), reference softplus −0.61…−1.89 — same depth, tighter; (ii) **NoGo under the ANY-TIME criterion improves**: pnll
+0.33–0.73 (in-cue NoGo peak −0.14…+0.14 η), pcdf 0.03–0.45, reference 0.01–0.25 (peaks +0.4…+0.7 η); Go 1.00, DPA 0.99–1.00,
+NoGo window-mean 0.93–1.00 everywhere — the cross-entropy of P(lick) at the noise scale is the best shape we have, principled
+(it prices the event the animals' criterion counts) and better on that criterion; (iii) **cue OFF does not leave the wells at
+the line**: pcdf −0.62…−1.50 (7/7 wells below), softplus −0.24…−1.61 with one well above in 2/4 — a well on the line
+false-alarms on half the steps under the noise, so P(lick) pushes it ~1 η down on its own; the cue lift adds the remaining
+~0.5 η. So the push has TWO task-derived sources: the state noise (a well at the line licks half the time) and the cue
+(which lifts the NoGo state); Leon's "no cue → no push" holds only for a hinge that switches off at the line (relu², §25e).
+With the cue off NoGo is trivially 0.91–1.00 under any criterion (nothing lifts the state) and GNG-alone is weaker
+(0.69–0.72 in 2/4: the response is timed from memory). Gallery `lif_pnl`; grid `summary_grid_expert_ckpt.png` (rows
+reference / pcdf / pnll / softplus cue-off / pcdf cue-off). Recipe decision (adopt pnll?) is Leon's — it would re-anchor Fig. 5.
+
+**The depth law (2026-09-23, from the cross-entropy).** With every scored event a probit cross-entropy at scale η, the well depth d
+(below the line, in η) is set by the balance of two Gaussian tails: the delay no-lick term on the well, force ∝ φ(d), against the
+paired-lick term at the test, force ∝ φ(k − d) where k is the test-evoked displacement on paired trials; the loss uses MASKED
+MEANS per group, so the window lengths cancel and **d* = k/2 + (η²/k)·ln(w_nolick/w_pair) = k/2 at equal weights**. Measured on
+DPA-only trials (1024, trained noise; d = −⟨κ₁⟩ in the last 0.5 s before the test, k = ⟨κ₁⟩_paired(test window) − ⟨κ₁⟩_well):
+**pcdf d/(k/2) = 1.01 ± 0.03, pnll 1.08 ± 0.06 (4 seeds each; k = 2.1…3.0 η, d = 1.1…1.6 η)**; the softplus reference gives
+0.85 ± 0.13 (8 seeds) — not the model it optimizes. The per-step hit probability Φ(k − d) = 0.81…0.93 while the window-mean hit
+rate is 0.97–1.00 (the window mean averages the noise). Same structure for the any-time optimum: d_opt = k/2 + (η²/k)·ln(T_NoGo/T_test)
+(the any-time criterion over T steps multiplies each tail by its window length). To be re-verified on `sweep_lif_log`. Other
+computables from the likelihood (to go in the Supplementary Note): behavior from geometry (per-step P(lick) = Φ(κ₁/η), hit
+Φ((k−d)), any-time 1 − (1 − Φ(−d))^T), the ⟨n₁⟩ drift d⟨n₁⟩/dt = −lr·w·⟨H(−κ₁/η)/η⟩⟨r⟩ (the carrier), convexity of −log Φ(±x) ⇒ a
+single optimum on the choice axis (the quadruple is a DPA-stage object), the Fisher information at the well = the stiffness
+against perturbation.
+
+**Paper v1.7 (2026-09-23): the cross-entropy objective and its computables written in.** `derivations.html` §13 "The likelihood
+of the lick" (Definition 13.0 the probit model and ℓ±; Prop. 13.1 the depth law d* = k/2 + (1/k) ln(w_nl/w_p) with proof and the
+pcdf/pnll check; Cor. 13.2 behavior from geometry; Prop. 13.3 the optimum under the any-crossing criterion d_opt = k/2 +
+(1/k) ln(T_nogo/T_test); Prop. 13.4 the drift of ⟨n₁⟩, eq. 13.3; Prop. 13.5 convexity ⇒ one optimum on the choice axis; Prop.
+13.6 the stiffness 𝒦 ≃ w·k·φ(k/2) ≈ 0.43 w). Draft: Methods "Tasks and curriculum" now states the objective as the likelihood
+(lick −log Φ(κ₁/η), no-lick −log Φ(−κ₁/η), internal requirements quadratic), eq. 6 is the cross-entropy no-lick term with the
+hazard gradient, new Results section "The likelihood of the lick sets the depth of the wells" (numbers from the pnl networks,
+flagged for re-anchoring on `sweep_lif_log`). Artifact v1.7 published.
+
 **Open / running:** postresp plots + gallery (queue, automatic); `memhold_*` arms not launched; nothing committed since
 `436f9bd` — now committed as `f157cb0` (rnn) and `9198c34` (dual, draft v1.4 + builder); not pushed.

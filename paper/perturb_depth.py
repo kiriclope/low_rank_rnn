@@ -39,7 +39,8 @@ for s in SEEDS:
     sA = Xd[:, int(Tp.n_stim_on[0]):int(Tp.n_stim_off[0]), 0].mean(1).numpy() > 0.5; tC = Xd[:, int(Tp.n_stim_on[1]):int(Tp.n_stim_off[1]), 2].mean(1).numpy() > 0.5; pair_d = (sA & tC) | (~sA & ~tC)
     samp = np.array([n[0] for n in names]); tst = np.array([n[-1] for n in names]); pair_u = ((samp == 'A') & (tst == 'C')) | ((samp == 'B') & (tst == 'D')); go = np.array(['_go_' in n for n in names]); ng = np.array(['_nogo_' in n for n in names])
     m1 = m.m.detach()[:, 1]; drive_dir = (m1 / m1.norm() * float(np.sqrt(m.hidden_size))).to(DEV)   # unit-rms pattern along m1
-    win_d = (int(Tp.n_stim_off[0]), int(Tp.n_stim_on[1])); win_u = (int(Td.n_stim_off[0]), int(Td.n_stim_on[1]))
+    DUALWIN = os.environ.get('DUALWIN', 'cue')   # where the drive stops on dual trials: 'cue' = at cue onset (the response stimulus, as the test is for DPA), 'odor' = at the Go/NoGo odor onset
+    win_d = (int(Tp.n_stim_off[0]), int(Tp.n_stim_on[1])); win_u = (int(Td.n_stim_off[0]), int(Td.n_stim_on[2] if DUALWIN == 'cue' else Td.n_stim_on[1]))
     for variant in ('drive', 'nmean'):
         for d in (DELTAS if variant == 'drive' else DELTAS_CTRL):
             if variant == 'drive': kd = run(m, Xd, d * drive_dir, win_d); ku = run(m, Xu, d * drive_dir, win_u)
@@ -50,10 +51,12 @@ for s in SEEDS:
                 with torch.no_grad(): m.n.copy_(n_backup)
             ric = cfg['response_in_cue']; tod = int(Tp.n_stim_off[1]); tou, co = int(Td.n_stim_off[3]), int(Td.n_stim_off[2])
             depth_A = kd[sA, int(Tp.n_stim_on[1]) - 1, 1].mean() / eta; depth_B = kd[~sA, int(Tp.n_stim_on[1]) - 1, 1].mean() / eta
-            lick_d = (kd[:, tod - half:tod, 1].mean(1) if ric else kd[:, tod:tod + half, 1].mean(1)) > 0; lick_u = (ku[:, tou - half:tou, 1].mean(1) if ric else ku[:, tou:tou + half, 1].mean(1)) > 0; cue = (ku[:, co - half:co, 1].mean(1) if ric else ku[:, co:co + half, 1].mean(1)) > 0
+            LICK = os.environ.get('LICK', 'any')   # 'any': κ₁ > 0 at any step of the response window (a lick event); 'mean': window mean > 0 (the sweep's criterion)
+            L = (lambda seg: (seg > 0).any(1)) if LICK == 'any' else (lambda seg: seg.mean(1) > 0)
+            lick_d = L(kd[:, tod - half:tod, 1] if ric else kd[:, tod:tod + half, 1]); lick_u = L(ku[:, tou - half:tou, 1] if ric else ku[:, tou:tou + half, 1]); cue = L(ku[:, co - half:co, 1] if ric else ku[:, co:co + half, 1])
             res[(s, variant, float(f'{d:.3f}'))] = dict(depth_A=float(depth_A), depth_B=float(depth_B), dpa_hit=float(lick_d[pair_d].mean()), dpa_fa=float(lick_d[~pair_d].mean()), dpa_acc=float(((lick_d == pair_d).mean())),
                                                 dpa_acc_A=float((lick_d == pair_d)[sA].mean()), dpa_acc_B=float((lick_d == pair_d)[~sA].mean()), dual_acc=float((lick_u == pair_u).mean()), go=float(cue[go].mean()), nogo=float(1 - cue[ng].mean()),
-                                                depthU_A=float(ku[samp == 'A', int(Td.n_stim_on[1]) - 1, 1].mean() / eta), depthU_B=float(ku[samp == 'B', int(Td.n_stim_on[1]) - 1, 1].mean() / eta),
+                                                depthU_A=float(ku[samp == 'A', win_u[1] - 1, 1].mean() / eta), depthU_B=float(ku[samp == 'B', win_u[1] - 1, 1].mean() / eta),
                                                 gng_acc_A=float(np.mean(np.r_[cue[go & (samp == 'A')], ~cue[ng & (samp == 'A')]])), gng_acc_B=float(np.mean(np.r_[cue[go & (samp == 'B')], ~cue[ng & (samp == 'B')]])),
                                                 dual_acc_A=float((lick_u == pair_u)[samp == 'A'].mean()), dual_acc_B=float((lick_u == pair_u)[samp == 'B'].mean()))
         print(f'seed {s} {variant} done', flush=True)
@@ -72,9 +75,9 @@ for r, variant in enumerate(('drive', 'nmean')):
         axs[1].plot(depm, [rw['dpa_hit'] for rw in rows], '-s', color=SEED_COL[s], ms=3, lw=0.8, alpha=0.6, mfc='white'); axs[1].plot(depm, [rw['dpa_fa'] for rw in rows], '-o', color=SEED_COL[s], ms=3, lw=0.8, alpha=0.8)
         axs[2].plot(depu, [rw['go'] for rw in rows], '-s', color=BLUE, ms=3, lw=0.8, alpha=0.6, mfc='white'); axs[2].plot(depu, [rw['nogo'] for rw in rows], '-o', color=GREEN, ms=3, lw=0.8, alpha=0.6)
     for ax in axs: ax.axvline(0, color=LICK_COL, lw=0.7, ls='--'); ax.set_ylim(-0.03, 1.03)
-    axs[0].set_xlabel('well location when the test arrives, $\\kappa_1/\\eta$'); axs[1].set_xlabel('well location when the test arrives, $\\kappa_1/\\eta$'); axs[2].set_xlabel('well location when the odor arrives, $\\kappa_1/\\eta$')
+    axs[0].set_xlabel('well location when the test arrives, $\\kappa_1/\\eta$'); axs[1].set_xlabel('well location when the test arrives, $\\kappa_1/\\eta$'); axs[2].set_xlabel('well location when the cue arrives, $\\kappa_1/\\eta$')
     axs[0].set_ylabel('DPA accuracy'); axs[1].set_ylabel('P(lick at the test)'); axs[2].set_ylabel('Go / NoGo accuracy')
     axs[0].set_title('DPA accuracy per sample (A filled, B open)', loc='left', fontsize=TITLE_FS); axs[1].set_title('hits (open squares) and false alarms (filled)', loc='left', fontsize=TITLE_FS); axs[2].set_title('Go (blue, open) and NoGo (green, filled)', loc='left', fontsize=TITLE_FS)
-    fig.text(0.07, 0.955 - r * 0.485, ('drive along $m_1$ from sample offset to the readout stimulus: the state moves, the trained field does not' if variant == 'drive' else 'control: a mean added to $n_1$ moves the field and the readout together with the wells'), fontsize=PS*8, fontweight='bold', va='bottom')
+    fig.text(0.07, 0.955 - r * 0.485, ('drive along $m_1$ from sample offset to the response stimulus (test / cue); lick = $\\kappa_1 > 0$ at any step of the response window' if variant == 'drive' else 'control: a mean added to $n_1$ moves the field and the readout together with the wells'), fontsize=PS*8, fontweight='bold', va='bottom')
 for L, ax in zip('abcdef', axes.flat): panel_letter(fig, ax, L)
 save(fig, 'perturb_depth'); print('PERTURB_DONE')

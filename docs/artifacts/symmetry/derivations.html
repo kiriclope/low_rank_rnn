@@ -534,6 +534,91 @@ mjx-container { overflow-x: auto; overflow-y: hidden; }
       </tbody></table></div>
   </div>
 
+  <h2 id="s13">13. The likelihood of the lick: what the cross-entropy objective makes computable</h2>
+  <p>From the <em>log</em> recipe on, every event the animal is scored on is priced by the likelihood of a probit lick model, with the
+    network's own state noise as its scale. This section collects what that choice makes explicit: the depth of the wells, the
+    behavior implied by a geometry, the drift of the carrier of the symmetry break, the uniqueness of the optimum on the choice
+    axis, and the stiffness of a well against a perturbation. Notation: \(\eta\) is the standard deviation of the state noise on
+    \(\kappa\) (\(\eta = \sigma\sqrt{1-e^{-2\alpha}}\)), \(x = \kappa_1/\eta\), \(\Phi\) and \(\varphi\) the standard normal CDF and density,
+    \(H(x) = \varphi(x)/\Phi(-x)\) the Gaussian hazard (the inverse Mills ratio).</p>
+
+  <div class="box def"><span class="tag">Definition 13.0 &mdash; the lick model and its cross-entropy</span>
+    <p>A lick at step \(t\) is the event that the noisy readout crosses the line: \(p_t = \Pr[\kappa_1(t) + \xi > 0] = \Phi(\kappa_1(t)/\eta)\),
+      \(\xi\sim\mathcal N(0,\eta^2)\). The cost of a required lick is \(\ell_+(x) = -\log\Phi(x)\), of a required no-lick
+      \(\ell_-(x) = -\log\Phi(-x) = \ell_+(-x)\). Then \(\ell_-'(x) = H(x) > 0\) and \(\ell_+'(x) = -H(-x) < 0\); \(H\) is increasing,
+      \(H(x)\simeq\varphi(x)\) for \(x\to-\infty\) and \(H(x)\simeq x\) for \(x\to+\infty\); both \(\ell_\pm\) are convex
+      (\(\Phi\) is log-concave). The objective scores the pairing response and the Go response with \(\ell_+\), the NoGo response and
+      the delay of the DPA-type dual trials with \(\ell_-\), each as a masked mean over its steps and rows, with weights \(w_{\rm p}\)
+      and \(w_{\rm nl}\); the pre-sample baseline pin, the sample hold on \(\kappa_0\) and the rule hold before the cue are internal
+      requirements, not events, and keep their quadratic forms.</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Proposition 13.1 &mdash; the depth of the wells</span>
+    <p>Let the memory wells sit at height \(-d\eta\) (\(d>0\) below the line) and let the test displace the state on paired trials by
+      \(k\eta\) within the response window, so that \(\kappa_1/\eta = k - d\) there. To leading order in the Gaussian tails
+      (\(d\gtrsim1\), \(k-d\gtrsim1\)), the objective restricted to the well height is stationary where the two tails balance,
+      \[ w_{\rm nl}\,\varphi(d) = w_{\rm p}\,\varphi(k-d), \qquad\text{i.e.}\qquad
+         d^\ast = \frac{k}{2} + \frac{1}{k}\ln\frac{w_{\rm nl}}{w_{\rm p}} , \tag{13.1}\]
+      and \(d^\ast = k/2\) at equal weights: the well settles half a test displacement below the line. The window lengths do not enter,
+      because each group is a masked <em>mean</em> over its own steps.</p>
+  </div>
+  <div class="proof"><p>On the DPA-type rows the delay state sits at the well, so the no-lick group contributes \(w_{\rm nl}\,\ell_-(-d)\);
+    the paired response contributes \(w_{\rm p}\,\ell_+(k-d)\); the unpaired response \(w_{\rm p}\,\ell_-(-d-k')\) is deeper in the
+    tail and dropped. Differentiating in \(d\): \(-w_{\rm nl}H(-d) + w_{\rm p}H(d-k) = 0\). For \(d\gtrsim1\), \(H(-d) = \varphi(d)/\Phi(d)\simeq\varphi(d)\);
+    for \(k-d\gtrsim1\), \(H(d-k)\simeq\varphi(k-d)\). Taking logarithms, \(d^2-(k-d)^2 = 2\ln(w_{\rm nl}/w_{\rm p})\), which is (13.1). The
+    NoGo steps from cue onset add a term of the same sign on a displaced state; at the trained depths it shifts \(d^\ast\) by less
+    than the seed-to-seed spread (checked below).</p></div>
+  <p><em>Check.</em> On the networks trained with the probit costs (4 seeds each, 1024 DPA trials at the trained noise, \(d\) from the last
+    0.5 s before the test, \(k\) from the paired response window): \(k = 2.1\ldots3.0\), \(d = 1.1\ldots1.6\), and
+    \(d/(k/2) = 1.01\pm0.03\) for the probability cost and \(1.08\pm0.06\) for its cross-entropy; the softplus networks, which
+    optimize a logistic model at the wrong scale, give \(0.85\pm0.13\).</p>
+
+  <div class="box thm"><span class="tag">Corollary 13.2 &mdash; behavior from geometry</span>
+    <p>Because the loss is the likelihood of the behavior, a geometry converts to lick probabilities with the same formula:
+      per step, \(\Pr[\text{false alarm}] = \Phi(-d)\) at the well and \(\Pr[\text{hit}] = \Phi(k-d)\) at the test; over a window of
+      \(T\) steps scored by any crossing, \(\Pr[\text{lick}] = 1-\Phi(d)^T\) if the steps were independent, an upper bound with
+      correlated noise. At \(d^\ast = k/2\): per-step hit \(\Phi(k/2)\), per-step false alarm \(\Phi(-k/2)\), equal by construction
+      of the balance.</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Proposition 13.3 &mdash; the optimum under a lick-event criterion</span>
+    <p>If performance is scored as the animals are, a lick being any crossing in a window, the expected error of a well at depth \(d\)
+      is, to leading order, \(T_{\rm nogo}\,\Phi(-d) + T_{\rm test}\,\Phi(d-k)\), and its minimum is at
+      \[ d_{\rm opt} = \frac{k}{2} + \frac{1}{k}\ln\frac{T_{\rm nogo}}{T_{\rm test}} , \tag{13.2}\]
+      the same balance as (13.1) with the window lengths in place of the weights. The trained well (13.1) and the behavioral
+      optimum (13.2) coincide only when the weights are set as the windows are counted; with equal weights the trained well is
+      shallower than the behavioral optimum by \(\ln(T_{\rm nogo}/T_{\rm test})/k\).</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Proposition 13.4 &mdash; the drift of the carrier</span>
+    <p>With \(\kappa_1 = n_1^{\mathsf T}r/N\), the gradient of the no-lick term is
+      \(\partial L_{\rm nl}/\partial n_1 = \frac{w_{\rm nl}}{N\eta}\,\big\langle H(-\kappa_1(t)/\eta)\, r(t)\big\rangle_{t\in W}\), so
+      under gradient descent the unit-mean of the choice readout, the constant carrier of the even part of the field (Theorem 6.1,
+      eq. 5 of the main text), moves as
+      \[ \frac{d\langle n_1\rangle}{d\tau} = -\,\mathrm{lr}\,\frac{w_{\rm nl}}{\eta}\,\Big\langle H\!\big(-\kappa_1(t)/\eta\big)\,\bar r(t)\Big\rangle_{t\in W}, \tag{13.3}\]
+      \(\bar r\) the unit-mean rate. For a non-negative transfer function \(\bar r>0\), so \(\langle n_1\rangle\) decreases monotonically,
+      at a rate set by the hazard at the well: fast while the well is near the line, vanishing as \(\varphi(d)\) once it is deep.
+      The sign of the symmetry break is therefore the sign of the cost, and its carrier is driven with no choice.</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Proposition 13.5 &mdash; a single optimum on the choice axis</span>
+    <p>Each \(\ell_\pm\) is convex, so the objective is convex in the vector of scored values \((\kappa_1(t))_t\). For a configuration
+      whose scored values shift affinely with the well height (a rigid displacement of the delay state and of the responses it
+      seeds), the objective is convex in the height and has one stationary point, the depth of (13.1). Two heights cannot both be
+      optima of the dual objective: the four-well configuration of the whole-group tie is an object of the DPA stage, allowed by its
+      symmetry, and not of the dual stage.</p>
+  </div>
+
+  <div class="box thm"><span class="tag">Proposition 13.6 &mdash; the stiffness of a well</span>
+    <p>The curvature of the objective at \(d^\ast\), using \(H'(x) = H(x)\,(H(x)-x)\),
+      \[ \mathcal K = w_{\rm nl}\,H(-d^\ast)\big[H(-d^\ast)+d^\ast\big] + w_{\rm p}\,H(d^\ast-k)\big[H(d^\ast-k)+k-d^\ast\big]
+         \;\simeq\; w\,k\,\varphi(k/2) \tag{13.4}\]
+      at equal weights, is the Fisher information of the lick model at the well. A displacement \(\delta\) of the well (in \(\eta\))
+      costs \(\tfrac12\mathcal K\delta^2\) and training restores it with force \(\mathcal K\delta\). For the trained \(k\simeq2.7\),
+      \(\mathcal K\simeq0.43\,w\): the quantity to set against the size of an optogenetic displacement and the time it takes to
+      relearn.</p>
+  </div>
+
   <p class="foot">
     Companion to <em>Three Tasks, Three Groups</em>. Model and notation as in <code>docs/architecture.md</code>;
     the measurements this document is checked against are in <code>docs/ring_lowerplane_log.md</code>

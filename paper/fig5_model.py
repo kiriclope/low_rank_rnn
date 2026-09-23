@@ -45,7 +45,7 @@ def acc_of(sw, rid):
     for l in open(f'{sw}/results.jsonl'):
         d = json.loads(l)
         if d['run_id'] == rid: return d['accuracy']
-fig = plt.figure(figsize=(9.6, 15.6)); gs = fig.add_gridspec(5, 20, height_ratios=[1.0, 0.72, 0.78, 0.85, 0.95], hspace=0.65, wspace=2.4, left=0.06, right=0.985, top=0.975, bottom=0.035)
+fig = plt.figure(figsize=(9.6, 13.8)); gs = fig.add_gridspec(6, 20, height_ratios=[0.75, 0.6, 0.72, 0.6, 0.72, 0.9], hspace=0.42, wspace=2.4, left=0.06, right=0.985, top=0.975, bottom=0.035)
 def cell(r, c0, c1): return fig.add_subplot(gs[r, c0:c1])
 stages = ['after DPA', 'after GNG', 'after Dual']
 
@@ -94,7 +94,7 @@ ax.text(5.0, -0.25, 'blue Go, green NoGo; hatched red: the response window (lick
 # ── c: the four-group of DPA — left, the task table and the three relabelings; right, one sub-panel per element and one for the
 #      whole group: the action on the plane (a state and its images) and the memory pair it allows ──
 PLUM = '#AA4499'; TCOL = '0.35'; VCOL = '0.2'
-ax = fig.add_subplot(gs[1:3, 0:6]); ax.axis('off'); ax.set_xlim(0, 12); ax.set_ylim(-13.5, 10); ax_e0 = ax
+ax = fig.add_subplot(gs[1:3, 0:6]); ax.axis('off'); ax.set_xlim(0, 12); ax.set_ylim(-11.5, 10); ax_e0 = ax
 ax.set_title('the DPA task and its symmetries', loc='left', fontsize=TITLE_FS)
 for i_, r_ in enumerate(['A', 'B']):
     for j_, c_ in enumerate(['C', 'D']):
@@ -191,7 +191,7 @@ for k_, (stg, grp, txt, kept, broken) in enumerate(STG):
     ax.text(x0, 2.9, txt, fontsize=STAT_FS, va='top', color='0.3')
 # f2: overlaps of the choice readout with the Go and NoGo columns
 OV = json.load(open('/home/leon/dual/figures/paper_share/modelling/overlaps_bfix.json'))
-ax = cell(3, 10, 15); ax_f1 = ax
+ax = cell(3, 10, 20); ax_f1 = ax
 for s_ in fseeds:
     for c_, col, mk in ((4, BLUE, 's'), (5, GREEN, 'o')):
         ax.plot(range(3), [OV[f'{s_}|{st}'][str(c_)][1] for st in ('dpa', 'naive', 'expert')], '-', marker=mk, color=col, lw=0.7, ms=2.8, alpha=0.55)
@@ -206,7 +206,7 @@ for l in open('/home/leon/.claude/jobs/ec0810d6/tmp/symviol_bfix.tsv').read().st
     r = l.split('\t')
     if len(r) < 5 or not r[2][0].isdigit(): continue
     LED[(int(r[0].split('_')[0][1:]), r[1])] = [float(r[2]), float(r[3]), float(r[4])]
-ax = cell(3, 15, 20); ax_f2 = ax
+ax = cell(4, 10, 20); ax_f2 = ax
 for e_i, (el, col) in enumerate((('σ₁', B_COL), ('σ₂', PLUM), ('σ₃', LICK_COL))):
     ys = np.array([[LED[(s_, st)][e_i] for st in ('dpa', 'naive', 'expert')] for s_ in fseeds if all((s_, st) in LED for st in ('dpa', 'naive', 'expert'))])
     for y in ys: ax.plot(range(3), y, '-o', color=col, lw=0.6, ms=2.4, alpha=0.4)
@@ -221,8 +221,22 @@ for stage in ('dpa', 'naive', 'expert'):
         m, cf = load_run(fsw, f's{s}_{farm}', stage=stage, device='cpu'); sig = sig_of(cf); A, B = memory_pair(wells_of(m, cf, sig), m, cf); wells_free[(stage, s)] = (A, B, sig)
 stages = ['after DPA', 'after GNG', 'after Dual']
 
+# ── d, lower row: the free network's autonomous flow at the three checkpoints, under the DPA / GNG / Dual columns of the account ──
+sgd = gs[4, 0:9].subgridspec(1, 3, wspace=0.35); axs_d = [fig.add_subplot(sgd[0, k]) for k in range(3)]
+for k, (stage, lab) in enumerate([('dpa', 'after DPA'), ('naive', 'after GNG'), ('expert', 'after Dual')]):
+    ax = axs_d[k]; m0, cfg = load_run(fsw, f's{fseeds[0]}_{farm}', stage=stage, device='cpu'); sig = sig_of(cfg)
+    cache, spd = _flow_panel_cache(m0, dict(name=lab, dims=None, conds=[]), cfg['input_size'], torch.zeros(1, 1, cfg['input_size']), XL, XL, 61, field_input_noise=sig, n_fp_seeds=41, slow_tol=0.06)
+    _render_flow_panel(ax, cache, speed_vmax=float(np.percentile(spd, 98)), sim_scattered=False, kappa_traj=None, cond_idx={}, colors={}, xlim=XL, ylim=XL, model=m0)
+    ax.axhline(0, color='w', lw=0.8, ls=(0, (4, 3)))
+    for s_ in fseeds:
+        A, B, _ = wells_free[(stage, s_)]
+        for f, col in ((A, A_COL), (B, B_COL)):
+            if f is not None: ax.plot(f[0], f[1], 'o', ms=3.2, mfc=col, mec='w', mew=0.4, zorder=7)
+    ax.set_xticks([-1, 0, 1]); ax.set_yticks([-1, 0, 1]); ax.set_xlabel('$\\kappa_0$ sample'); ax.set_ylabel('$\\kappa_1$ choice' if k == 0 else ''); ax.set_title(lab, loc='left', fontsize=TITLE_FS)
+    print('flow', stage, 'done', flush=True)
+
 # ── e: the push, per seed (tab10 = per network, as the paper's per-mouse colours), mean ± 95% CI, Wilcoxon DPA → Dual ──
-ax = cell(4, 0, 5); ax_d = ax
+ax = cell(5, 0, 5); ax_d = ax
 H = {idx: np.array([[wells_free[(st, s_)][idx][1] / wells_free[(st, s_)][2] if wells_free[(st, s_)][idx] is not None else np.nan for st in ('dpa', 'naive', 'expert')] for s_ in fseeds]) for idx in (0, 1)}
 for i, s_ in enumerate(fseeds):
     ax.plot(np.arange(3) - 0.07, H[0][i], '-o', color=SEED_COL[i], alpha=0.6, lw=0.7, ms=2.8); ax.plot(np.arange(3) + 0.07, H[1][i], '-o', color=SEED_COL[i], alpha=0.6, lw=0.7, ms=2.8, mfc='white')
@@ -247,7 +261,7 @@ PJ = json.load(open('/home/leon/dual/figures/paper_share/modelling/perturb_depth
 P = {}
 for k, v in PJ.items():
     s_, var, d = k.split('|'); P.setdefault((int(s_), var), []).append((float(d), v))
-ax_g = cell(4, 5, 10); ax_h = cell(4, 10, 15); ax_i = cell(4, 15, 20)
+ax_g = cell(5, 5, 10); ax_h = cell(5, 10, 15); ax_i = cell(5, 15, 20)
 def binned(ax, xk, yk, col):
     """all (network, sample, drive) points, gray; binned mean ± 95% bootstrap CI in fixed 0.5 η bins, coloured"""
     X = np.array([r[xk + lab] for s_ in fseeds for d, r in P[(s_, 'drive')] for lab in ('A', 'B')]); Y = np.array([r[yk + lab] for s_ in fseeds for d, r in P[(s_, 'drive')] for lab in ('A', 'B')])
@@ -266,13 +280,13 @@ for s_ in fseeds:   # dual performance = P(both responses of a dual trial correc
     for d, r in P[(s_, 'drive')]:
         for lab in ('A', 'B'): r['dual_perf_' + lab] = r['dpa_acc_' + lab] * r['gng_acc_' + lab]
 rho_d, p_d = binned(ax_g, 'depth_', 'dpa_acc_', RED); rho_g, p_g = binned(ax_h, 'depthU_', 'gng_acc_', BLUE); rho_i, p_i = binned(ax_i, 'depthU_', 'dual_perf_', '0.15')
-for a_, ttl, yl in ((ax_g, 'DPA vs well at the test', 'DPA accuracy'), (ax_h, 'GNG vs well at the odor', 'GNG accuracy'), (ax_i, 'dual, both correct', 'DPA × GNG accuracy')):
+for a_, ttl, yl in ((ax_g, 'DPA vs well at the test', 'DPA accuracy'), (ax_h, 'GNG vs well at the cue', 'GNG accuracy'), (ax_i, 'dual, both correct', 'DPA × GNG accuracy')):
     a_.axvline(0, color=LICK_COL, lw=0.8, ls='--'); a_.set_ylim(0.35, 1.03); a_.set_xlabel('well on the choice axis, $\\kappa_1/\\eta$'); a_.set_ylabel(yl); a_.set_title(ttl, loc='left', fontsize=TITLE_FS)
 ax_i.axvline(-0.9, color='0.5', lw=0.8, ls=':')
 xc_, mu_ = ax_i._binned; ax_i.plot(-xc_, mu_, ':', color=LICK_COL, lw=1.2, zorder=5)   # the image of the curve under σ₃ (κ₁ → −κ₁): equal to the curve only if σ₃ held
 ax_g.text(0.5, 0.04, f'left: misses; right: false alarms\nA filled, B open: coincide (σ₁)\nbins 0.5 η, mean ± 95% CI', transform=ax_g.transAxes, ha='center', fontsize=STAT_FS, color='0.3')
 ax_h.text(0.02, 0.04, f'NoGo licks only\nρ = {rho_g:.2f}, p = {p_g:.0e}', transform=ax_h.transAxes, fontsize=STAT_FS, color='0.3')
-ax_i.text(0.02, 0.04, 'gray dotted: trained well\nred dotted: σ₃ image of the curve\n(σ₃ broken ⇒ optimum below the line)', transform=ax_i.transAxes, fontsize=STAT_FS, color='0.3')
+ax_i.text(0.98, 0.97, 'gray dotted: trained well\nred dotted: σ₃ image of the curve\nlick = κ₁ > 0 at any step of the window', transform=ax_i.transAxes, ha='right', va='top', fontsize=STAT_FS, color='0.3')
 
 for L, a in zip('abcdefgh', [fig.axes[0], ax_b, ax_e0, ax_f0, ax_d, ax_g, ax_h, ax_i]): panel_letter(fig, a, L)
 save(fig, 'fig5_model')
@@ -289,7 +303,8 @@ def lick_probs(sw, rid, stage):
     X, y, _, names = generate_dual_trials(384, Td, cfg['input_size'], noise=eta, target_rank=2, cue_on_go_input=cfg['cue_on_go_input'], cue_scale=cfg['cue_scale'], nogo_target=cfg['nogo_target'], go_target=cfg['go_target'], response_in_cue=cfg['response_in_cue'], windowed_targets=cfg['windowed_targets'], decay_to_zero=cfg['decay_to_zero'], gng_response=cfg['gng_response'], post_response_window=cfg.get('dpa_post_response_window'))
     with torch.no_grad(): k1 = m(X)[..., 1].numpy()
     to, co = int(Td.n_stim_off[3]), int(Td.n_stim_off[2]); ric = cfg['response_in_cue']
-    test_lick = (k1[:, (to - half):to].mean(1) if ric else k1[:, to:to + half].mean(1)) > 0; cue_lick = (k1[:, (co - half):co].mean(1) if ric else k1[:, co:co + half].mean(1)) > 0
+    L = (lambda seg: (seg > 0).any(1)) if os.environ.get('LICK', 'any') == 'any' else (lambda seg: seg.mean(1) > 0)   # a lick = κ₁ > 0 at any step of the window
+    test_lick = L(k1[:, (to - half):to] if ric else k1[:, to:to + half]); cue_lick = L(k1[:, (co - half):co] if ric else k1[:, co:co + half])
     samp = np.array([n[0] for n in names]); tst = np.array([n[-1] for n in names]); pair = ((samp == 'A') & (tst == 'C')) | ((samp == 'B') & (tst == 'D'))
     go = np.array(['_go_' in n for n in names]); ng = np.array(['_nogo_' in n for n in names])
     Tp = make_timings(dt)['dpa']; Xd, _ = generate_dpa_trials(256, Tp, cfg['input_size'], noise=eta, target_rank=2, windowed_targets=True, decay_to_zero=False, response_in_cue=ric, prelick_free=True, hold_window=0.5, hold_anchor='sample', post_response_window=cfg.get('dpa_post_response_window'))

@@ -219,6 +219,7 @@ class Optimization:
         hebb_lr: float = 0.0,
         kappa1_clamp: float | None = None,
         kappa_gain_target: float | None = None,
+        n1_mean_pin: float | None = None,
         rate_reg: float = 0.0,
         # Hard orthogonality (n_col, m_col): after each step project n[:, n_col] ⟂ m[:, m_col].
         orthogonalize_cols: tuple[int, int] | None = None,
@@ -234,6 +235,7 @@ class Optimization:
         self.hebb_lr       = hebb_lr       # three-factor Hebbian lr for reward input (0 = disabled)
         self.kappa1_clamp  = kappa1_clamp  # hard cap on decision self-gain g·λ₁ after each step (None=off)
         self.kappa_gain_target = kappa_gain_target  # pin ALL modes' g·λ to this value each step (None=off)
+        self.n1_mean_pin   = n1_mean_pin   # pin the unit-mean of the choice readout n₁ to this value after each step (None=off): the built-in σ₃ break (ring log §20, §37: the even part of the field is ⟨n⟩ + a bias term)
         # rate_reg: ACTIVITY L2, w·⟨rates²⟩ over all units/steps, added to the objective (train AND
         # val, so printed losses are comparable). Penalises divergence itself — the rates — not the
         # readout, so growth cannot hide orthogonally to n. Needed for non-saturating φ (relu: the
@@ -388,6 +390,17 @@ class Optimization:
             denom = mb.dot(mb).clamp_min(1e-12)
             self.model.n[:, a] = na - (na.dot(mb) / denom) * mb
 
+    def _pin_n1_mean(self):
+        """Hard constraint: the unit-mean of the choice readout n₁ is reset to `n1_mean_pin` after every step by a
+        uniform shift of n₁ (m₁ is ~zero-mean, so λ₁ = n₁ᵀm₁/N is untouched to first order). The field's even part is
+        exactly ⟨n⟩ + a bias term (ring log §37), so this is the designed constant σ₃ break: a fixed downward force on
+        κ₁ that the pre-sample baseline pin cannot erode (it eroded a trainable ⟨n₁⟩ in §20)."""
+        if self.n1_mean_pin is None:
+            return
+        with torch.no_grad():
+            n1 = self.model.n[:, 1]
+            self.model.n[:, 1] = n1 - n1.mean() + self.n1_mean_pin
+
     def _clamp_kappa1_gain(self):
         """Hard constraint (vs. the soft kappa1 penalty): after each step, if the
         decision self-gain g·λ₁ = gain·n₁ᵀm₁/N exceeds `kappa1_clamp`, rescale the
@@ -502,6 +515,7 @@ class Optimization:
                     self._orthogonalize_cols()
                     self._clamp_kappa1_gain()
                     self._pin_kappa_gains()
+                    self._pin_n1_mean()
                     if use_hebb:
                         self._hebb_update(y_pred, y, rates)
 
@@ -1050,6 +1064,8 @@ class UnifiedLoss(nn.Module):
                  nolick_gng_span: tuple[int, int] | None = None,
                  nolick_thresh: float = 0.0,
                  nolick_shape: str | None = None,
+                 nolick_scale: float = 1.0,
+                 resp_shape: str = "hinge",
                  nolick_nogo_window: tuple[int, int] | None = None,
                  rwd_go_thresh: float | None = None,
                  hold_pin: bool = False,
@@ -1137,9 +1153,30 @@ class UnifiedLoss(nn.Module):
         # below the line (σ(−1)=0.27, σ(−2)=0.12) and the depth emerges from the balance with the
         # response demand. No threshold, no painted value. The ±1 hinges keep hinge_shape.
         self.nolick_shape = nolick_shape or hinge_shape
-        assert self.nolick_shape in ("relu2", "relu", "softplus"), self.nolick_shape
+        # nolick_scale s (Leon 2026-09-23, "softplus is a bit aggressive"): the lick model's noise scale. The probabilistic
+        # shapes price what a wrong lick IS under the state noise η (pass s = η): "pcdf" = P(lick) = Φ(κ₁/s), the per-step
+        # false-alarm probability — its force is the Gaussian density, which vanishes a few η below the line, so the DEPTH is
+        # set by the noise and nothing else; "pnll" = −log(1 − Φ(κ₁/s)), the cross-entropy of not licking under the same
+        # model (force = the hazard φ/(1−Φ), Gaussian-tailed below, ~linear above); "softplus_s" = s·softplus(κ₁/s), the
+        # logistic cross-entropy at temperature s (the old softplus at s = 1 is the logistic lick model at a scale of ~2.7 η,
+        # which is why its tail reaches the trained wells with a third of its force).
+        self.nolick_scale = float(nolick_scale)
+        # resp_shape (Leon 2026-09-23, "cross-entropy everywhere it is an event"): how the RESPONSE targets (the pairing
+        # ±1, the Go +1 in the cue, a NoGo −1 if present) are scored. "hinge" = the ±θ hinges/pins (legacy); "xent" = the
+        # cross-entropy of the probit lick model P(lick) = Φ(κ₁/s), s = nolick_scale = η: a lick target costs −log Φ(κ₁/s),
+        # a no-lick target −log Φ(−κ₁/s). The pre-sample baseline pin, the A/B memory hold on κ₀ and the go/nogo RULE hold
+        # before the cue are internal-state requirements, not scored events, and keep their pins/hinges.
+        assert resp_shape in ("hinge", "xent"), resp_shape
+        self.resp_shape = resp_shape
+        self._xent_lick   = lambda p: -torch.special.log_ndtr( p / self.nolick_scale)   # cost of a required lick
+        self._xent_nolick = lambda p: -torch.special.log_ndtr(-p / self.nolick_scale)   # cost of a required no-lick
+        assert self.nolick_shape in ("relu2", "relu", "softplus", "softplus_s", "pcdf", "pnll"), self.nolick_shape
+        _s = self.nolick_scale
         self._nl = {"relu2": lambda x: torch.relu(x) ** 2, "relu": torch.relu,
-                    "softplus": torch.nn.functional.softplus}[self.nolick_shape]
+                    "softplus": torch.nn.functional.softplus,
+                    "softplus_s": lambda x: _s * torch.nn.functional.softplus(x / _s),
+                    "pcdf": lambda x: torch.special.ndtr(x / _s),
+                    "pnll": lambda x: -torch.special.log_ndtr(-x / _s)}[self.nolick_shape]
         # nolick_nogo_window (steps): on the NOGO rows (a negative hold target inside nolick_gng_span)
         # the don't-lick span starts at CUE ONSET — the cue is the lick window, and a nogo trial must
         # not be in κ₁>0 during it, not only after it. Leon 2026-09-07: forbid κ₁>0 wherever a lick
@@ -1283,6 +1320,9 @@ class UnifiedLoss(nn.Module):
                         if self.rwd_pin:   # two-sided (DPA pairing scored in the rwd window)
                             rgo = self.masked_mean(self._pin(p - self._rwd_th()),     rwd_m & (tgt > 0))
                             rn  = self.masked_mean(self._pin(p + self.gng_neg_thresh), rwd_m & (tgt < 0))
+                        if self.resp_shape == "xent":   # the response as a probit event: lick / no-lick cross-entropy
+                            rgo = self.masked_mean(self._xent_lick(p),   rwd_m & (tgt > 0))
+                            rn  = self.masked_mean(self._xent_nolick(p), rwd_m & (tgt < 0))
                         nogo_pin = torch.abs(p) if self.rwd_nogo_l1 else self._pin(p)                 # L1 |κ₁| (forced) or the hinge's own norm
                         rz  = self.masked_mean(nogo_pin, rwd_m & (tgt == 0))                          # nogo pin to 0
                         comp["rwd_go"]   = rgo
@@ -1309,6 +1349,9 @@ class UnifiedLoss(nn.Module):
                 if self.pair_pin:   # two-sided pairing: (p ∓ θ)² — the bowl at κ₁ = 0
                     pp = self.masked_mean(self._pin(p - self.thresh), p_mask & (tgt > 0))
                     pn = self.masked_mean(self._pin(p + self.thresh), p_mask & (tgt < 0))
+                if self.resp_shape == "xent":   # the pairing response as a probit event
+                    pp = self.masked_mean(self._xent_lick(p),   p_mask & (tgt > 0))
+                    pn = self.masked_mean(self._xent_nolick(p), p_mask & (tgt < 0))
                 if self.decay_onesided:
                     gd = gd + self.masked_mean(self._hinge(p),  dcy_go) \
                             + self.masked_mean(self._hinge(-p), dcy_nogo)

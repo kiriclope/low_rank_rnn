@@ -307,3 +307,7 @@ screen -dmS queue_<tag> bash -c "bash scratchpad/queue_<tag>.sh > $CLAUDE_JOB_DI
 `plot_when_done.sh` runs `plot_sweep.py --auto_xlim --device cuda:1` then `publish_gallery.sh`
 (title from `results/dual/<sweep>/TITLE`). Use `python -u` for long analysis scripts run in a screen
 — block-buffered stdout otherwise shows nothing until exit.
+
+## `--run_filter` is a SUBSTRING match (gotcha, 2026-09-23)
+
+`--run_filter nolick0_pair` also launches `nolick0_pairall` (`args.run_filter in c.run_id`). Name arms so that no tag is a prefix of another, or filter with the full `s?_<tag>` pattern in a loop. The nolick0 queue launched 12 runs at once for this reason; the 4 `pairall` screens were killed and re-queued as wave 2.

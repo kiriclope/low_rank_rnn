@@ -226,6 +226,9 @@ class RunConfig:
     nolick_shape: str | None = None     # shape of the no-lick term only (None = hinge_shape). "softplus" = logistic lick cost log(1+e^κ₁): keeps a tail below the line instead of switching off (Leon 2026-09-16, arm A)
     pair_pin: bool = False              # TWO-SIDED ±1 pairing decision (DPA rwd group + Dual pair group): DPA becomes a bowl at κ₁=0 for any test kick (Leon 2026-09-17, design item 1)
     dual_nolick_shape: str | None = None   # no-lick shape for the DUAL stage only (None = nolick_shape). design2: softplus tail in Dual, relu² in DPA/GNG (Leon 2026-09-17: the tail only where the bowl opposes it)
+    dual_nolick_weight: float | None = None   # no-lick WEIGHT for the DUAL stage only (None = nolick_weight). 0 = the ablation: no explicit no-lick cost in Dual; the DPA/GNG stages keep nolick_weight (Leon 2026-09-23: is the push the no-lick term or the σ₁ tie?)
+    dual_n1_mean_pin: float | None = None   # DUAL stage: pin ⟨n₁⟩ (the choice readout's unit-mean) to this value after every step — the built-in constant σ₃ break, to test against the no-lick cost (Leon 2026-09-23: "can't we build a symmetry break that pushes the wells?")
+    resp_shape: str = "hinge"   # "hinge" (±θ hinges/pins, legacy) or "xent": the response targets (pairing, Go in the cue) scored as the probit lick cross-entropy −log Φ(±κ₁/η), all stages; with nolick_shape="pnll" every scored EVENT is a cross-entropy (Leon 2026-09-23)
     nolick_split_sample: bool = False   # DUAL loss (GNG has no sample): no-lick hinge as two masked means (A-sample rows + B-sample rows) so both memories are pushed down equally; identity = sign of the κ₀ target → Dual needs dual_mem_targets=True (Leon 2026-09-16)
     dual_mem_targets: bool = False      # write the A/B memory hold (dpa_hold_window / dpa_hold_anchor) into the DUAL targets
     dual_mem_supervise: bool = False    # … and USE it in the Dual memory loss (False = Dual memory supervised through pairing only; targets serve the nolick split)
@@ -697,7 +700,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                 rwd_keep_go_hinge=config.rwd_keep_go_hinge,
                 decay_onesided=config.decay_onesided,
                 mem_weight=config.aux_weight, bl_weight=config.bl_weight,
-                nolick_shape=config.nolick_shape)
+                nolick_shape=config.nolick_shape, nolick_scale=noise, resp_shape=config.resp_shape)   # nolick_scale = η, the state-noise s.d. (the lick model's scale for pcdf / pnll / softplus_s)
     # The one-sided nogo scoring (rwd_nogo_onesided) drops the go +1 hinge in the response window; that
     # is fine in DUAL (frees the nogo value to settle low) but MUST NOT apply in the GNG stage, where it
     # would remove the go supervision and the go/nogo working memory never forms (go→0). So GNG always
@@ -1010,7 +1013,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         paired_criterion = UnifiedLoss(dual_timing, pair_pin=config.pair_pin, nolick_split_sample=config.nolick_split_sample, mem_supervise=config.dual_mem_supervise, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
                                        pair_start=int(dual_timing.n_stim_on[3]),
                                        rwd_window=_rw_d,
-                                       nolick_weight=config.nolick_weight,
+                                       nolick_weight=(config.dual_nolick_weight if config.dual_nolick_weight is not None else config.nolick_weight),
                                        nolick_window=_nlw_d, nolick_full_window=_nlf_d,
                                        nolick_gng_span=_nlg_d, nolick_nogo_window=_nln_d, nolick_thresh=config.nolick_thresh, rwd_go_thresh=config.rwd_go_thresh, hold_pin=config.gng_hold_pin, hold_ceiling=config.gng_hold_ceiling, **_uw_d)
         trainer = Optimization(model, tlp, vlp, paired_criterion, optp, schedp,
@@ -1054,7 +1057,7 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
     dual_criterion = UnifiedLoss(dual_timing, pair_pin=config.pair_pin, nolick_split_sample=config.nolick_split_sample, mem_supervise=config.dual_mem_supervise, thresh=_uth_pair, gng_thresh=_uth, gng_neg_thresh=_uth_neg, hinge_shape=config.hinge_shape,
                                  pair_start=int(dual_timing.n_stim_on[3]),
                                  rwd_window=_rw_d,
-                                 nolick_weight=config.nolick_weight,
+                                 nolick_weight=(config.dual_nolick_weight if config.dual_nolick_weight is not None else config.nolick_weight),
                                  nolick_window=_nlw_d, nolick_full_window=_nlf_d,
                                  nolick_gng_span=_nlg_d, nolick_nogo_window=_nln_d, nolick_thresh=config.nolick_thresh, rwd_go_thresh=config.rwd_go_thresh, hold_pin=config.gng_hold_pin, hold_ceiling=config.gng_hold_ceiling, **_uw_d)
     print(f"[{rid}]  loss=unified  gng_w={config.gng_weight}  pair_w={config.dpa_weight}"
@@ -1080,11 +1083,14 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
                               regularizer=dual_regularizer,
                               kappa1_clamp=config.kappa1_clamp,
                               kappa_gain_target=config.kappa_gain_target,
+                              n1_mean_pin=config.dual_n1_mean_pin,
                                   rate_reg=config.rate_reg_weight,
                                   max_val_loss=config.max_val_loss,
                               verbose=True, symmetry=(_sym if "dual" in config.symmetry_stages else ""))
     if config.kappa1_clamp is not None:
         print(f"[{rid}]  κ₁ hard clamp: g·λ₁ ≤ {config.kappa1_clamp} after each Dual step", flush=True)
+    if config.dual_n1_mean_pin is not None:
+        print(f"[{rid}]  ⟨n₁⟩ pinned to {config.dual_n1_mean_pin} after each Dual step (built-in σ₃ break)", flush=True)
 
     train_l, val_l, _ = trainer.fit()
     dual_loss_components = dict(dual_criterion.last_components)
@@ -3295,6 +3301,117 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                     "nolick_nogo_in_cue": True,
                                     "nolick_full_delay": True, "nolick_late_delay": False,
                                     "nolick_thresh": 0.0}))
+
+    # nolick0_* (Leon 2026-09-23): the ABLATION of the Dual no-lick cost — "is the push the no-lick term, or is tying σ₁
+    # enough?" Same recipe as recipe7 (fixed code: bias tied with the symmetry in DPA, frozen with the inputs in Dual), but
+    # dual_nolick_weight=0: no explicit no-lick cost in the Dual stage (the GNG stage keeps its NoGo hinge). Three arms:
+    # free; σ₁ tied in DPA and released (the scaffold); σ₁ held through ALL stages (the tie can never break, so any push
+    # must come from the remaining one-signed terms: the NoGo hold at 5.8–6.0 s and the Go response). --run_filter nolick0
+    for tag, sym, stages in (("nolick0_free", "", []), ("nolick0_pair", "pair", ["dpa"]), ("nolick0_pairall", "pair", ["dpa", "gng", "dual"])):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     symmetry=sym, symmetry_stages=stages,
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": 7.0, "decision_lambda": 7.0,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": 7.0 ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "dual_nolick_shape": "softplus",
+                                        "nolick_weight": 1.0, "dual_nolick_weight": 0.0, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # dcpin_* (Leon 2026-09-23): "can't we BUILD a symmetry break that pushes the wells?" The even part of the field is
+    # exactly ⟨n⟩ + a bias term (§37), so the constant break is ⟨n₁⟩ < 0. Dual stage with the no-lick cost OFF and ⟨n₁⟩
+    # pinned after every step (a trainable ⟨n₁⟩ was eroded by the baseline pin in §20) at the value the cost itself
+    # trains (−0.22, recipe7_bfix experts) and at 2× / 4× it. Free nets, in-cue recipe. --run_filter dcpin
+    for tag, pin in (("dcpin022", -0.22), ("dcpin050", -0.5), ("dcpin100", -1.0)):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": 7.0, "decision_lambda": 7.0,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": 7.0 ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "dual_nolick_shape": "softplus",
+                                        "nolick_weight": 1.0, "dual_nolick_weight": 0.0, "dual_n1_mean_pin": pin, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # pnl_* (Leon 2026-09-23, "softplus is a bit aggressive for the nolick, what other options do we have?"): the Dual no-lick
+    # term as a PROBABILISTIC lick cost at the noise scale η — "pcdf": P(lick) = Φ(κ₁/η) per step (force = Gaussian density,
+    # vanishes a few η below the line: the depth is set by the noise); "pnll": −log(1 − Φ(κ₁/η)) (the cross-entropy of not
+    # licking). Free nets, in-cue recipe, everything else = recipe7_bfix. --run_filter pnl_
+    # nocue_* (Leon 2026-09-23): "if there was no cue pushing NoGo up, the no-lick term would not push the wells — they would
+    # stay at zero." cue_scale = 0 removes the cue's lift (the response is then timed from the held Go state; the windows and
+    # every loss term are unchanged), with the current softplus and with pcdf: the push should vanish where the shape stops
+    # at the line, and only the softplus tail should remain. --run_filter nocue_
+    for tag, shape, cue in (("pnl_pcdf", "pcdf", 2.0), ("pnl_pnll", "pnll", 2.0), ("nocue_softplus", "softplus", 0.0), ("nocue_pcdf", "pcdf", 0.0)):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": 7.0, "decision_lambda": 7.0,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": 7.0 ** 0.5,
+                                        "cue_scale": cue,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "dual_nolick_shape": shape,
+                                        "nolick_weight": 1.0, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
+    # ═══ log = recipe8 (Leon 2026-09-23, sweep_lif_log): recipe7 (fixed code) with EVERY SCORED EVENT a probit cross-entropy at the noise scale η —
+    # the pairing and the Go response as −log Φ(±κ₁/η) (resp_shape "xent"), the NoGo / delay no-lick as −log Φ(−κ₁/η)
+    # (nolick_shape "pnll", all stages). Internal-state terms unchanged (baseline pin, A/B hold on κ₀, rule hold). Free at 8
+    # seeds + the four DPA ties at 4 seeds (Fig. 5c / ED). --run_filter log (free only) / lg_<tie> ═══
+    for tag, sym, seeds in (("log", "", range(8)), ("lg_pair", "pair", range(4)), ("lg_inv", "inv", range(4)), ("lg_test", "test", range(4)), ("lg_klein", "klein", range(4))):   # sweep_lif_log (Leon's name: the log-likelihood recipe); tie ids "lg_<tie>" so the free filter "log" is not a substring of them
+        for seed in seeds:
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     symmetry=sym, symmetry_stages=(["dpa"] if sym else []),
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": 7.0, "decision_lambda": 7.0,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": 7.0 ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "nolick_shape": "pnll", "dual_nolick_shape": None, "resp_shape": "xent",
+                                        "nolick_weight": 1.0, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
 
     # ═══ symdpa (Leon 2026-09-18, §36): the task symmetry enforced in DPA only, then released ═══
     # The DPA response is r = ¬(s ⊕ t); its symmetry group is the Klein four-group {1, σ₁, σ₂, σ₃}
