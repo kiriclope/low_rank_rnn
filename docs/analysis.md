@@ -6,10 +6,10 @@
 
 | want | rank-2 | rank-3 |
 |---|---|---|
-| **SCORE a sweep vs the goal** (memory wells κ₁<0) | **`flow_verdict.py`** (+ `flow-verdict` skill — run this BEFORE interpreting any flow figure) | — |
+| **SCORE a sweep vs the goal** (memory wells κ₁<0) | **`flow_verdict.py`** (+ `flow-verdict` skill — run this BEFORE interpreting any flow figure; scores the input-noise-averaged field, deterministic as a 2nd line, wells tagged by occupying trial type) | — |
 | **SCORE the BEHAVIOUR** (κ(t) per stage vs the expected trajectory) | **`traj_verdict.py`** (+ `traj-verdict` skill — run this BEFORE interpreting any trajectory figure) | — |
 | flow portrait (analytic) | `plot_sweep.py --plots flow` | `rank3_flow.py` |
-| + input noise | `plot_sweep.py --field_input_noise` (MC) | `rank3_flow.py --noise` |
+| + input noise (★ use for well claims) | `plot_sweep.py --field_input_noise` (exact analytic average) | `rank3_flow.py --noise` |
 | GENUINE sim trajectories | `traj_flow.py` | `traj_flow.py --stage …` |
 | autonomous well table | `scratchpad/wells3.py <sweep>` | same |
 | slow-manifold dose ladder (+ sgd2 column) | `scratchpad/slow_manifold_dose.py` / `scratchpad/slow_manifold_sgd2.py` | `results/figures/sweep_r2cue2/slow_manifold_dose.png`, `results/figures/sweep_r2sgd2/slow_manifold_sgd2.png` |
@@ -204,17 +204,27 @@ solutions.
 The search grid is set by `XLIM/YLIM` in `plot_sweep.py` — too narrow and FPs outside
 the window are missed (this was an issue for relu/softplus with FPs at κ≈±4).
 
-### Noise-averaged field/fixed points — `--field_input_noise`
+### Noise-averaged field/fixed points — `--field_input_noise` (★ the field the trials follow)
 By default the flow **field + fixed points** use a clean, deterministic frozen input
 (`make_input`, no noise); only the overlaid **trajectories** carry input noise. Pass
-`--field_input_noise` to render the **noise-averaged** field `E_x[Ψ(κ)]` instead — each panel's
-frozen input is replicated into K draws (default 16) with the run's training `noise_sigma()` added
-per channel, and `low_rank_field_np` / `low_rank_jacobian_flow_np` average `φ` / the Jacobian over
-them. Use it to check a result is not a clean-input artifact.
-- **A single draw is NOT enough** — one noise vector projects through `Wi` as a *correlated* per-unit
-  bias that tilts the field and drops a well ~half the time. K≥8 is stable (default 16); 64 is overkill.
-- ~K× slower to render (the 151² grid), so keep it **off for routine plotting**; the deterministic
-  field is the correct basis for geometry claims (isolation, well count, g·λ).
+`--field_input_noise` to render the **input-noise-averaged** field `E_x[Ψ(κ)]` instead, at the run's
+training `noise_sigma()`: by default the EXACT analytic Gaussian average (for φ = Φ,
+`E Φ(u + sZ) = Φ(u/√(1+s²))`, per unit with `s² = g²Aᵢ²σ²‖wᵢ‖²` — same cost as the clean render);
+`--field_noise_mc` switches to the legacy 16-draw Monte Carlo (slower, sampling error, cross-check only).
+- **★ For geometry claims (well positions, "both below", counts) use the averaged field (2026-09-25).**
+  Input noise lowers each unit's effective gain by `1/√(1 + g²σ²‖wᵢ‖²)` — median 0.55–0.72 in the trained
+  nets (10 % of units ≤ 0.4) — so the deterministic field is a different, higher-gain system. The trials
+  follow the averaged field: s1_log's end-of-delay state (+0.94, −0.56) sits on its averaged well
+  (+0.93, −0.58), not the deterministic (+1.23, −0.34); noise-free, several nets even lose the sample.
+  The two share their topology at λ = 7 but the deterministic wells sit further out (|κ₀| 1.0–1.25 vs
+  0.75–0.95) and higher, and "all down" flips (recipe7_bfix: 5/8 deterministic, 8/8 averaged — the published
+  8/8 is the averaged count, from `readout_arm.py`); at λ = 2 (sweep_lif_logsub) the topology differs.
+  `flow_verdict.py` scores the averaged field by default (`--field both` prints the deterministic line too);
+  render gallery flows with `--field_input_noise`. The deterministic field stays useful as a diagnostic
+  (g·λ, isolation of roots), not for where the wells are. (Superseded: the earlier line here said the
+  deterministic field was "the correct basis for geometry claims" — rule 11 below was right.)
+- **A single MC draw is NOT enough** — one noise vector projects through `Wi` as a *correlated* per-unit
+  bias that tilts the field and drops a well ~half the time. With `--field_noise_mc`, K ≥ 8 (default 16).
 - Implemented as a 2D `ff_input` `(K, input_size)` to the numpy field/Jacobian (1D ⇒ K=1 ⇒ unchanged).
 
 ---

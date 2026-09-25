@@ -7,14 +7,20 @@ description: Score a rank-2 sweep's flow geometry against the project goal (samp
 
 The project has ONE geometric success criterion (Leon, ring_lowerplane_log §23):
 **the two SAMPLE-MEMORY wells — the ± κ₀ attractor pair that carries the A/B bit — sit at
-κ₁ < 0 in the expert AUTONOMOUS field.** Nothing else counts as "pushdown".
+κ₁ < 0 in the expert AUTONOMOUS field, input-noise-averaged (the field the trials follow — trap 9).**
+Nothing else counts as "pushdown".
 
 ## Step 1 — run the tool, never eyeball first
 
 ```bash
 LD_PRELOAD=/home/leon/mambaforge/lib/libstdc++.so.6 python flow_verdict.py \
-    --sweep_dir results/dual/<sweep> [--stage expert] [--run_ids ...] [--xlim 4.5] [--mem_k0 0.5]
+    --sweep_dir results/dual/<sweep> [--stage expert] [--run_ids ...] [--xlim 4.5] [--mem_k0 0.5] [--field both]
 ```
+`--field both` (default) scores the input-noise-averaged field and prints the deterministic field's wells on a
+second indented line; `--field noise` / `--field clean` print one field only. Each memory well carries a tag of the
+Dual trial types that sit nearest to it at the end of the delay (per sample, ≥ 50 %): `N` no Go/NoGo, `G` Go,
+`X` NoGo. An upper well tagged `[G]` is where Go trials park after the response (licking after the Go cue is not
+priced), not a lost sample memory — say so, and still count it: ALL-DOWN means every memory well below.
 
 Per run it prints: `ALL-DOWN ✓ / not down / NO PAIR ✗`, the memory wells (κ₀, κ₁) with an
 `S` marker on spirals, the EXTRAS (non-memory attractors), dual_dpa, and behaviour at the
@@ -46,11 +52,20 @@ every report with it. Figures come AFTER the table, as illustration — the tabl
    for figures: `plot_sweep --xlim -4.5 4.5` / `--xlim -2 2`. (Table: `docs/analysis.md`.)
 6. **fp_stages figure gotchas:** the cyan markers at ≈(0.9, −1.4) in some panels are the
    LEGEND, not fixed points; `--field_input_noise` OVERWRITES `fp_stages.png` (rename to
-   `fp_stages_noise.*` before publishing both).
+   `fp_stages_noise.*` before publishing both). Render gallery flows WITH `--field_input_noise` (trap 9):
+   the default clean render draws wells the trials do not use.
 7. **Bit-identical same-seed runs across arms = an inert loss term** (the rwd_window bug):
    check `dual_loss_components` in results.jsonl — the term you're dosing must be > 0.
 8. Report per-seed (never average well positions across seeds), count attractors exactly,
    and name spiral wells (`S`) — complex Jacobian eigenvalues at a well matter.
+9. **Score the INPUT-NOISE-AVERAGED field, not the deterministic one** (2026-09-25). The nets are trained with
+   input noise, which lowers each unit's effective gain by 1/sqrt(1 + g²σ²‖w_i‖²) — median 0.55–0.72 in trained
+   nets, 10 % of units ≤ 0.4. The trials follow the averaged field: s1_log's end-of-delay state (+0.94, −0.56)
+   sits on its averaged well (+0.93, −0.58), not the deterministic one (+1.23, −0.34); noise-free, several nets
+   even lose the sample (A and B land in one well). The two fields share their topology at λ = 7 but the
+   deterministic wells sit further out and higher, and "all down" flips: recipe7_bfix 5/8 deterministic vs 8/8
+   averaged (the published 8/8 is the averaged count); logsub (λ = 2) has a different topology. Before this date
+   the tool scored the deterministic field — rescore old sweeps before comparing (`verdict_noiseavg.log`).
 
 ## Reading `mem_k0` edge cases
 

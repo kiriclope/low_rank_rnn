@@ -3413,6 +3413,35 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                         "nolick_full_delay": True, "nolick_late_delay": False,
                                         "nolick_thresh": 0.0}))
 
+    # ═══ logsub (Leon 2026-09-25, sweep_lif_logsub): the log recipe with a SUBCRITICAL init, λ₀ = λ₁ = LSUB < λ_c = √(2π) ≈ 2.51
+    # (lif = Φ, gain 1). At λ = 7 the untrained field already has the (0, ±0.94) choice pair (the ring of the isotropic init);
+    # at LSUB the untrained field has ONE attractor, the origin (checked for free and tied inits). Question: are the autonomous
+    # choice wells of the trained nets inherited from the init, or built by training? (The choice is scored IN the test, so the
+    # task does not require them.) Everything else identical to the log block above. --run_filter lsub (free) / ls_<tie> ═══
+    LSUB = 2.0
+    for tag, sym, seeds in (("lsub", "", range(8)), ("ls_pair", "pair", range(4)), ("ls_inv", "inv", range(4)), ("ls_test", "test", range(4)), ("ls_klein", "klein", range(4))):
+        for seed in seeds:
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     symmetry=sym, symmetry_stages=(["dpa"] if sym else []),
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": LSUB, "decision_lambda": LSUB,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": LSUB ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 100, "epochs_dual": 150,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "nolick_shape": "pnll", "dual_nolick_shape": None, "resp_shape": "xent",
+                                        "nolick_weight": 1.0, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0}))
+
     # ═══ symdpa (Leon 2026-09-18, §36): the task symmetry enforced in DPA only, then released ═══
     # The DPA response is r = ¬(s ⊕ t); its symmetry group is the Klein four-group {1, σ₁, σ₂, σ₃}
     # (σ₁ = A↔B & C↔D ⇒ κ ↦ (−κ₀,+κ₁); σ₃ = C↔D ⇒ κ ↦ (+κ₀,−κ₁); σ₂ = σ₁σ₃ = the inversion κ ↦ −κ that

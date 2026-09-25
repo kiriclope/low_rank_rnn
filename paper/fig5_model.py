@@ -107,7 +107,7 @@ ax.text(0.3, 5.7, 'lick iff the pair matches; three relabelings\nleave the objec
 for k_, (nm, what, col) in enumerate([('σ₁', 'A↔B and C↔D, response kept', B_COL), ('σ₂', 'A↔B alone, response flipped', PLUM), ('σ₃', 'C↔D alone, response flipped', LICK_COL)]):
     ax.text(0.3, 3.9 - k_ * 1.0, nm, fontsize=PS*8, color=col, fontweight='bold', va='top'); ax.text(1.6, 3.9 - k_ * 1.0, what, fontsize=SMALL, va='top')
 ax.text(0.3, 0.4, 'With the identity e they form the Klein\nfour-group V = Z₂ × Z₂ (σ₁σ₂ = σ₃).', fontsize=SMALL, va='top', color='0.3')
-ax.text(0.3, -4.5, 'Above: each element acts on the\nplane by a sign-flip matrix D; the\nwells a network that respects it\nmay have.\n\nBelow: the simulated flow at the\nDPA checkpoint of a network trained\nwith that element (or the whole\ngroup) held exactly, with the memory\nwells of every network trained\nunder the same tie.', fontsize=STAT_FS, va='top', color='0.3')
+ax.text(0.3, -4.5, 'Above: each element acts on the\nplane by a sign-flip matrix D; the\nmemory wells a network that\nrespects it may have. Choice wells\nin the autonomous field are\noptional: the choice is scored\nduring the test (Extended Data).\n\nBelow: the simulated flow at the\nDPA checkpoint of a network trained\nwith that element (or the whole\ngroup) held exactly, with the memory\nwells of every network trained\nunder the same tie.', fontsize=STAT_FS, va='top', color='0.3')
 ELEMS = [('σ₁', 'A↔B and C↔D', [np.diag([-1, 1])], B_COL, 'mirror pair,\none height'),
          ('σ₂', 'A↔B,\nlick↔no lick', [-np.eye(2)], PLUM, 'antipodal pair'),
          ('σ₃', 'C↔D,\nlick↔no lick', [np.diag([1, -1])], LICK_COL, 'on the κ₀ axis,\nunrelated a, a′'),
@@ -145,7 +145,8 @@ for ax, (nm, rel, Ds, col, note) in zip(axs_e, ELEMS):
 axs_e[0].set_ylabel('$\\kappa_1$ choice')
 
 # ── c, lower row: the simulated flow of a network tied to each element (DPA checkpoint), under its scheme ──
-EX = [('σ₁', 'results/dual/sweep_lif_symdpa_bfix', 'symdpa_pair', 0), ('σ₂', TIES['inv'], 'symdpa_inv', 0), ('σ₃', TIES['test'], 'symdpa_test', 1), ('V', 'results/dual/sweep_lif_symdpa_bfix', 'symdpa_klein', 2)]
+TA = os.environ.get('TIEARM', 'symdpa_{}')   # tie arm name pattern: symdpa_{} (hinge scaffolds) or lg_{} (sweep_lif_log)
+EX = [('σ₁', TIES['pair'], TA.format('pair'), 0), ('σ₂', TIES['inv'], TA.format('inv'), 0), ('σ₃', TIES['test'], TA.format('test'), 1), ('V', TIES['klein'], TA.format('klein'), 2)]
 sg2 = gs[2, 6:20].subgridspec(1, 4, wspace=0.45); axs_cf = [fig.add_subplot(sg2[0, k]) for k in range(4)]
 for ax, (nm, sw, arm, sd), (_, _, _, col, _) in zip(axs_cf, EX, ELEMS):
     m0, cfg = load_run(sw, f's{sd}_{arm}', stage='dpa', device='cpu'); sig = sig_of(cfg)
@@ -190,7 +191,7 @@ for k_, (stg, grp, txt, kept, broken) in enumerate(STG):
         ax.text(px + 1.55, py + 0.5, 'Go', fontsize=SMALL, color=BLUE, va='center'); ax.text(px - 1.55, py - 0.5, 'NoGo', fontsize=SMALL, color=GREEN, va='center', ha='right')
     ax.text(x0, 2.9, txt, fontsize=STAT_FS, va='top', color='0.3')
 # f2: overlaps of the choice readout with the Go and NoGo columns
-OV = json.load(open('/home/leon/dual/figures/paper_share/modelling/overlaps_bfix.json'))
+OV = json.load(open(os.environ.get('OVJ', '/home/leon/dual/figures/paper_share/modelling/overlaps_bfix.json')))
 ax = cell(3, 10, 20); ax_f1 = ax
 for s_ in fseeds:
     for c_, col, mk in ((4, BLUE, 's'), (5, GREEN, 'o')):
@@ -202,7 +203,7 @@ ax.set_title('choice readout hears Go/NoGo', loc='left', fontsize=TITLE_FS)
 ax.set_ylim(-5.4, 3.8); ax.text(0.02, 0.03, 'filled $n_1$ (choice): σ₂, σ₃ force 0\nopen $n_0$ (sample): σ₁ forces 0\nblue Go, green NoGo; thick, median', transform=ax.transAxes, va='bottom', fontsize=STAT_FS, color='0.3')
 # f3: the equivariance residual of the autonomous field per element
 LED = {}
-for l in open('/home/leon/.claude/jobs/ec0810d6/tmp/symviol_bfix.tsv').read().strip().split('\n')[1:]:
+for l in open(os.environ.get('SVT', '/home/leon/dual/figures/paper_share/modelling/symviol_bfix.tsv')).read().strip().split('\n')[1:]:
     r = l.split('\t')
     if len(r) < 5 or not r[2][0].isdigit(): continue
     LED[(int(r[0].split('_')[0][1:]), r[1])] = [float(r[2]), float(r[3]), float(r[4])]
@@ -257,7 +258,7 @@ ax.set_title(f'the push ({nb}/{len(fseeds)} below)', loc='left', fontsize=TITLE_
 
 # ── f, g, h: depth ↔ performance by perturbation — a delay-only drive along m1 moves the wells on the lick axis (the test-driven field is untouched);
 #      DPA and GNG accuracy against the well location, two wells (A filled, B open) per drive strength, per network (tab10) ──
-PJ = json.load(open('/home/leon/dual/figures/paper_share/modelling/perturb_depth.json'))
+PJ = json.load(open(os.environ.get('PJF', '/home/leon/dual/figures/paper_share/modelling/perturb_depth.json')))
 P = {}
 for k, v in PJ.items():
     s_, var, d = k.split('|'); P.setdefault((int(s_), var), []).append((float(d), v))
@@ -342,7 +343,7 @@ for k, (stage, lab) in enumerate([('dpa', 'after DPA'), ('naive', 'after GNG'), 
     print('flow', stage, 'done', flush=True)
 
 # ── ED18 c: populations of a whole-group network ──
-ax = cell(0, 12, 19); m, cf = load_run(TIES['klein'], 's0_symdpa_klein', stage='dpa', device='cpu'); M = m.m.detach().numpy(); N = len(M)
+ax = cell(0, 12, 19); m, cf = load_run(TIES['klein'], 's0_' + TA.format('klein'), stage='dpa', device='cpu'); M = m.m.detach().numpy(); N = len(M)
 axu = (np.abs(M[:, 0]) < 0.8) & (np.abs(M[:, 1]) > 2.5); lat = ~axu
 QC = {(1, 1): A_COL, (-1, 1): B_COL, (-1, -1): B_COL, (1, -1): A_COL}
 for q, col in QC.items():

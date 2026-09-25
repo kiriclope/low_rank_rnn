@@ -3747,3 +3747,79 @@ stages DMS → GNG → Dual, log objective, same freezing.
 
 Score as §39b: exact zeros at machine precision (input_overlaps.py, mn_blocks.py), residuals with sym_violation2.py on
 the disk, attractor sets enumerated (find_wells), means on the noise-averaged field, kinematics on the κ₀ traces.
+
+## §43 — The autonomous choice wells: inherited from the init? (`sweep_lif_logsub`, predictions before the runs, 2026-09-25)
+
+**Why.** Fig. 5c schemes briefly drew "choice wells" (a (0, ±w) pair on the κ₁ axis) as predicted, because the tied `log`
+networks have them at the DPA checkpoint. Leon: the choice is scored DURING the test (checked: `response_in_cue`, pairing in the
+last 0.5 s of the test, 8.5–9.0 s; κ₁ unscored after test offset), so the task does not require autonomous choice wells — they
+are optional. Measured: at λ₀ = λ₁ = 7 the UNTRAINED field already has them ((0, ±0.94) in s0_lg_klein and s0_lg_pair inits, a
+ring of marginal points otherwise). The choice states the task DOES require live in the test-driven fields, where the group
+prediction is exact: V-tied nets at the DPA checkpoint have under C the antipodal pair (±0.50, ±0.57) (σ₂ fixes C ⇒ the C field is
+odd) and under D its mirror across the line (σ₃ swaps C↔D) — together one generic V-orbit, the quadruple, split across the two
+test odors (s2: (±0.46, ±0.63)). ⇒ Fig. 5c back to memory-only schemes + one line ("choice wells in the autonomous field are
+optional"); the test-driven prediction goes to Extended Data (Leon).
+
+**Design.** `sweep_lif_logsub` = the `log` sweep with λ₀ = λ₁ = LSUB = 2.0 (0.8 λ_c; lif = Φ, gain 1 ⇒ λ_c = √(2π) ≈ 2.51),
+`readout_scale` √2; every other field identical (diffed). 24 runs: `s0–s7_lsub` free, `s0–s3_ls_{pair,inv,test,klein}` (tie in
+DPA, released). Waves of 8, 4 per GPU. Checked before launch: at λ = 2.0 (and 1.6) the untrained field of free and tied inits has
+ONE fixed point, an attractor at the origin (tied inits' prototype-block J 1.67–2.08, all < λ_c).
+
+**Predictions.** (1) Init: one attractor, the origin (verified). (2) The informative one — autonomous choice wells after DPA:
+ABSENT ⇒ the λ = 7 pair was inherited from the init's ring; PRESENT ⇒ DPA builds them anyway (plausible: the λ scan found DPA
+builds a ring at J ≈ 7 whatever the init λ), i.e. not required but favored. (3) Test-driven choice states (required), unchanged:
+V tie ⇒ antipodal pair under C, its mirror under D. (4) Memory wells must be built by training (the delay has no input); risk:
+fewer seeds learn DPA or end both-below (hinge recipe at λ 1.6 gave one-up-one-down) — compare with 22/24 at λ = 7.
+
+**Ties across stages (Leon asked, 2026-09-25).** Every four-tie sweep (symdpa, symdpa_bfix, postresp, memonly, log) held the tie
+in DPA ONLY. The one all-stage tie is `nolick0_pairall` (σ₁ through DPA, GNG, Dual) in the no-lick ablation (cost off): learned
+everything, A = B exactly, wells UP +0.81…+1.43 η, NoGo 0.00. σ₁ is the only element that can be held throughout (σ₂, σ₃, V make the
+net deaf to Go/NoGo). Proposed but NOT run: `pairall` and `stagegroup` (V in DPA, σ₁ in GNG + Dual) with the cost on.
+
+### §43a — Wave 1 (λ = 2, free ×8), the field the trials follow, and the test-driven choice states (2026-09-25)
+
+**Behaviour.** 8/8 learn the curriculum (DPA ≥ 0.997; after_gng/dpa 0.982–0.999; dual DPA ≥ 0.994; NoGo 0.994–1.000);
+Go drops to 0.89–0.965 (λ = 7: 0.99–1.00). At λ = 7 two seeds (s0, s7) failed DPA; at λ = 2 none.
+
+**Prediction (2): the autonomous choice wells are BUILT BY TRAINING, not inherited.** Autonomous attractors of the
+input-noise-averaged field, free nets: choice-axis (κ₀ ≈ 0) wells after DPA in 5/8 at λ = 2 (the init has none) and 3/6 at
+λ = 7; after GNG in 7/8 and 6/6; after Dual in 0/8 and 0/6. The "inherited from the init ring" branch is falsified; they are
+favoured (DPA, and GNG more so) and Dual removes them in both regimes. Tables: `sweep_lif_logsub/wells_wave1.txt`,
+`sweep_lif_log/wells_by_stage.txt` (script `sweep_lif_logsub/wells_by_stage.py`).
+
+**New at λ = 2: upper copies of the memory wells that hold the Go trials.** After Dual every λ = 2 seed has a LOWER memory pair
+(κ₁ −0.43…−0.62, i.e. −1.2…−1.7 η) plus 1–2 UPPER copies (κ₁ +0.13…+0.37; a full quadruple in s1, s5, s6). Occupancy at the end
+of the delay (dual trials at the trained noise, `sweep_lif_logsub/occupancy.py`): DPA-only and NoGo trials sit in the lower
+wells, Go trials in the upper copies (the lick after the Go cue is not priced — safeguard rule), i.e. the memory stores
+sample × "just licked". At λ = 7 the Go trials are ALSO above the line at the test (κ₁ +0.22…+0.37) but there is no attractor
+there: they are in slow transit back to the lower pair. Same behaviour, different geometry. ⇒ derivations §13.5 ("the four-well
+configuration is a DPA-stage object") is contradicted at λ = 2: here it forms in Dual, driven by the unpriced Go trials. To
+correct in the note.
+
+**The field convention (Leon agreed, 2026-09-25): score the INPUT-NOISE-AVERAGED field.** Input noise lowers each unit's
+effective gain by 1/√(1 + g²σ²‖wᵢ‖²) (Lemma 6.2): median 0.55–0.72 in trained nets, 10 % of units ≤ 0.4. Noise-free, several nets
+LOSE the sample (s1_lg_pair expert, s4_log DPA: A and B end the delay in one well, 50 % correct) while at the trained noise
+they are 100 % correct — the noise is part of the operating point. Trials sit on the averaged field's wells (s1_log: trials
+(+0.94, −0.56), averaged well (+0.93, −0.58), deterministic (+1.23, −0.34)). The two fields share their topology at λ = 7 but
+the deterministic wells sit further out (|κ₀| 1.0–1.25 vs 0.75–0.95) and higher, and "all down" flips: recipe7_bfix 5/8
+deterministic vs 8/8 averaged (the published 8/8 is the averaged count, readout_arm.py); logsub 0/8 vs a lower occupied pair in
+8/8 (topology differs). `flow_verdict.py` now scores the averaged field (`--field both` default: deterministic as a second line)
+and tags each memory well with the trial types occupying it (N none / G Go / X NoGo); docs/analysis.md (the superseded
+"deterministic is the correct basis" line), the flow-verdict skill (trap 9) updated; galleries re-rendered with
+`--field_input_noise`. Rescoring (`verdict_noiseavg.log`): sweep_lif_log so far all-down on the averaged field incl. s0_log
+(deterministic: an extra B well at +0.29) — the "22/24" reported earlier was the deterministic count; λ = 7 wells all [NGX].
+Also fixed in flow_verdict.py (same day): the autonomous input switched on the LAST channel as if it were attention — for
+no-attention runs that is NoGo, so every such run had been scored on its NoGo-driven field since 2026-08-12.
+
+**The test-driven choice states (Extended Data Fig. 22, `paper/ed22_test_fields.py`, scores `paper/test_field_residuals.py`).**
+The choice is scored during the test, so the required choice states live in the C/D fields. Each element relates the four
+end-of-test states: σ₁ B·D = D₁ A·C; σ₂ B·C = −A·C (C field odd); σ₃ A·D = D₃ A·C (D mirrors C). Scored at the trained noise with
+common random numbers (the other three trial types built by relabeling the (A, C) trials' channels, noise included), every
+predicted zero is exact at the DPA checkpoint (pair r₁, inv r₂, test r₃, V all three: 0.000, 4/4 each) and only those; with one
+element exact the other two residuals are equal (σ₂ = σ₁σ₃). After release σ₁ survives (r₁ ≤ 0.16) while σ₂, σ₃ break to
+0.2–0.47, tied and free alike — the test-field version of the ledger. V-tied s2 at the DPA ckpt: C field attractors (±0.35, ±0.57)
+antipodal, D field the mirror, trials at (±0.53, ±0.39) — one quadruple split across the two odors. Fig. 5c schemes back to
+memory-only predictions + "choice wells in the autonomous field are optional".
+
+**Open:** waves 2–3 (ties at λ = 2); the λ = 2 row of ED 22; §13.5 correction; rescoring of recipe7_bfix and logsub.
+

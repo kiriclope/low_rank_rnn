@@ -10,7 +10,7 @@ from style import *
 from bifurcation_probe import load_run, run_dt_alpha
 from src.tasks import make_timings, generate_dpa_trials, generate_dual_trials
 RED, BLUE, GREEN = '#d62728', '#1f77b4', '#2ca02c'
-os.chdir('/home/leon/rnn'); SW, ARM = 'results/dual/sweep_lif_recipe7_bfix', 'recipe7'; SEEDS = [int(x) for x in os.environ.get('SEEDS', '0,1,2,3,4,5,6,7').split(',')]
+os.chdir('/home/leon/rnn'); SW, ARM = os.environ.get('SW', 'results/dual/sweep_lif_recipe7_bfix'), os.environ.get('ARM', 'recipe7'); SEEDS = [int(x) for x in os.environ.get('SEEDS', '0,1,2,3,4,5,6,7').split(',')]
 DELTAS = np.round(np.linspace(-0.6, 1.0, int(os.environ.get('NDELTA', 41))), 4); NTR = int(os.environ.get('NTR', 1024)); DELTAS_CTRL = np.round(np.linspace(-1.2, 1.2, 9), 4); DEV = os.environ.get('DEV', 'cuda:1')
 def run(model, X, drive=None, window=None):
     """the model's own update ("both" integration) with an extra per-unit drive added to the input drive on the steps in window"""
