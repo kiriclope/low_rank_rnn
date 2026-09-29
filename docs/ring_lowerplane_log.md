@@ -3823,3 +3823,67 @@ memory-only predictions + "choice wells in the autonomous field are optional".
 
 **Open:** waves 2–3 (ties at λ = 2); the λ = 2 row of ED 22; §13.5 correction; rescoring of recipe7_bfix and logsub.
 
+### §43b — λ = 2 complete (24/24), the rescoring, and panel c of Fig. 5 (2026-09-25)
+
+**λ = 2, all 24 nets (flow verdict on the input-noise-averaged field).** Every net learns the curriculum: DPA ≥ 0.994,
+after_gng/dpa 0.982–1.000, dual DPA ≥ 0.994, NoGo 0.982–1.000; Go 0.84–0.97 (λ = 7: 0.99–1.00). The lower memory pair occupied
+by the DPA-only and NoGo trials [NX] is below the line in 24/24; 22/24 also keep 1–2 upper copies that hold the Go trials [G]
+(sample × "just licked"), so all-down 2/24 (s0_ls_inv, s2_ls_pair). The ties (DPA only) behave like the free arm after release.
+λ = 7 for comparison: 22/24 all-down, one Go copy (s5_log at +0.05), 22/24 learn (s0, s7 free fail DPA).
+
+**Rescoring on the averaged field.** recipe7_bfix 8/8 (deterministic 5/8; the published 8/8 is confirmed); sweep_lif_log 22/24
+both ways but different misses (averaged: s5 Go copy, s7 DPA failure; deterministic: s0, s7); logsub 2/24.
+
+**Fig. 5 panel c: why the tied flows looked alike, and what replaced them (Leon).** At the DPA checkpoint every tie lands on the
+same symmetric solution (λ = 7 and λ = 2 alike: memory pair on the line at (±0.9–1.05, ≈0)): the DPA objective is invariant under
+the whole group, the init is nearly symmetric, and gradient descent keeps a symmetric net symmetric (Theorem 9.1) — a tie only
+makes some relations exact. Free nets were searched for the four types (270 nets, 44 sweeps; occupied pairs screened, candidates
+verified on the averaged field + residuals): σ₁-type genuine after Dual (the push nets: residual σ₁ 0.16 vs 0.5–1.0), at DPA only
+weakly (lamscan_12 s0, pair ABOVE the line, 0.30 vs 0.41–0.46); σ₂-type genuine at DPA (free_early_w1split s2: tilted antipodal
+pair (+1.27, −0.19)/(−1.24, +0.29), residual σ₂ 0.32 vs 1.15; tau_noise s2_tau20_n10: odd field 0.15 vs 1.74, no fixed points —
+a slow rotation, which only σ₂ allows); σ₃-type: none; the σ₂/σ₃ look-alikes after Dual were not symmetric (residuals ~0.9).
+⇒ panel c flows are now CONSTRUCTED DPA-stage nets (`fig5_model.py`, env CONSTRUCT=1): s2_lg_klein (exactly V) with ONE free
+parameter of each element switched on — σ₁: ⟨n₁⟩ −0.035 (σ₁-even, σ₃-odd) → mirror pair at (±0.84, −0.24); σ₂: mode mixing 0.01
+(m₀ += ε m₁, n₁ += ε n₀; both σ₂-odd) → tilted antipodal pair (±0.84, ±0.22); σ₃: ⟨n₀⟩ +0.05 → A +0.93, B −0.83 (slow point),
+choice pair off-axis (0.2, ±0.78); V: none. The memory is fragile: σ₁ beyond −0.04, σ₂ beyond 0.012 lose the pair. Schemes drawn
+at each constructed net's wells, same axes, free parameter marked, invariant set in both rows; the "Above/Below" note removed.
+
+### §43c — `sweep_lif_symtypes`: DPA-trained nets for each element's solution type (predictions before the runs, 2026-09-25)
+
+**Why.** Every DPA tie lands on the same fully symmetric solution because the init already is: with ⟨n⟩ = 0 and b = 0 the lif
+field is exactly odd for ANY m, n (Φ = ½ + odd, Theorem 6.1), so a σ₁-tied init also has σ₂ and hence σ₃ = σ₁σ₂, and the
+V-invariant DPA objective keeps it there. Leon's idea: initialize with each element's symmetry but not the others, and train.
+That requires breaking the inversion inside the tie's subspace: σ₁ tie + ⟨n₁⟩ = −0.1 (`decision_readout_mean`); σ₂ tie + mode
+mixing ε = 0.1 (new `init_mode_mix`: m₀ += ε m₁, n₁ += ε n₀ after symmetrization); σ₃ tie + ⟨n₀⟩ = +0.1 (new
+`memory_readout_mean`, after symmetrization); V tie, nothing (control). Tie held through DPA, DPA only, log recipe at λ = 7,
+4 seeds per arm (16 runs, 2 waves of 8, 4 per GPU). Checked at init (s0 of each arm, averaged field): residuals σ₁/σ₂/σ₃ =
+pair 0.000/0.55/0.55, inv 0.87/0.000/0.87, test 0.65/0.65/0.000, klein 0/0/0.
+
+**Predictions (after DPA).** σ₁: a mirror pair at one common height off the line (below, set by the sign of ⟨n₁⟩); σ₂: a
+tilted antipodal pair (one up, one down), possibly a slow rotation (only σ₂ allows one); σ₃: both wells on the κ₀ axis with
+a ≠ a′; V: the pinned symmetric pair. The DPA objective is invariant, so nothing pushes the broken elements back; whether
+training keeps, amplifies or erodes the init offset is the open question. If the types appear, they replace the constructed
+nets in Fig. 5c (with the cleaner prediction panels, `paper/mock_schemes.py`).
+
+### §43d — symtypes results: DPA training returns every tie to the symmetric memory; Fig. 5c final (2026-09-25/26)
+
+**Result (16/16 runs; DPA checkpoint, input-noise-averaged field; `tie_wells_dpa.py` + `sym_violation2.py`).** All learn DPA
+(0.985–1.000) except s3_symt_klein (0.505 — the same seed that fails in `log`; the V control reproduces lg_klein seed by seed,
+incl. s1's marginal ring). In every arm the memory pair returns to the symmetric position:
+σ₁ (⟨n₁⟩ −0.1): pairs (±0.94–1.00, −0.08…+0.01) — one height but on the line; field residuals σ₂/σ₃ stay 0.07–0.57.
+σ₂ (mixing 0.1): pairs (±0.90–1.01, ±0.00–0.05) — antipodal, tilt negligible; residuals σ₁/σ₃ stay 0.16–0.97.
+σ₃ (⟨n₀⟩ +0.1): pairs (±0.89–1.01, 0.00), a = a′; residuals σ₁/σ₂ 0.65 at init → 0.010–0.026: the asymmetry is REMOVED.
+**Interpretation.** The DPA objective is not only invariant under the group (Theorem 9.1: the symmetric subspace is kept); along
+each direction a tie leaves free it is MINIMIZED at the symmetric point — the pairing asks +1 (match) and −1 (nonmatch) from one
+well, σ₃ swaps them, so L(w) = L(−w), and the cross-entropy is convex ⇒ minimum at w = 0 (same for the σ₂ tilt and σ₃'s a ≠ a′;
+cf. derivations §13.5). The symmetric memory ATTRACTS. Hence every tie and every symmetry-breaking init lands on the same memory
+geometry at the DPA stage; the four types exist in the tie's allowed space but DPA never selects them — they appear only when a
+later stage breaks the symmetry (the σ₁-type push in Dual) or by construction. Caveat: one offset size (0.1) at λ = 7.
+To add to the derivations note: a remark after Theorem 9.1 (attraction along free directions, with this sweep as evidence).
+
+**Fig. 5c final (Leon agreed on the direction).** Flows = the CONSTRUCTED DPA-stage nets (`CONSTRUCT=1`: s2_lg_klein with one free
+parameter per element switched on); prediction panels redrawn as "what to look for in the flow below" (`paper/mock_schemes.py` →
+`fig5_model.py`): the two predicted wells at the constructed net's positions (drawn like attractors), one arrow for the element's
+map A → B, the invariant set shaded, a one-line rule; D matrices and orbit arrows removed. Legend sentence still to add in the
+draft: the flows are constructed because DPA training returns every tie to the symmetric memory (this sweep).
+

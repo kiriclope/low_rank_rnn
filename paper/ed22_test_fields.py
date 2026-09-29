@@ -28,8 +28,9 @@ def mark(ax, p, s, t, ms=5.5, **kw):
     col = A_COL if s == 'A' else B_COL; lick = (s == 'A') == (t == 'C')
     ax.plot(*p, 'o' if t == 'C' else 's', ms=ms, mfc=col if lick else 'white', mec=col, mew=1.2, zorder=7, **kw)
 
-fig = plt.figure(figsize=(9.6, 9.4))
-gs = fig.add_gridspec(3, 20, height_ratios=[0.62, 0.95, 0.9], hspace=0.42, wspace=2.2, left=0.06, right=0.985, top=0.965, bottom=0.06)
+RES2_ON = bool(os.environ.get('TFJ2'))
+fig = plt.figure(figsize=(9.6, 12.0 if RES2_ON else 9.4))
+gs = fig.add_gridspec(4 if RES2_ON else 3, 20, height_ratios=[0.62, 0.95, 0.9, 0.9][:4 if RES2_ON else 3], hspace=(0.55 if RES2_ON else 0.42), wspace=2.2, left=0.06, right=0.985, top=0.965, bottom=0.06)
 
 # ── a: the scheme ──
 ax = fig.add_subplot(gs[0, 0:6]); ax.axis('off'); ax_a = ax
@@ -74,33 +75,39 @@ for ax, (lab, dims) in zip(axs_b, (('no input (autonomous)', []), ('test C on', 
     ax.set_title(lab, loc='left', fontsize=TITLE_FS); ax.set_xlabel('$\\kappa_0$ sample'); ax.set_aspect('equal')
     print('flow', lab, 'done', flush=True)
 axs_b[0].set_ylabel('$\\kappa_1$ choice')
-fig.text(0.5, axs_b[0].get_position().y0 - 0.052, f'{rid} (whole group tied), DPA checkpoint, input-noise-averaged field.  Markers: mean state at the end of the test '
-          '(circle: test C, square: test D; indigo A, teal B; filled: a lick trial).', ha='center', va='top', fontsize=SMALL, color='0.3')
+axs_b[1].text(0.5, -0.2, f'{rid} (whole group tied, λ = 7), DPA checkpoint, input-noise-averaged field.  Markers: mean state at the end of the test '
+          '(circle: test C, square: test D; indigo A, teal B; filled: a lick trial).', transform=axs_b[1].transAxes, ha='center', va='top', fontsize=SMALL, color='0.3')
 
-# ── c: the relations scored on every network ──
-GROUPS = [('σ₁ tied', 'lg_pair', 'σ₁'), ('σ₂ tied', 'lg_inv', 'σ₂'), ('σ₃ tied', 'lg_test', 'σ₃'), ('V tied', 'lg_klein', 'V'), ('free', 'log', None)]
-FAIL = {'s0_log', 's7_log'}          # the two free seeds that did not learn DPA (0.74, 0.73): shown in grey
+# ── c (λ = 7) and d (λ = 2): the relations scored on every network ──
 YMAX = 0.55
+def relations_row(axs_c, RES, arms, fail, lam):
+    GROUPS = [('σ₁ tied', arms[0], 'σ₁'), ('σ₂ tied', arms[1], 'σ₂'), ('σ₃ tied', arms[2], 'σ₃'), ('V tied', arms[3], 'V'), ('free', arms[4], None)]
+    for ax, st, ttl in zip(axs_c, ('dpa', 'expert'), (f'λ = {lam}: after DPA — the tie held', f'λ = {lam}: after Dual — the tie released')):
+        for gi, (glab, arm, el) in enumerate(GROUPS):
+            keys = sorted(k for k in RES if k.endswith(f'|{st}') and k.split('|')[0].split('_', 1)[1] == arm)
+            for ri, (rk, rel) in enumerate((('r1', 'σ₁'), ('r2', 'σ₂'), ('r3', 'σ₃'))):
+                x0 = gi * 4 + ri; forced = (el == rel) or (el == 'V')
+                if forced and st == 'dpa': ax.add_patch(plt.Rectangle((x0 - 0.42, -0.012), 0.84, 0.035, color=ECOL[rel], alpha=0.18, lw=0))
+                for j, k in enumerate(keys):
+                    v = RES[k][rk]; bad = k.split('|')[0] in fail
+                    xx = x0 + (j - (len(keys) - 1) / 2) * 0.09
+                    if v > YMAX: ax.plot(xx, YMAX - 0.01, '^', ms=3.5, color='0.6' if bad else ECOL[rel], alpha=0.8, zorder=4)
+                    else: ax.plot(xx, v, 'o', ms=3.2, mfc='white' if bad else ECOL[rel], mec='0.6' if bad else ECOL[rel], mew=0.8, alpha=0.9, zorder=4)
+            ax.text(gi * 4 + 1, -0.075, glab, ha='center', va='top', fontsize=SMALL, color=ECOL.get(el, VCOL) if el else '0.3', transform=ax.get_xaxis_transform())
+        ax.set_xlim(-0.8, len(GROUPS) * 4 - 1.2); ax.set_ylim(-0.02, YMAX); ax.set_xticks([])
+        ax.set_title(ttl, loc='left', fontsize=TITLE_FS); ax.axhline(0, color='0.8', lw=0.6)
+    axs_c[0].set_ylabel('relation residual\n(fraction of |κ|)'); axs_c[1].set_yticklabels([])
+RES2 = json.load(open(os.environ['TFJ2'])) if os.environ.get('TFJ2') else None
+nrow = 4 if RES2 else 3
 sgc = gs[2, 0:20].subgridspec(1, 2, wspace=0.12); axs_c = [fig.add_subplot(sgc[0, k]) for k in range(2)]
-for ax, st, ttl in zip(axs_c, ('dpa', 'expert'), ('after DPA — the tie held', 'after Dual — the tie released')):
-    for gi, (glab, arm, el) in enumerate(GROUPS):
-        keys = sorted(k for k in RES if k.endswith(f'|{st}') and k.split('|')[0].split('_', 1)[1] == arm)
-        for ri, (rk, rel) in enumerate((('r1', 'σ₁'), ('r2', 'σ₂'), ('r3', 'σ₃'))):
-            x0 = gi * 4 + ri; forced = (el == rel) or (el == 'V')
-            if forced and st == 'dpa': ax.add_patch(plt.Rectangle((x0 - 0.42, -0.012), 0.84, 0.035, color=ECOL[rel], alpha=0.18, lw=0))
-            for j, k in enumerate(keys):
-                v = RES[k][rk]; rid_ = k.split('|')[0]; bad = rid_ in FAIL
-                xx = x0 + (j - (len(keys) - 1) / 2) * 0.09
-                if v > YMAX: ax.plot(xx, YMAX - 0.01, '^', ms=3.5, color='0.6' if bad else ECOL[rel], alpha=0.8, zorder=4)
-                else: ax.plot(xx, v, 'o', ms=3.2, mfc='white' if bad else ECOL[rel], mec='0.6' if bad else ECOL[rel], mew=0.8, alpha=0.9, zorder=4)
-        ax.text(gi * 4 + 1, -0.075, glab, ha='center', va='top', fontsize=SMALL, color=ECOL.get(el, VCOL) if el else '0.3', transform=ax.get_xaxis_transform())
-    ax.set_xlim(-0.8, len(GROUPS) * 4 - 1.2); ax.set_ylim(-0.02, YMAX); ax.set_xticks([])
-    ax.set_title(ttl, loc='left', fontsize=TITLE_FS); ax.axhline(0, color='0.8', lw=0.6)
-axs_c[0].set_ylabel('relation residual\n(fraction of |κ|)')
-axs_c[1].set_yticklabels([])
+relations_row(axs_c, RES, ('lg_pair', 'lg_inv', 'lg_test', 'lg_klein', 'log'), {'s0_log', 's7_log'}, 7)
 for rel, col in (('σ₁', B_COL), ('σ₂', PLUM), ('σ₃', LICK_COL)): axs_c[0].plot([], [], 'o', ms=4, color=col, label=f'{rel} relation')
 axs_c[0].legend(loc='upper left', frameon=False, fontsize=SMALL, ncol=3, handletextpad=0.2, columnspacing=0.8)
 axs_c[0].text(0.02, 0.84, 'shaded: the relation the tie forces (exact 0)\nopen grey: the two free seeds that failed DPA\n▲ off scale (> 0.55)',
               transform=axs_c[0].transAxes, ha='left', va='top', fontsize=SMALL * 0.9, color='0.35')
-for L, a in zip('abc', (ax_a, axs_b[0], axs_c[0])): panel_letter(fig, a, L, x=0.012)
+letters = [(ax_a, 'a'), (axs_b[0], 'b'), (axs_c[0], 'c')]
+if RES2:
+    sgd = gs[3, 0:20].subgridspec(1, 2, wspace=0.12); axs_d = [fig.add_subplot(sgd[0, k]) for k in range(2)]
+    relations_row(axs_d, RES2, ('ls_pair', 'ls_inv', 'ls_test', 'ls_klein', 'lsub'), set(), 2); letters.append((axs_d[0], 'd'))
+for a, L in letters: panel_letter(fig, a, L, x=0.012)
 save(fig, os.environ.get('STEM', 'ed22'))

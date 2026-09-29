@@ -104,6 +104,8 @@ class RunConfig:
     test_scale:         float = 1.0
     mix_strength:       float = 0.0
     decision_readout_mean: float = 0.0   # DC mean ⟨n₁⟩ of the decision readout (structured init). With a non-negative saturating φ (lif), resting κ₁=½⟨n₁⟩ → negative value seats the memory wells below the no-lick line (the clean saturating well-push). §20.
+    memory_readout_mean: float = 0.0     # ⟨n₀⟩ offset added AFTER the tie's symmetrization (σ₃-even, σ₁-odd: keeps a σ₃ tie, breaks σ₁ and the inversion). sweep_lif_symtypes
+    init_mode_mix: float = 0.0           # mode mixing at init, after symmetrization: m₀ += ε m₁, n₁ += ε n₀ (both σ₂-odd: keeps a σ₂ tie, breaks σ₁, σ₃). sweep_lif_symtypes
     rwd_input_scale:    float = 1.0   # scale of reward input alignment with u_read (structured init only)
     rwd_align_weight:   float = 0.0   # weight of reward-input ↔ n1 cosine alignment loss during DPA
     freeze_rank0_dual:  bool  = False  # also freeze rank-0 of m/n during the Dual stage
@@ -653,6 +655,17 @@ def run_single(config: RunConfig, device: str, models_dir: str | None = None,
         _N = model.m.shape[0]
         print(f"[{rid}]  symmetry '{_sym}' enforced in stages {config.symmetry_stages}; "
               f"n0·m1={float(model.n[:,0]@model.m[:,1])/_N:+.3f} n1·m0={float(model.n[:,1]@model.m[:,0])/_N:+.3f}", flush=True)
+    if config.memory_readout_mean or config.init_mode_mix:
+        # Symmetry-type inits (Leon 2026-09-25, sweep_lif_symtypes): with ⟨n⟩ = 0 and b = 0 the lif field is exactly odd for
+        # ANY m, n (Φ = ½ + odd), so a tied init is symmetric under the whole group; these terms break it inside the tie's subspace.
+        with torch.no_grad():
+            if config.memory_readout_mean:
+                model.n[:, 0] += config.memory_readout_mean
+            if config.init_mode_mix:
+                _e = config.init_mode_mix; _m1 = model.m[:, 1].clone(); _n0 = model.n[:, 0].clone()
+                model.m[:, 0] += _e * _m1; model.n[:, 1] += _e * _n0
+        print(f"[{rid}]  symmetry-type init: <n0> {float(model.n[:,0].mean()):+.3f}  <n1> {float(model.n[:,1].mean()):+.3f}  "
+              f"mode mix {config.init_mode_mix}", flush=True)
 
     # "random" → keep default LowRankModel init
     _log_params("init")
@@ -3441,6 +3454,36 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
                                         "nolick_nogo_in_cue": True,
                                         "nolick_full_delay": True, "nolick_late_delay": False,
                                         "nolick_thresh": 0.0}))
+
+    # ═══ symtypes (Leon 2026-09-25, sweep_lif_symtypes): DPA-trained nets that realize each element's solution type (Fig. 5c).
+    # The tie is held through DPA (DPA only); the init is symmetric under the tied element but NOT under the others: with
+    # ⟨n⟩ = 0, b = 0 the field is exactly odd for any m, n, so each arm breaks the inversion inside its own tie — σ₁: ⟨n₁⟩
+    # (decision_readout_mean), σ₃: ⟨n₀⟩ (memory_readout_mean), σ₂: mode mixing (init_mode_mix); V: none (control).
+    # Predicted after DPA: σ₁ mirror pair at one height off the line; σ₂ tilted antipodal pair; σ₃ on the line with a ≠ a′;
+    # V pinned symmetric pair. log recipe at λ = 7 otherwise. --run_filter symt_<tie> ═══
+    for tag, sym, extra in (("symt_pair", "pair", {"decision_readout_mean": -0.1}), ("symt_inv", "inv", {"init_mode_mix": 0.1}),
+                            ("symt_test", "test", {"memory_readout_mean": 0.1}), ("symt_klein", "klein", {})):
+        for seed in range(4):
+            configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
+                                     dt_base=0.020,
+                                     symmetry=sym, symmetry_stages=["dpa"],
+                                     **{**emergent, **shared_unfrozen, **nocue_common,
+                                        "tau": 0.2, "noise": 1.0,
+                                        "attention_input": False, "response_in_cue": True,
+                                        "dpa_hold_window": 0.5, "dpa_hold_anchor": "sample",
+                                        "dpa_prelick_free": True, "dpa_nolick_weight": 0.0,
+                                        "memory_lambda": 7.0, "decision_lambda": 7.0,
+                                        "target_mn_corr": 1.0, "target_out_mn_corr": 1.0,
+                                        "readout_scale": 7.0 ** 0.5,
+                                        "cue_scale": 2.0,
+                                        "epochs_dpa": 250, "epochs_gng": 0, "epochs_dual": 0,
+                                        "gng_weight": 0.0, "gng_response": True,
+                                        "pair_pin": True, "nolick_shape": "pnll", "dual_nolick_shape": None, "resp_shape": "xent",
+                                        "nolick_weight": 1.0, "nolick_split_sample": True,
+                                        "dual_mem_targets": True, "dual_mem_supervise": False,
+                                        "nolick_nogo_in_cue": True,
+                                        "nolick_full_delay": True, "nolick_late_delay": False,
+                                        "nolick_thresh": 0.0, **extra}))
 
     # ═══ symdpa (Leon 2026-09-18, §36): the task symmetry enforced in DPA only, then released ═══
     # The DPA response is r = ¬(s ⊕ t); its symmetry group is the Klein four-group {1, σ₁, σ₂, σ₃}

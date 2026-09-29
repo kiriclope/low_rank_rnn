@@ -107,11 +107,10 @@ ax.text(0.3, 5.7, 'lick iff the pair matches; three relabelings\nleave the objec
 for k_, (nm, what, col) in enumerate([('σ₁', 'A↔B and C↔D, response kept', B_COL), ('σ₂', 'A↔B alone, response flipped', PLUM), ('σ₃', 'C↔D alone, response flipped', LICK_COL)]):
     ax.text(0.3, 3.9 - k_ * 1.0, nm, fontsize=PS*8, color=col, fontweight='bold', va='top'); ax.text(1.6, 3.9 - k_ * 1.0, what, fontsize=SMALL, va='top')
 ax.text(0.3, 0.4, 'With the identity e they form the Klein\nfour-group V = Z₂ × Z₂ (σ₁σ₂ = σ₃).', fontsize=SMALL, va='top', color='0.3')
-ax.text(0.3, -4.5, 'Above: each element acts on the\nplane by a sign-flip matrix D; the\nmemory wells a network that\nrespects it may have. Choice wells\nin the autonomous field are\noptional: the choice is scored\nduring the test (Extended Data).\n\nBelow: the simulated flow at the\nDPA checkpoint of a network trained\nwith that element (or the whole\ngroup) held exactly, with the memory\nwells of every network trained\nunder the same tie.', fontsize=STAT_FS, va='top', color='0.3')
-ELEMS = [('σ₁', 'A↔B and C↔D', [np.diag([-1, 1])], B_COL, 'mirror pair,\none height'),
-         ('σ₂', 'A↔B,\nlick↔no lick', [-np.eye(2)], PLUM, 'antipodal pair'),
-         ('σ₃', 'C↔D,\nlick↔no lick', [np.diag([1, -1])], LICK_COL, 'on the κ₀ axis,\nunrelated a, a′'),
-         ('V', 'the whole group', [np.diag([-1, 1]), -np.eye(2), np.diag([1, -1])], VCOL, 'pinned pair (±a, 0)\nor the quadruple')]
+ELEMS = [('σ₁', 'A↔B and C↔D', [np.diag([-1, 1])], B_COL, 'mirror pair, one height;\ninvariant: the κ₁ axis'),
+         ('σ₂', 'A↔B,\nlick↔no lick', [-np.eye(2)], PLUM, 'antipodal pair;\ninvariant: the origin'),
+         ('σ₃', 'C↔D,\nlick↔no lick', [np.diag([1, -1])], LICK_COL, 'on the κ₀ axis, a′ free;\ninvariant: the κ₀ axis'),
+         ('V', 'the whole group', [np.diag([-1, 1]), -np.eye(2), np.diag([1, -1])], VCOL, 'pinned pair (±a, 0);\ninvariant: both axes')]
 def draw_matrix(ax, D, x, y, label, col='0.3'):
     """a 2×2 matrix with its entries, drawn at axes coordinates (x, y) = top-left, with bracket strokes"""
     ax.text(x, y - 0.075, label, transform=ax.transAxes, ha='left', va='center', fontsize=SMALL, color=col)
@@ -121,46 +120,74 @@ def draw_matrix(ax, D, x, y, label, col='0.3'):
     for xb, d_ in ((x0 - 0.01, 1), (x0 + 0.12 + w, -1)):
         ax.plot([xb + 0.02 * d_, xb, xb, xb + 0.02 * d_], [y + 0.01, y + 0.01, y - 0.08 - h + 0.005, y - 0.08 - h + 0.005], transform=ax.transAxes, color=col, lw=0.8, clip_on=False)
 ICOL = [B_COL, PLUM, LICK_COL]
+TA = os.environ.get('TIEARM', 'symdpa_{}')   # tie arm name pattern: symdpa_{} (hinge scaffolds) or lg_{} (sweep_lif_log)
+EX = [('σ₁', TIES['pair'], TA.format('pair'), 0), ('σ₂', TIES['inv'], TA.format('inv'), 0), ('σ₃', TIES['test'], TA.format('test'), 1), ('V', TIES['klein'], TA.format('klein'), 2)]
+EXW, CM = {}, {}   # per element: the memory pair of the network drawn under the scheme (each scheme is the prediction evaluated there)
+CONSTRUCT = bool(os.environ.get('CONSTRUCT'))   # the flows are CONSTRUCTED networks: the whole-group-tied net with ONE free parameter of each element
+if CONSTRUCT:                                    # switched on (training at the DPA stage lands every tie on the same symmetric solution)
+    import copy
+    base_, cfgB = load_run(TIES['klein'], 's2_' + TA.format('klein'), stage='dpa', device='cpu')
+    CPERT = {'σ₁': ('⟨n₁⟩ shifted', lambda m, b: m.n[:, 1].add_(-0.035)),             # σ₁-even, σ₃-odd: the pair moves off the line together
+             'σ₂': ('modes mixed', lambda m, b: (m.m[:, 0].add_(0.01 * b.m[:, 1]), m.n[:, 1].add_(0.01 * b.n[:, 0]))),   # σ₂-odd columns mixed: rotation
+             'σ₃': ('⟨n₀⟩ shifted', lambda m, b: m.n[:, 0].add_(0.05)),               # σ₃-even, σ₁-odd: a ≠ a′ on the line
+             'V': ('none switched on', lambda m, b: None)}
+    for nm_ in ('σ₁', 'σ₂', 'σ₃', 'V'):
+        m_ = copy.deepcopy(base_)
+        with torch.no_grad(): CPERT[nm_][1](m_, base_)
+        CM[nm_] = m_; EXW[nm_] = memory_pair(wells_of(m_, cfgB, sig_of(cfgB)), m_, cfgB)
+else:
+    for nm_, sw_, arm_, sd_ in EX:
+        m_, cf_ = load_run(sw_, f's{sd_}_{arm_}', stage='dpa', device='cpu'); EXW[nm_] = memory_pair(wells_of(m_, cf_, sig_of(cf_)), m_, cf_)
+INVCOL = {'σ₁': B_COL, 'σ₂': PLUM, 'σ₃': LICK_COL, 'V': VCOL}
+def draw_invariant(ax, nm, col, lw=1.3, alpha=0.9):
+    """Fix(D): the set every element of the tie leaves in place — the flow is tangent to it (σ₁: the κ₁ axis; σ₃: the κ₀ axis; σ₂: the origin)"""
+    if nm in ('σ₁', 'V'): ax.axvline(0, color=col, lw=lw, alpha=alpha, zorder=2)
+    if nm in ('σ₃', 'V'): ax.axhline(0, color=col, lw=lw * 1.8, alpha=alpha * 0.45, zorder=2)
+    if nm == 'σ₂': ax.plot(0, 0, 'o', mfc='none', mec=col, mew=1.3, ms=7, zorder=6)
 sg = gs[1, 6:20].subgridspec(1, 4, wspace=0.45); axs_e = [fig.add_subplot(sg[0, k]) for k in range(4)]
+SCH_TIT = {'σ₁': 'σ₁  A↔B and C↔D', 'σ₂': 'σ₂  A↔B', 'σ₃': 'σ₃  C↔D', 'V': 'V  all three'}
+SCH_RULE = {'σ₁': 'B mirrors A;\none height (free)', 'σ₂': 'B = −A;\nthe angle is free', 'σ₃': 'A and B on the line;\nunrelated distances', 'V': 'B mirrors A,\non the line'}
+WELLC = '#F39C12'   # the flow panels' attractor ring colour
 for ax, (nm, rel, Ds, col, note) in zip(axs_e, ELEMS):
-    ax.set_xlim(-1.4, 1.4); ax.set_ylim(-1.4, 1.4); ax.set_aspect('equal'); ax.set_xticks([]); ax.set_yticks([])
-    for sp in ax.spines.values(): sp.set_edgecolor(col); sp.set_linewidth(0.9)
-    ax.axvline(0, color='0.88', lw=0.6); ax.axhline(0, color=LICK_COL, lw=0.8, ls='--')
-    p_ = np.array([0.45, 0.5]); ax.plot(*p_, 'o', color='k', ms=4, zorder=5)
-    for D, c_ in zip(Ds, ([col] if nm != 'V' else ICOL)):
-        q_ = D @ p_; ax.plot(*q_, 'o', mfc='none', mec=c_, mew=1.2, ms=5, zorder=5); ax.annotate('', q_, p_, arrowprops=dict(arrowstyle='->', color=c_, lw=1.0, linestyle=':', shrinkA=4, shrinkB=4))
-    wa, wb = {'σ₁': ((0.95, -0.3), (-0.95, -0.3)), 'σ₂': ((0.95, 0.3), (-0.95, -0.3)), 'σ₃': ((0.95, 0.0), (-0.65, 0.0)), 'V': ((0.95, 0.0), (-0.95, 0.0))}[nm]
-    ax.plot([wa[0], wb[0]], [wa[1], wb[1]], ':', color=col, lw=0.8, zorder=3)
-    ax.plot(*wa, 'o', color=A_COL, ms=4.5, mec='w', mew=0.4, zorder=6); ax.plot(*wb, 'o', color=B_COL, ms=4.5, mec='w', mew=0.4, zorder=6)
-    ax.text(wa[0], wa[1] - 0.2, 'A', ha='center', va='top', fontsize=SMALL, color=A_COL); ax.text(wb[0], wb[1] - 0.2, 'B', ha='center', va='top', fontsize=SMALL, color=B_COL)
-    if nm == 'V':   # the quadruple the group also allows, faint
-        for sx in (1, -1):
-            for sy in (1, -1): ax.plot(0.72 * sx, 0.62 * sy, 'o', mfc='none', mec=(A_COL if sx > 0 else B_COL), mew=0.8, ms=4, alpha=0.5, zorder=4)
-    ax.set_title(f'{nm}\n{rel}', loc='left', fontsize=TITLE_FS, color=col)
-    if nm == 'V': ax.text(0.04, 0.97, '{I, D₁, D₂, D₃}', transform=ax.transAxes, ha='left', va='top', fontsize=SMALL, color='0.3')
-    else:
-        D0 = Ds[0]; k_ = [e_[0] for e_ in ELEMS].index(nm) + 1; ent = lambda v: ('-' if v < 0 else '') + str(abs(int(v)))
-        ax.text(0.04, 0.97, f'$D_{k_}=\\left[\\genfrac{{}}{{}}{{0}}{{}}{{{ent(D0[0,0])}}}{{{ent(D0[1,0])}}}\\ \\ \\genfrac{{}}{{}}{{0}}{{}}{{{ent(D0[0,1])}}}{{{ent(D0[1,1])}}}\\right]$', transform=ax.transAxes, ha='left', va='top', fontsize=PS*7, color=col)
-    ax.text(0.5, -0.06, note, transform=ax.transAxes, ha='center', va='top', fontsize=SMALL, color=col)
+    # the prediction, drawn as what to look for in the flow below: the two wells (at that network's positions), the map from A
+    # to B, the invariant set, and a one-line rule
+    A_, B_ = [tuple(float(v) for v in f[:2]) if f is not None else d for f, d in zip(EXW[nm], ((0.95, 0.0), (-0.95, 0.0)))]
+    ax.set_xlim(*XL); ax.set_ylim(*XL); ax.set_aspect('equal'); ax.set_xticks([]); ax.set_yticks([])
+    for sp in ax.spines.values(): sp.set_edgecolor(col); sp.set_linewidth(1.0); sp.set_visible(True)
+    ax.axhline(0, color=LICK_COL, lw=0.8, ls='--', zorder=1); ax.axvline(0, color='0.9', lw=0.6, zorder=0)
+    if nm in ('σ₁', 'V'): ax.axvspan(-0.045, 0.045, color=col, alpha=0.35, lw=0, zorder=1)
+    if nm in ('σ₃', 'V'): ax.axhspan(-0.045, 0.045, color=col, alpha=0.35, lw=0, zorder=1)
+    if nm == 'σ₂': ax.plot(0, 0, 'o', ms=7, mfc=col, mec='none', alpha=0.6, zorder=2)
+    if nm != 'σ₃':
+        ax.add_patch(FancyArrowPatch(A_, B_, arrowstyle='<->', mutation_scale=9, color=col, lw=1.2, shrinkA=9, shrinkB=9,
+                                     connectionstyle=f"arc3,rad={0.0 if nm == 'σ₂' else -0.35}", zorder=3))
+    else:   # σ₃ maps each well onto itself: nothing ties the two distances from the origin
+        for p_, lab in ((A_, 'a'), (B_, 'a′')):
+            ax.add_patch(FancyArrowPatch((0, -0.42), (p_[0], -0.42), arrowstyle='<->', mutation_scale=7, color=col, lw=0.9, shrinkA=0, shrinkB=0, zorder=3))
+            ax.text(p_[0] / 2, -0.52, lab, ha='center', va='top', fontsize=SMALL, color=col)
+    for p_, lab, c_ in ((A_, 'A', A_COL), (B_, 'B', B_COL)):
+        ax.plot(*p_, 'o', ms=9, mfc='none', mec=WELLC, mew=1.8, zorder=5); ax.plot(*p_, 'o', ms=4.5, mfc=c_, mec='none', zorder=6)
+        ax.text(p_[0], p_[1] + (0.32 if p_[1] >= 0 else -0.32), lab, ha='center', va='center', fontsize=SMALL, color=c_, fontweight='bold', zorder=7)
+    ax.set_title(SCH_TIT[nm], loc='left', fontsize=TITLE_FS, color=col)
+    ax.text(0.5, -0.05, SCH_RULE[nm], transform=ax.transAxes, ha='center', va='top', fontsize=SMALL, color=col)
+axs_e[0].text(1.42, 0.08, 'lick', fontsize=SMALL * 0.85, color=LICK_COL, ha='right', va='bottom')
 axs_e[0].set_ylabel('$\\kappa_1$ choice')
 
 # ── c, lower row: the simulated flow of a network tied to each element (DPA checkpoint), under its scheme ──
-TA = os.environ.get('TIEARM', 'symdpa_{}')   # tie arm name pattern: symdpa_{} (hinge scaffolds) or lg_{} (sweep_lif_log)
-EX = [('σ₁', TIES['pair'], TA.format('pair'), 0), ('σ₂', TIES['inv'], TA.format('inv'), 0), ('σ₃', TIES['test'], TA.format('test'), 1), ('V', TIES['klein'], TA.format('klein'), 2)]
 sg2 = gs[2, 6:20].subgridspec(1, 4, wspace=0.45); axs_cf = [fig.add_subplot(sg2[0, k]) for k in range(4)]
 for ax, (nm, sw, arm, sd), (_, _, _, col, _) in zip(axs_cf, EX, ELEMS):
-    m0, cfg = load_run(sw, f's{sd}_{arm}', stage='dpa', device='cpu'); sig = sig_of(cfg)
+    m0, cfg = (CM[nm], cfgB) if CONSTRUCT else load_run(sw, f's{sd}_{arm}', stage='dpa', device='cpu'); sig = sig_of(cfg)
     cache, spd = _flow_panel_cache(m0, dict(name=nm, dims=None, conds=[]), cfg['input_size'], torch.zeros(1, 1, cfg['input_size']), XL, XL, 61, field_input_noise=sig, n_fp_seeds=41, slow_tol=0.06)
     _render_flow_panel(ax, cache, speed_vmax=float(np.percentile(spd, 98)), sim_scattered=False, kappa_traj=None, cond_idx={}, colors={}, xlim=XL, ylim=XL, model=m0)
-    ax.axhline(0, color='w', lw=0.8, ls=(0, (4, 3)))
-    for s_ in range(4):   # every seed's memory pair under this tie
+    ax.axhline(0, color='w', lw=0.8, ls=(0, (4, 3))); draw_invariant(ax, nm, INVCOL[nm] if nm != 'V' else '0.85', lw=1.1)
+    for s_ in ([] if CONSTRUCT else range(4)):   # every seed's memory pair under this tie (trained mode only)
         try: m, cf = load_run(sw, f's{s_}_{arm}', stage='dpa', device='cpu')
         except Exception: continue
         A, B = memory_pair(wells_of(m, cf, sig_of(cf)), m, cf)
         for f, c_ in ((A, A_COL), (B, B_COL)):
             if f is not None: ax.plot(f[0], f[1], 'o', ms=3.2, mfc=c_, mec='w', mew=0.4, zorder=7)
     for sp in ax.spines.values(): sp.set_edgecolor(col); sp.set_linewidth(0.9)
-    ax.set_xticks([-1, 0, 1]); ax.set_yticks([-1, 0, 1]); ax.set_xlabel('$\\kappa_0$ sample'); ax.set_ylabel('$\\kappa_1$ choice' if nm == 'σ₁' else ''); ax.set_title(f'{nm} tied', loc='left', fontsize=TITLE_FS, color=col)
+    ax.set_xticks([-1, 0, 1]); ax.set_yticks([-1, 0, 1]); ax.set_xlabel('$\\kappa_0$ sample'); ax.set_ylabel('$\\kappa_1$ choice' if nm == 'σ₁' else ''); ax.set_title(f'{nm}: {CPERT[nm][0]}' if CONSTRUCT else f'{nm} tied', loc='left', fontsize=TITLE_FS, color=col)
     print('tied flow', nm, 'done', flush=True)
 
 # ── d: what each stage does to the group — the explanation of the push. Left, the account; middle, the choice readout learns to hear
