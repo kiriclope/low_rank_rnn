@@ -3887,3 +3887,42 @@ parameter per element switched on); prediction panels redrawn as "what to look f
 map A → B, the invariant set shaded, a one-line rule; D matrices and orbit arrows removed. Legend sentence still to add in the
 draft: the flows are constructed because DPA training returns every tie to the symmetric memory (this sweep).
 
+
+## §44 — Fig. 5 on sixteen networks, the push panel and the Neuron-style scheme (2026-09-30 → 10-01)
+
+**Wave 1 (`sweep_lif_log`, free arm `range(16)`: s8–s15; chain `scratchpad/queue_log16.sh`).** 13/16 learn DPA (after-DPA DPA
+≥ 0.95; s0, s7, s12 do not, 0.73–0.74). Flow verdict (input-noise-averaged field, expert): the 8 new seeds ALL-DOWN
+(deterministic field 7/8; s12 has no pair). The σ₁ prediction replicates on the new learners (sample-independent inputs
+corr(A, B) +0.99, sample-specific −0.45; `sigma1_prediction_s8_15.json`).
+
+**Optimum vs trained well (`paper/compare_log16.py`, `perturb_depth_log16.json`, `diag_gng_vs_well_log16.png`).** In 13/13
+learners the best dual position under the any-crossing score lies deeper than the trained state at the cue, by 0.73 ± 0.07 η
+(0.62–0.84; gain +0.056, 0.03–0.09; trained state at the cue −1.13, −1.23…−1.02). The pooled 8-network curve that put the
+optimum at the trained well came from the non-learners (s0, s7 fail Go ~0.5 η early, flattening the Go/NoGo plateau, which is
+0.97–0.99 for wells 1.4–2.1 η below the line in the learners).
+
+**Sixteen-network numbers (`paper/draft_numbers_log.py` NSEEDS=16 → `draft_numbers_log16.json`; `paper/naive_carryover16.py`).**
+Push: both wells below the line in 15/16 (all 13 learners, 1.3–1.7 η below), Wilcoxon DPA → Dual p = 0.0002 per sample (n = 13).
+Equivariance residual medians (16): σ₁ 0.29 → 0.22 → 0.15 (after DPA / GNG / Dual), σ₂ 0.24 → 0.27 → 0.63, σ₃ 0.45 → 0.35 → 0.68
+— after DPA σ₁ is no longer the best kept, but it is the only element that survives. Overlaps: |n₀ᵀw_Go/NoGo|/N ≤ 0.65;
+n₁ᵀw_Go 0.55–1.16 after GNG and 1.84–2.44 after Dual, n₁ᵀw_NoGo −2.38…−1.10 and −2.84…−1.11. Depth law d/(k/2) = 1.16 ± 0.05
+(n = 13; k 2.22–2.73 η, d 1.30–1.61 η). Before dual training: false alarms on unpaired Go trials 0.06–0.98 (median 0.83), sample
+sign kept 0.84–1.00, NoGo correct at the cue median 0.98. Fig. 6l on 13 learners: r = +0.83 / +0.91 / +0.87 / −0.48.
+
+**Fig. 5 rebuilt (`paper/fig5_model.py`).** b, d, e count all 16 networks; f–h, Fig. 6h,l and ED 10d draw the 13 learners
+(selected in the script from results.jsonl; `PSEEDS`/`BINW` restore pooled builds; 0.25 η bins); ED 18 on 16. Layout: the
+overlap and residual plots of d are square; e = the push (top) and "where the push comes from" (bottom): the net force of the
+likelihood objective on a well against its height h — the paired test pulls up, φ(h+k)/Φ(h+k), the unpaired test pushes down,
+φ(h−k)/Φ(k−h), and the dual stage's delay adds the hazard push φ(h)/Φ(−h) (shaded); zero net force at 0 under the DPA
+objective and at −k/2 = −1.25 η under the dual one (k = 2.51 η, the learners' mean), trained wells as ticks (after Dual
+−1.29…−1.71, mean −1.51; the 1.16 depth-law ratio). a = the network scheme of the Neuron paper's Fig. 1B (square panel, circular
+population; `neuron_symmetry/figures/fig1_framework.py`); b = the curriculum drawn as the task of the dual paper's Fig. 1a
+(split odor boxes in the `dual_task_scheme.svg` colors, red/blue/orange stage boxes). Polish: no text collisions, plain titles,
+direct labels, horizontal ticks, typographic minus; `paper/fig5_caption.py` tolerates a one-pixel width rounding.
+New data in `figures/paper_share/modelling/`: `overlaps_log16.json`, `symviol_log16.tsv` (seeds 0–7 reproduce the old files
+exactly), `sigma1_prediction_log16.json`, `sigma1_informative_log16.json`, `draft_numbers_log16.json`, `naive_carryover16.json`.
+Render: `M=/home/leon/dual/figures/paper_share/modelling; CONSTRUCT=1 FREE=results/dual/sweep_lif_log:log:3,0,1,2,4,5,6,7,8,9,10,11,12,13,14,15
+TIES=pair:results/dual/sweep_lif_log,klein:results/dual/sweep_lif_log,inv:results/dual/sweep_lif_log,test:results/dual/sweep_lif_log
+TIEARM='lg_{}' OVJ=$M/overlaps_log16.json SVT=$M/symviol_log16.tsv PJF=$M/perturb_depth_log16.json [FIG5_STEM=fig5_model] python
+paper/fig5_model.py`, then `python paper/fig5_caption.py`. The paper side (dual repo: results_draft v12.59 → v12.69, Discussion
+v6.11, modelling draft v1.13, the three review controls on the mice) is logged in the draft banners and `dual/docs`.

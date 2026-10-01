@@ -3403,7 +3403,10 @@ def make_configs(out_dir: str, nonlinearity: str = "relu", cue_on_go_input: bool
     # the pairing and the Go response as −log Φ(±κ₁/η) (resp_shape "xent"), the NoGo / delay no-lick as −log Φ(−κ₁/η)
     # (nolick_shape "pnll", all stages). Internal-state terms unchanged (baseline pin, A/B hold on κ₀, rule hold). Free at 8
     # seeds + the four DPA ties at 4 seeds (Fig. 5c / ED). --run_filter log (free only) / lg_<tie> ═══
-    for tag, sym, seeds in (("log", "", range(8)), ("lg_pair", "pair", range(4)), ("lg_inv", "inv", range(4)), ("lg_test", "test", range(4)), ("lg_klein", "klein", range(4))):   # sweep_lif_log (Leon's name: the log-likelihood recipe); tie ids "lg_<tie>" so the free filter "log" is not a substring of them
+    # 2026-09-30 (Leon: "run more of these simulations (more seeds), so that we have more nets to compare"): the free arm
+    # grows from 8 to 24 seeds in waves of 8 (range(16) = wave 1, s8–s15; then range(24) = wave 2, s16–s23). s0–s7 are
+    # unchanged (resume skips them); the ties stay at 4 seeds.
+    for tag, sym, seeds in (("log", "", range(16)), ("lg_pair", "pair", range(4)), ("lg_inv", "inv", range(4)), ("lg_test", "test", range(4)), ("lg_klein", "klein", range(4))):   # sweep_lif_log (Leon's name: the log-likelihood recipe); tie ids "lg_<tie>" so the free filter "log" is not a substring of them
         for seed in seeds:
             configs.append(RunConfig(run_id=f"s{seed}_{tag}", seed=seed,
                                      dt_base=0.020,
