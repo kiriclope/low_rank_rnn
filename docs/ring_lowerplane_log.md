@@ -3926,3 +3926,4 @@ TIES=pair:results/dual/sweep_lif_log,klein:results/dual/sweep_lif_log,inv:result
 TIEARM='lg_{}' OVJ=$M/overlaps_log16.json SVT=$M/symviol_log16.tsv PJF=$M/perturb_depth_log16.json [FIG5_STEM=fig5_model] python
 paper/fig5_model.py`, then `python paper/fig5_caption.py`. The paper side (dual repo: results_draft v12.59 → v12.69, Discussion
 v6.11, modelling draft v1.13, the three review controls on the mice) is logged in the draft banners and `dual/docs`.
+Commits: rnn `66d036c` (scripts, Fig. 5, this section), dual `085023c` (paper v12.57–v12.69, review controls, Figs 2–6, EDs 7 and 10).
